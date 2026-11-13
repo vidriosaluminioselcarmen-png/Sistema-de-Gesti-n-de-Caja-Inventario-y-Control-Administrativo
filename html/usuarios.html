@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Usuarios y Seguridad | El Carmen</title>
+  <script>
+    (function(){try{var t=localStorage.getItem("elcarmen_theme")||(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light");}catch(e){}})();
+  </script>
   <link rel="stylesheet" href="../css/base.css">
   <link rel="stylesheet" href="../css/layout.css">
   <link rel="stylesheet" href="../css/components.css">
@@ -50,7 +53,7 @@
   <div class="main">
     <header class="topbar">
       <label for="nav-toggle" class="menu-btn" aria-label="Abrir menú">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg><span>Menú</span>
       </label>
       <label for="sidebar-collapse" class="collapse-btn" aria-label="Colapsar o expandir menú" title="Colapsar / expandir menú">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
@@ -60,7 +63,7 @@
         <p>Usuarios, roles y permisos de acceso</p>
       </div>
       <span class="badge badge-warning" id="firebase-status-badge" title="Estado de conexión con Firebase Firestore" style="font-size:.74rem">Modo local · Firebase pendiente</span>
-      <span class="topbar-date">Vidrios y Aluminios El Carmen</span>
+      <div class="topbar-actions"><button type="button" class="theme-toggle-btn" data-theme-toggle aria-pressed="false">Modo oscuro</button><span class="topbar-date">Vidrios y Aluminios El Carmen</span></div>
     </header>
 
     <main id="app-root">

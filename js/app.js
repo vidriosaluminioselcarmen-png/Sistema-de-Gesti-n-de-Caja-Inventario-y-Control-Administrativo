@@ -16,6 +16,7 @@ import { getFirebaseStatus, isFirebaseConfigured } from "./firebase-config.js";
 import { verificarConexionRealFirebase } from "./services/firebase-service.js";
 import { ensureSeedData } from "./services/store.js";
 import { autenticarUsuario, cerrarSesionUsuario } from "./services/usuarios-service.js";
+import { initTheme } from "./theme.js";
 import { mountCajaView } from "./views/caja-view.js";
 import {
   mountInventarioView,
@@ -206,6 +207,7 @@ function setupEventDelegation() {
 }
 
 function initApp() {
+  initTheme();
   ensureSeedData();
   setupEventDelegation();
   renderFirebaseConnectionBadge();

@@ -1,17 +1,32 @@
 /* ==========================================================================
-   Impresión / exportar a PDF (principalmente Consultas y Reportes)
+   Impresión / exportar a PDF (siempre fondo blanco y texto negro, incluso en Modo Oscuro)
    ========================================================================== */
 @media print {
   @page { size: A4; margin: 14mm; }
 
-  body { background: #fff; color: #000; font-size: 11pt; }
+  :root,
+  [data-theme="dark"] {
+    color-scheme: light !important;
+    --bg-app: #ffffff !important;
+    --bg-surface: #ffffff !important;
+    --bg-elevated: #ffffff !important;
+    --bg-subtle: #f5f5f5 !important;
+    --bg-input: #ffffff !important;
+    --text-primary: #000000 !important;
+    --text-secondary: #333333 !important;
+    --border-color: #cccccc !important;
+    --table-head-bg: #eeeeee !important;
+    --table-head-text: #000000 !important;
+  }
+
+  body { background: #fff !important; color: #000 !important; font-size: 11pt; }
 
   /* Ocultar elementos de navegación e interacción */
   .sidebar, .nav-backdrop, .topbar .menu-btn, .topbar .collapse-btn, .topbar-date,
-  .footer, .page-actions, .pillar-foot a, .btn, .no-print, .modal-overlay { display: none !important; }
+  .theme-toggle-btn, .footer, .page-actions, .pillar-foot a, .btn, .no-print, .modal-overlay { display: none !important; }
 
   .main { margin: 0 !important; }
-  .topbar { position: static; padding: 0 0 .5rem; border-bottom: 2px solid #000; background: none; }
+  .topbar { position: static; padding: 0 0 .5rem; border-bottom: 2px solid #000; background: #fff !important; }
   #app-root { padding: 0; max-width: none; }
 
   /* Conservar colores de fondo en tablas y tarjetas */
@@ -19,7 +34,7 @@
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
 
-  .card, .pillar-card, .kpi, .stat { box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
+  .card, .pillar-card, .kpi, .stat { background: #fff !important; box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
   .dash-pillars { grid-template-columns: repeat(3, 1fr); gap: .6rem; }
   .grid { gap: .6rem; }
   .grid-4 { grid-template-columns: repeat(4, 1fr); }

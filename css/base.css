@@ -1,69 +1,185 @@
 /* ==========================================================================
-   Base: variables de diseño, reset y tipografía
-   Paleta corporativa: azul marino y blanco
+   Base: tokens semánticos (Modo Claro y Modo Oscuro en gris neutro),
+   reset, tipografía accesible (16px) y utilidades fundamentales.
    ========================================================================== */
 :root {
-  --navy-950: #050f26;
-  --navy-900: #081634;
-  --navy-800: #0d2552;
-  --navy-700: #12306b;
-  --navy-600: #1b4190;
-  --navy-500: #2d5bb8;
-  --navy-300: #8aa6d3;
-  --navy-100: #dfe7f5;
-  --navy-50:  #f1f5fb;
+  color-scheme: light;
 
-  --white: #ffffff;
-  --text: #0f1b36;
-  --text-muted: #5b6b8a;
-  --border: #d9e0ee;
+  /* Superficies y fondos (Modo Claro) */
+  --bg-app: #f4f6f9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f1f4f8;
+  --bg-input: #ffffff;
 
-  --success: #1d7a52;
-  --success-bg: #e3f4ec;
-  --danger: #b42336;
-  --danger-bg: #fbe7ea;
-  --warning: #9a6200;
-  --warning-bg: #fdf1d9;
+  /* Tipografía de alto contraste */
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-placeholder: #6b7280;
+
+  /* Bordes */
+  --border-color: #d1d5db;
+  --border-strong: #9ca3af;
+
+  /* Acento corporativo (azul marino sobrio) */
+  --accent: #163a70;
+  --accent-hover: #1d4b8f;
+  --accent-soft: #e8eff8;
+  --accent-text: #ffffff;
+
+  /* Barra lateral y encabezados de tabla */
+  --sidebar-bg: #102347;
+  --sidebar-surface: #183263;
+  --sidebar-text: rgba(255, 255, 255, 0.88);
+  --sidebar-muted: rgba(255, 255, 255, 0.65);
+  --table-head-bg: #163a70;
+  --table-head-text: #ffffff;
+
+  /* Estados semánticos */
+  --success: #166534;
+  --success-bg: #dcfce7;
+  --danger: #b91c1c;
+  --danger-bg: #fee2e2;
+  --warning: #92400e;
+  --warning-bg: #fef3c7;
+  --info: #1e40af;
+  --info-bg: #dbeafe;
+
+  /* Etiqueta temporal "SOLO ESTA VENTA" */
+  --temp-bg: #fff7ed;
+  --temp-text: #c2410c;
+  --temp-border: #fdba74;
+
+  /* Filas de alerta en inventario */
+  --row-low-bg: #fffbeb;
+  --row-out-bg: #fef2f2;
+
+  /* Overlay y sombras minimalistas */
+  --overlay-bg: rgba(17, 24, 39, 0.62);
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
+  --shadow-md: 0 6px 18px rgba(17, 24, 39, 0.10);
+
+  /* Alias de compatibilidad para estilos heredados */
+  --white: var(--bg-surface);
+  --text: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --border: var(--border-color);
+  --navy-950: #0b1933;
+  --navy-900: var(--text-primary);
+  --navy-800: var(--accent);
+  --navy-700: var(--accent-hover);
+  --navy-600: var(--accent);
+  --navy-500: var(--accent);
+  --navy-300: var(--border-strong);
+  --navy-100: var(--accent-soft);
+  --navy-50: var(--bg-subtle);
 
   --radius: 10px;
-  --radius-sm: 6px;
-  --shadow-sm: 0 1px 2px rgba(8, 22, 52, .08);
-  --shadow-md: 0 6px 20px rgba(8, 22, 52, .10);
-
-  --sidebar-w: 260px;
+  --radius-sm: 8px;
+  --sidebar-w: 264px;
   --font: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+}
+
+/* ---------- Modo Oscuro: Gris Neutro / Carbón (sin tinte azulado) ---------- */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-app: #121214;
+  --bg-surface: #1c1c1f;
+  --bg-elevated: #242428;
+  --bg-subtle: #222226;
+  --bg-input: #18181b;
+
+  --text-primary: #f4f4f5;
+  --text-secondary: #b4b4bd;
+  --text-placeholder: #8e8e98;
+
+  --border-color: #2e2e34;
+  --border-strong: #3f3f46;
+
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-soft: #27272d;
+  --accent-text: #ffffff;
+
+  --sidebar-bg: #161618;
+  --sidebar-surface: #242428;
+  --sidebar-text: #e4e4e7;
+  --sidebar-muted: #a1a1aa;
+  --table-head-bg: #242428;
+  --table-head-text: #f4f4f5;
+
+  --success: #4ade80;
+  --success-bg: rgba(34, 197, 94, 0.16);
+  --danger: #f87171;
+  --danger-bg: rgba(239, 68, 68, 0.16);
+  --warning: #fbbf24;
+  --warning-bg: rgba(245, 158, 11, 0.16);
+  --info: #60a5fa;
+  --info-bg: rgba(59, 130, 246, 0.16);
+
+  --temp-bg: rgba(249, 115, 22, 0.18);
+  --temp-text: #fdba74;
+  --temp-border: rgba(251, 146, 60, 0.45);
+
+  --row-low-bg: rgba(245, 158, 11, 0.10);
+  --row-out-bg: rgba(239, 68, 68, 0.10);
+
+  --overlay-bg: rgba(0, 0, 0, 0.72);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  --white: var(--bg-surface);
+  --text: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --border: var(--border-color);
+  --navy-950: #121214;
+  --navy-900: var(--text-primary);
+  --navy-800: var(--accent);
+  --navy-700: var(--accent-hover);
+  --navy-600: var(--accent);
+  --navy-500: var(--accent);
+  --navy-300: var(--border-strong);
+  --navy-100: var(--accent-soft);
+  --navy-50: var(--bg-subtle);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: clip;
+}
 
 body {
   margin: 0;
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 1rem;
   line-height: 1.5;
-  color: var(--text);
-  background: var(--navy-50);
+  color: var(--text-primary);
+  background: var(--bg-app);
+  overflow-x: clip;
 }
 
-h1, h2, h3, h4 { margin: 0 0 .5rem; line-height: 1.25; color: var(--navy-900); }
-h1 { font-size: 1.6rem; font-weight: 700; }
-h2 { font-size: 1.25rem; font-weight: 650; }
-h3 { font-size: 1.05rem; font-weight: 600; }
+h1, h2, h3, h4 { margin: 0 0 .5rem; line-height: 1.25; color: var(--text-primary); }
+h1 { font-size: 1.65rem; font-weight: 700; }
+h2 { font-size: 1.3rem; font-weight: 700; }
+h3 { font-size: 1.1rem; font-weight: 650; }
 p  { margin: 0 0 1rem; }
-a  { color: var(--navy-600); text-decoration: none; }
+a  { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 img, svg { display: block; max-width: 100%; }
 button, input, select, textarea { font: inherit; color: inherit; }
 
+.num { font-variant-numeric: tabular-nums; }
 .hidden { display: none !important; }
-.text-muted { color: var(--text-muted); }
+.text-muted { color: var(--text-secondary); }
 .text-right { text-align: right; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
-:focus-visible { outline: 3px solid var(--navy-500); outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
