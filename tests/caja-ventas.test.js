@@ -58,9 +58,12 @@ import {
   buscarClientes,
   crearCliente,
   obtenerHistorialCliente,
+  obtenerResumenBilleteraCliente,
+  listarMovimientosBilletera,
   listarCarteraClientes
 } from "../js/services/clientes-service.js";
 import {
+  METODO_SALDO_FAVOR,
   abrirCaja,
   cerrarCaja,
   registrarMovimientoEfectivoCaja,
@@ -76,7 +79,8 @@ import {
   obtenerCajaAbierta,
   obtenerSiguienteNumeroVenta,
   generarLineId,
-  calcularLineaVenta
+  calcularLineaVenta,
+  convertirConceptoTemporalAProducto
 } from "../js/services/caja-service.js";
 
 const adminUser = { uid: "u-admin", email: "admin@elcarmen.com", name: "Administrador", role: ROLES.ADMIN };
@@ -1919,6 +1923,7 @@ export async function runAll25Tests() {
   await step(62, "Fase 4 — Devolución con concepto temporal, unidad opcional y descuento prorrateado", async () => {
     resetDatabaseForTests();
     const caja = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const cli62 = await crearCliente({ nombre: "Cliente Prorrateo F4", documento: "44556677" }, adminUser);
     const prodSinU = await crearProducto(
       { nombre: "Servicio Instalación Fija", categoria: "Accesorios", codigo: "SRV-F4", unidad: "", permiteDecimal: false, precioCompra: 0, precio: 100000, stock: 5, stockMinimo: 0 },
       adminUser
@@ -1927,6 +1932,7 @@ export async function runAll25Tests() {
     const venta = await registrarVenta(
       {
         cajaId: caja.id,
+        clienteId: cli62.id,
         descuento: 20000, // 10% sobre subtotal 200.000 -> total 180.000
         items: [
           { lineId: generarLineId(), productoId: prodSinU.id, cantidad: 1 }, // 100.000 bruto -> 90.000 neto
@@ -2325,6 +2331,570 @@ export async function runAll25Tests() {
         ),
       "ya fue"
     );
+  });
+
+  // 72. Fase 6: Auditoría — Movimiento efectivo caja sin cajaId, concurrencia bodega y arqueo tras devolución + anulación externa
+  await step(72, "Fase 6 — Auditoría: validación cajaId en movimientos manuales, concurrencia bodega y arqueo sin doble descuento", async () => {
+    resetDatabaseForTests();
+    const caja1 = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const prod = listarProductos().find((p) => p.unidad === "u" && p.stock >= 5);
+
+    // Movimiento manual sin cajaId debe fallar en capa de servicio
+    await assertThrows(
+      () => registrarMovimientoEfectivoCaja({ cajaId: null, tipo: "Entrada", monto: 10000, concepto: "Sin caja" }, adminUser),
+      "caja abierta"
+    );
+
+    // Venta en caja1 por 2 unidades en efectivo
+    const venta = await registrarVenta(
+      { cajaId: caja1.id, items: [{ lineId: generarLineId(), productoId: prod.id, cantidad: 2 }], pagos: [{ metodo: "Efectivo", importe: prod.precio * 2 }] },
+      adminUser
+    );
+    await cerrarCaja({ cajaId: caja1.id, efectivoContado: 100000 + prod.precio * 2 }, adminUser);
+
+    // Abrir caja2: devolver 1 unidad en efectivo y luego anular la venta
+    const caja2 = await abrirCaja({ montoInicial: 50000 }, adminUser);
+    await registrarDevolucionVenta(
+      {
+        ventaId: venta.id,
+        itemsDevueltos: [{ lineId: venta.items[0].lineId, cantidad: 1, aptoInventario: true }],
+        motivo: "Parcial externa F6",
+        tipoReembolso: "Efectivo"
+      },
+      adminUser
+    );
+    await anularVenta({ ventaId: venta.id, motivo: "Anulación posterior F6", reintegrarInventario: true }, adminUser);
+
+    const arqueo2 = calcularArqueoCaja(getDocById(COLLECTIONS.CAJAS, caja2.id));
+    const esperadoSinDobleDescuento = 50000 - prod.precio * 2;
+    assert(
+      arqueo2.efectivoEsperado === esperadoSinDobleDescuento,
+      `Arqueo caja2 no debe descontar dos veces la devolución previa (esperado ${esperadoSinDobleDescuento}, obtenido ${arqueo2.efectivoEsperado})`
+    );
+  });
+
+  // 73. Fase 7: Billetera — Generación por devolución, consulta y validación contable/efectivo
+  await step(73, "Fase 7 — Billetera: generar saldo a favor por devolución, consultar saldo y no alterar efectivo ni ingresos", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const cli = await crearCliente({ nombre: "Juan Pérez F7", documento: "100111222" }, adminUser);
+
+    const v1 = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ lineId: generarLineId(), esTemporal: true, nombre: "Ventana aluminio F7", cantidad: 1, precioUnitario: 500000 }],
+        pagos: [{ metodo: "Transferencia", importe: 500000 }]
+      },
+      adminUser
+    );
+
+    // Devolver con excedente como Saldo a favor (sin reembolso en efectivo)
+    const dev = await registrarDevolucionVenta(
+      {
+        ventaId: v1.id,
+        itemsDevueltos: [{ lineId: v1.items[0].lineId, cantidad: 0.24, aptoInventario: false }],
+        motivo: "Ajuste parcial a billetera",
+        tipoReembolso: "Saldo a favor",
+        idempotencyKey: "f7-gen-1"
+      },
+      adminUser
+    );
+    assert(dev.saldoAFavorGenerado === 120000, `Saldo a favor esperado $120.000, obtenido ${dev.saldoAFavorGenerado}`);
+
+    const bil = obtenerResumenBilleteraCliente(cli.id);
+    assert(bil.saldoDisponible === 120000, `Disponible esperado $120.000, obtenido ${bil.saldoDisponible}`);
+    assert(bil.totalGenerado === 120000 && bil.totalUtilizado === 0, "Totales de billetera deben coincidir");
+    assert(bil.movimientos.length === 1 && bil.movimientos[0].tipo === "GENERACION", "Debe registrar movimiento GENERACION");
+
+    // Verificar que la generación no altera el efectivo esperado de caja ni crea ingresos ficticios
+    const arqueo = calcularArqueoCaja(getDocById(COLLECTIONS.CAJAS, caja.id));
+    assert(arqueo.efectivoEsperado === 100000, "Generar saldo a favor no debe modificar el efectivo de caja");
+
+    // Consumidor Final no puede generar saldo a favor
+    const vFinal = await registrarVenta(
+      {
+        cajaId: caja.id,
+        items: [{ lineId: generarLineId(), esTemporal: true, nombre: "Corte menor", cantidad: 1, precioUnitario: 30000 }],
+        pagos: [{ metodo: "Efectivo", importe: 30000 }]
+      },
+      adminUser
+    );
+    await assertThrows(
+      () =>
+        registrarDevolucionVenta(
+          {
+            ventaId: vFinal.id,
+            itemsDevueltos: [{ lineId: vFinal.items[0].lineId, cantidad: 1 }],
+            motivo: "Intento consumidor final",
+            tipoReembolso: "Saldo a favor"
+          },
+          adminUser
+        ),
+      "Consumidor Final"
+    );
+  });
+
+  // 74. Fase 7: Billetera — Aplicación parcial, aplicación total y arqueo sin inflar efectivo
+  await step(74, "Fase 7 — Billetera: aplicar saldo parcial ($70.000 de $120.000) y luego saldo completo ($50.000)", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const cli = await crearCliente({ nombre: "Ana Gómez F7", documento: "200222333" }, adminUser);
+
+    const vBase = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ lineId: generarLineId(), esTemporal: true, nombre: "Puerta vidrio", cantidad: 1, precioUnitario: 120000 }],
+        pagos: [{ metodo: "Transferencia", importe: 120000 }]
+      },
+      adminUser
+    );
+    await registrarDevolucionVenta(
+      {
+        ventaId: vBase.id,
+        itemsDevueltos: [{ lineId: vBase.items[0].lineId, cantidad: 1 }],
+        motivo: "Devolución a billetera",
+        tipoReembolso: "Saldo a favor"
+      },
+      adminUser
+    );
+
+    // Compra de $200.000: $70.000 Saldo a favor + $130.000 Efectivo -> resta $50.000 en billetera
+    const vParcial = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ esTemporal: true, nombre: "Instalación F7", cantidad: 1, precioUnitario: 200000 }],
+        pagos: [
+          { metodo: METODO_SALDO_FAVOR, importe: 70000 },
+          { metodo: "Efectivo", importe: 130000 }
+        ],
+        idempotencyKey: "f7-red-parcial"
+      },
+      adminUser
+    );
+    assert(vParcial.saldoAFavorAplicado === 70000, "Debe registrar $70.000 aplicados desde billetera");
+    assert(obtenerResumenBilleteraCliente(cli.id).saldoDisponible === 50000, "Debe quedar $50.000 disponibles");
+
+    // Compra de $50.000 usando el saldo completo restante ($50.000)
+    const vTotal = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ esTemporal: true, nombre: "Silicona y ajuste", cantidad: 1, precioUnitario: 50000 }],
+        pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 50000 }],
+        idempotencyKey: "f7-red-total"
+      },
+      adminUser
+    );
+    assert(vTotal.saldoAFavorAplicado === 50000, "Debe aplicar los $50.000 restantes");
+    assert(obtenerResumenBilleteraCliente(cli.id).saldoDisponible === 0, "Saldo de billetera debe quedar en $0");
+
+    // Arqueo: solo entró $130.000 en efectivo + $100.000 base = $230.000 (jamás los $120.000 de billetera)
+    const arqueo = calcularArqueoCaja(getDocById(COLLECTIONS.CAJAS, caja.id));
+    assert(arqueo.efectivoEsperado === 230000, `Efectivo esperado debe ser $230.000, obtenido ${arqueo.efectivoEsperado}`);
+
+    // Contabilidad: redenciones no deben sumarse como ingresos nuevos
+    const resumenCont = calcularResumenContable();
+    assert(resumenCont.saldoAFavorGenerado === 120000 && resumenCont.saldoAFavorRedimido === 120000, "Contabilidad debe conciliar generación y redención");
+    assert(resumenCont.ingresos === 250000, `Ingresos monetarios esperados $250.000 ($120k + $130k), obtenido ${resumenCont.ingresos}`);
+  });
+
+  // 75. Fase 7: Billetera — Validaciones de exceso, Consumidor Final y otro cliente
+  await step(75, "Fase 7 — Billetera: impedir exceso sobre disponible, Consumidor Final y uso de saldo ajeno", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const cliA = await crearCliente({ nombre: "Cliente A F7", documento: "300333444" }, adminUser);
+    const cliB = await crearCliente({ nombre: "Cliente B F7", documento: "400444555" }, adminUser);
+
+    const vA = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cliA.id,
+        items: [{ lineId: generarLineId(), esTemporal: true, nombre: "Espejo A", cantidad: 1, precioUnitario: 80000 }],
+        pagos: [{ metodo: "Efectivo", importe: 80000 }]
+      },
+      adminUser
+    );
+    await registrarDevolucionVenta(
+      {
+        ventaId: vA.id,
+        itemsDevueltos: [{ lineId: vA.items[0].lineId, cantidad: 1 }],
+        motivo: "Saldo para A",
+        tipoReembolso: "Saldo a favor"
+      },
+      adminUser
+    );
+
+    // Usar más saldo del disponible
+    await assertThrows(
+      () =>
+        registrarVenta(
+          {
+            cajaId: caja.id,
+            clienteId: cliA.id,
+            items: [{ esTemporal: true, nombre: "Compra mayor", cantidad: 1, precioUnitario: 100000 }],
+            pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 90000 }, { metodo: "Efectivo", importe: 10000 }]
+          },
+          adminUser
+        ),
+      "insuficiente"
+    );
+
+    // Consumidor Final
+    await assertThrows(
+      () =>
+        registrarVenta(
+          {
+            cajaId: caja.id,
+            items: [{ esTemporal: true, nombre: "Compra CF", cantidad: 1, precioUnitario: 50000 }],
+            pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 50000 }]
+          },
+          adminUser
+        ),
+      "Consumidor Final"
+    );
+
+    // Cliente B no tiene saldo aunque Cliente A tenga $80.000
+    await assertThrows(
+      () =>
+        registrarVenta(
+          {
+            cajaId: caja.id,
+            clienteId: cliB.id,
+            items: [{ esTemporal: true, nombre: "Compra B", cantidad: 1, precioUnitario: 50000 }],
+            pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 50000 }]
+          },
+          adminUser
+        ),
+      "insuficiente"
+    );
+    assert(obtenerResumenBilleteraCliente(cliA.id).saldoDisponible === 80000, "Saldo de Cliente A debe seguir intacto");
+  });
+
+  // 76. Fase 7: Billetera — Concurrencia simultánea ($80k + $80k sobre $100k) e idempotencia en reintentos
+  await step(76, "Fase 7 — Billetera: concurrencia simultánea sin saldo negativo e idempotencia en devolución y venta", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const cli = await crearCliente({ nombre: "Concurrencia F7", documento: "500555666" }, adminUser);
+
+    const vBase = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ lineId: generarLineId(), esTemporal: true, nombre: "Lámina F7", cantidad: 2, precioUnitario: 50000 }],
+        pagos: [{ metodo: "Transferencia", importe: 100000 }]
+      },
+      adminUser
+    );
+
+    // Reintento de devolución con misma idempotencyKey
+    await registrarDevolucionVenta(
+      {
+        ventaId: vBase.id,
+        itemsDevueltos: [{ lineId: vBase.items[0].lineId, cantidad: 2 }],
+        motivo: "Devolución total F7",
+        tipoReembolso: "Saldo a favor",
+        idempotencyKey: "f7-dev-idem"
+      },
+      adminUser
+    );
+    await assertThrows(
+      () =>
+        registrarDevolucionVenta(
+          {
+            ventaId: vBase.id,
+            itemsDevueltos: [{ lineId: vBase.items[0].lineId, cantidad: 2 }],
+            motivo: "Reintento",
+            tipoReembolso: "Saldo a favor",
+            idempotencyKey: "f7-dev-idem"
+          },
+          adminUser
+        ),
+      "ya fue"
+    );
+    assert(obtenerResumenBilleteraCliente(cli.id).saldoDisponible === 100000, "Reintento de devolución no debe duplicar saldo");
+
+    // Dos dispositivos intentan gastar $80.000 simultáneamente de $100.000 disponibles
+    const [c1, c2] = await Promise.allSettled([
+      registrarVenta(
+        {
+          cajaId: caja.id,
+          clienteId: cli.id,
+          items: [{ esTemporal: true, nombre: "Compra Disp 1", cantidad: 1, precioUnitario: 80000 }],
+          pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 80000 }],
+          idempotencyKey: "f7-race-1"
+        },
+        adminUser
+      ),
+      registrarVenta(
+        {
+          cajaId: caja.id,
+          clienteId: cli.id,
+          items: [{ esTemporal: true, nombre: "Compra Disp 2", cantidad: 1, precioUnitario: 80000 }],
+          pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 80000 }],
+          idempotencyKey: "f7-race-2"
+        },
+        adminUser
+      )
+    ]);
+    assert([c1, c2].filter((r) => r.status === "fulfilled").length === 1, "Solo 1 compra concurrente puede consumir los $80.000");
+    assert(obtenerResumenBilleteraCliente(cli.id).saldoDisponible === 20000, "Saldo restante debe ser $20.000 (jamás negativo)");
+
+    // Reintento de venta con misma idempotencyKey no descuenta dos veces
+    const claveGanadora = c1.status === "fulfilled" ? "f7-race-1" : "f7-race-2";
+    await assertThrows(
+      () =>
+        registrarVenta(
+          {
+            cajaId: caja.id,
+            clienteId: cli.id,
+            items: [{ esTemporal: true, nombre: "Reintento", cantidad: 1, precioUnitario: 20000 }],
+            pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 20000 }],
+            idempotencyKey: claveGanadora
+          },
+          adminUser
+        ),
+      "ya fue"
+    );
+    assert(obtenerResumenBilleteraCliente(cli.id).saldoDisponible === 20000, "Reintento idempotente no debe descontar saldo");
+  });
+
+  // 77. Fase 7: Billetera — Anulación de venta que utilizó saldo a favor (restitución única)
+  await step(77, "Fase 7 — Billetera: anular venta con saldo a favor restituye exactamente una vez al cliente", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const cli = await crearCliente({ nombre: "Restitución F7", documento: "600666777" }, adminUser);
+
+    const vBase = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ lineId: generarLineId(), esTemporal: true, nombre: "Vidrio F7", cantidad: 1, precioUnitario: 90000 }],
+        pagos: [{ metodo: "Transferencia", importe: 90000 }]
+      },
+      adminUser
+    );
+    await registrarDevolucionVenta(
+      {
+        ventaId: vBase.id,
+        itemsDevueltos: [{ lineId: vBase.items[0].lineId, cantidad: 1 }],
+        motivo: "A billetera",
+        tipoReembolso: "Saldo a favor"
+      },
+      adminUser
+    );
+
+    const vUso = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ esTemporal: true, nombre: "Uso saldo", cantidad: 1, precioUnitario: 90000 }],
+        pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 90000 }]
+      },
+      adminUser
+    );
+    assert(obtenerResumenBilleteraCliente(cli.id).saldoDisponible === 0, "Saldo tras compra debe ser 0");
+
+    await anularVenta({ ventaId: vUso.id, motivo: "Anulación con restitución", reintegrarInventario: false }, adminUser);
+    const bilTrasAnul = obtenerResumenBilleteraCliente(cli.id);
+    assert(bilTrasAnul.saldoDisponible === 90000, `Saldo restituido debe ser $90.000, obtenido ${bilTrasAnul.saldoDisponible}`);
+    assert(
+      bilTrasAnul.movimientos.some((m) => m.tipo === "AJUSTE_COMPENSATORIO" && m.ventaId === vUso.id),
+      "Debe existir movimiento AJUSTE_COMPENSATORIO vinculado a la venta"
+    );
+
+    // Segunda anulación no debe restituir de nuevo
+    await assertThrows(() => anularVenta({ ventaId: vUso.id, motivo: "Doble anulación" }, adminUser), "Anulada");
+    assert(obtenerResumenBilleteraCliente(cli.id).saldoDisponible === 90000, "No debe duplicar restitución");
+  });
+
+  // 78. Fase 7: Billetera — Conciliación de reportes y desconexión offline
+  await step(78, "Fase 7 — Billetera: conciliación en reportes y protección ante desconexión offline", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const cli = await crearCliente({ nombre: "Reportes F7", documento: "700777888" }, adminUser);
+
+    const v1 = await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ lineId: generarLineId(), esTemporal: true, nombre: "Trabajo rep", cantidad: 1, precioUnitario: 100000 }],
+        pagos: [{ metodo: "Transferencia", importe: 100000 }]
+      },
+      adminUser
+    );
+    await registrarDevolucionVenta(
+      {
+        ventaId: v1.id,
+        itemsDevueltos: [{ lineId: v1.items[0].lineId, cantidad: 1 }],
+        motivo: "Saldo reporte",
+        tipoReembolso: "Saldo a favor"
+      },
+      adminUser
+    );
+    await registrarVenta(
+      {
+        cajaId: caja.id,
+        clienteId: cli.id,
+        items: [{ esTemporal: true, nombre: "Consumo parcial", cantidad: 1, precioUnitario: 40000 }],
+        pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 40000 }]
+      },
+      adminUser
+    );
+
+    const rep = generarReportesConsolidados();
+    assert(rep.resumenBilletera.saldoPendienteTotalClientes === 60000, "Reporte debe conciliar saldo pendiente $60.000");
+    assert(rep.resumenBilletera.totalGeneradoPeriodo === 100000, "Reporte debe conciliar total generado $100.000");
+    assert(rep.resumenBilletera.totalRedimidoPeriodo === 40000, "Reporte debe conciliar total redimido $40.000");
+    assert(rep.resumenBilletera.aplicacionesEnVentas.length === 1, "Debe listar 1 venta con saldo a favor aplicado");
+
+    // Desconexión offline no debe consumir ni alterar billetera
+    setSimulatedNetworkOffline(true);
+    try {
+      await assertThrows(
+        () =>
+          registrarVenta(
+            {
+              cajaId: caja.id,
+              clienteId: cli.id,
+              items: [{ esTemporal: true, nombre: "Offline F7", cantidad: 1, precioUnitario: 20000 }],
+              pagos: [{ metodo: METODO_SALDO_FAVOR, importe: 20000 }],
+              idempotencyKey: "f7-offline"
+            },
+            adminUser
+          ),
+        "error de red"
+      );
+    } finally {
+      setSimulatedNetworkOffline(false);
+    }
+    assert(obtenerResumenBilleteraCliente(cli.id).saldoDisponible === 60000, "Fallo offline no debe descontar saldo de billetera");
+  });
+
+  // 79. Descuento por línea de producto y descuento general en porcentaje (%)
+  await step(79, "Descuento por línea y descuento general porcentual con validación de permisos", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 50000 }, adminUser);
+    const prod = listarProductos().find((p) => p.unidad === "u" && p.stock >= 2);
+    assert(prod, "Debe existir producto por unidad");
+
+    // Empleado sin permiso ventas.descuento no debe poder aplicar descuento de línea
+    await assertThrows(
+      () =>
+        registrarVenta(
+          {
+            cajaId: caja.id,
+            items: [{ productoId: prod.id, cantidad: 1, descuentoLinea: 1000 }],
+            pagos: [{ metodo: "Efectivo", importe: Math.max(0, prod.precio - 1000) }],
+            idempotencyKey: "t79-sin-perm"
+          },
+          empleadoUser
+        ),
+      "permiso"
+    );
+
+    const subtotalEsperado = prod.precio * 2 - 2000;
+    const totalEsperado = Math.round(subtotalEsperado * 0.9);
+    const venta = await registrarVenta(
+      {
+        cajaId: caja.id,
+        items: [{ productoId: prod.id, cantidad: 2, descuentoLinea: 2000 }],
+        descuentoPorcentaje: 10,
+        pagos: [{ metodo: "Efectivo", importe: totalEsperado }],
+        idempotencyKey: "t79-ok"
+      },
+      adminUser
+    );
+    assert(venta.items[0].descuentoLinea === 2000, "Debe persistir descuentoLinea");
+    assert(venta.subtotal === subtotalEsperado, "Subtotal debe reflejar descuento de línea");
+    assert(venta.total === totalEsperado, "Total debe aplicar 10% de descuento general");
+  });
+
+  // 80. Unidades ampliadas (kg decimal, lámina entera) e indicador es_temporal
+  await step(80, "Unidades ampliadas (kg decimal, lámina) e indicador explícito es_temporal", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 50000 }, adminUser);
+    const prodKg = await crearProducto(
+      { nombre: "Masilla epóxica", codigo: "INS-KG-1", categoria: "Insumos", unidad: "kg", precio: 20000, stock: 5 },
+      adminUser
+    );
+    const prodLam = await crearProducto(
+      { nombre: "Lámina policarbonato", codigo: "LAM-1", categoria: "Vidrios", unidad: "lámina", precio: 90000, stock: 4 },
+      adminUser
+    );
+
+    const venta = await registrarVenta(
+      {
+        cajaId: caja.id,
+        items: [
+          { productoId: prodKg.id, cantidad: 1.5 },
+          { productoId: prodLam.id, cantidad: 1 },
+          { esTemporal: true, nombre: "Instalación especial", cantidad: 1, precioUnitario: 30000 }
+        ],
+        pagos: [{ metodo: "Efectivo", importe: 150000 }],
+        idempotencyKey: "t80-unidades"
+      },
+      adminUser
+    );
+    assert(venta.items[0].es_temporal === false, "Producto catálogo debe tener es_temporal=false");
+    assert(venta.items[2].es_temporal === true, "Concepto temporal debe tener es_temporal=true");
+    assert(getDocById(COLLECTIONS.PRODUCTOS, prodKg.id).stock === 3.5, "Stock en kg debe descontar decimal");
+  });
+
+  // 81. Pagos con Nequi y Daviplata sin mezclarse con efectivo físico en arqueo
+  await step(81, "Pagos con Nequi y Daviplata separados del efectivo físico en arqueo", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const venta = await registrarVenta(
+      {
+        cajaId: caja.id,
+        items: [{ esTemporal: true, nombre: "Servicio vidrio", cantidad: 1, precioUnitario: 120000 }],
+        pagos: [
+          { metodo: "Nequi", importe: 70000, referencia: "NQ-101" },
+          { metodo: "Daviplata", importe: 50000, referencia: "DP-202" }
+        ],
+        idempotencyKey: "t81-digital"
+      },
+      adminUser
+    );
+    assert(venta.total === 120000, "Total venta digital debe ser 120.000");
+    const arqueo = calcularArqueoCaja(caja);
+    assert(arqueo.efectivoEsperado === 100000, "Nequi/Daviplata no deben sumarse al efectivo esperado");
+    assert(arqueo.pagosPorMetodo.Nequi === 70000, "Arqueo debe totalizar Nequi");
+    assert(arqueo.pagosPorMetodo.Daviplata === 50000, "Arqueo debe totalizar Daviplata");
+  });
+
+  // 82. Conversión posterior de concepto temporal a producto permanente sin alterar venta histórica
+  await step(82, "Conversión de concepto temporal a producto permanente sin alterar ventas históricas", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 50000 }, adminUser);
+    const venta = await registrarVenta(
+      {
+        cajaId: caja.id,
+        items: [{ esTemporal: true, nombre: "Perfil especial Z", cantidad: 2, precioUnitario: 25000, unidad: "m" }],
+        pagos: [{ metodo: "Efectivo", importe: 50000 }],
+        idempotencyKey: "t82-conv"
+      },
+      adminUser
+    );
+
+    const nuevoProd = await convertirConceptoTemporalAProducto(
+      {
+        nombre: "Perfil especial Z",
+        codigo: "PERF-Z-01",
+        categoria: "Perfiles",
+        unidad: "m",
+        precio: 28000,
+        stock: 10
+      },
+      adminUser
+    );
+    assert(nuevoProd.codigo === "PERF-Z-01", "Debe crear producto permanente en catálogo");
+    const ventaHistorica = getDocById(COLLECTIONS.VENTAS, venta.id);
+    assert(ventaHistorica.items[0].esTemporal === true, "Venta histórica debe conservar esTemporal");
+    assert(ventaHistorica.items[0].precioUnitario === 25000, "Venta histórica no debe alterar su precio original");
   });
 
   return results.sort((a, b) => a.num - b.num);

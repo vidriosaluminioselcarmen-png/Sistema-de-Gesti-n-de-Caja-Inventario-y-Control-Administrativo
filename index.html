@@ -651,8 +651,25 @@
                     <option value="Transferencia">Transferencia (Nequi / Daviplata / Banco)</option>
                     <option value="Tarjeta débito">Tarjeta débito</option>
                     <option value="Tarjeta crédito">Tarjeta crédito</option>
+                    <option value="Saldo a favor" id="opt-metodo-saldo-favor" disabled>Saldo a favor (Billetera cliente)</option>
                     <option value="Mixto">Pago dividido (Mixto)</option>
                   </select>
+                </div>
+              </div>
+
+              <!-- Billetera de saldo a favor del cliente (visible solo si el cliente identificado tiene saldo disponible) -->
+              <div id="box-saldo-favor" class="hidden" style="margin-bottom:.75rem; padding:.65rem; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:var(--radius-sm)">
+                <div class="flex justify-between items-center" style="gap:.5rem; margin-bottom:.4rem; flex-wrap:wrap">
+                  <span style="font-size:.82rem; font-weight:600; color:#166534">Billetera · Saldo a favor disponible: <strong id="pos-billetera-disponible" class="num">$ 0</strong></span>
+                  <button type="button" class="btn btn-outline btn-xs" id="btn-usar-todo-saldo">Aplicar máximo</button>
+                </div>
+                <div class="field" style="margin-bottom:.35rem">
+                  <label class="label" for="pago-saldo-favor">Aplicar saldo a favor en esta venta (COP)</label>
+                  <input class="input num" id="pago-saldo-favor" type="number" min="0" step="1" value="0">
+                </div>
+                <div class="flex justify-between" style="font-size:.78rem; color:#166534; gap:.5rem; flex-wrap:wrap">
+                  <span>Otros medios de pago: <strong id="pos-billetera-otros" class="num">$ 0</strong></span>
+                  <span>Saldo restante de billetera: <strong id="pos-billetera-restante" class="num">$ 0</strong></span>
                 </div>
               </div>
 

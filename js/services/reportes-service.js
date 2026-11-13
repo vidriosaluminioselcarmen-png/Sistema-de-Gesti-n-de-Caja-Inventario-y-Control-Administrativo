@@ -45,6 +45,8 @@ export function generarReportesConsolidados(
   const movsInventario = datos?.movsInventario || getCollection(COLLECTIONS.MOV_INVENTARIO);
   const movsContables = datos?.movsContables || getCollection(COLLECTIONS.MOV_CONTABLES);
   const devoluciones = datos?.devoluciones || getCollection(COLLECTIONS.DEVOLUCIONES);
+  const clientes = datos?.clientes || getCollection(COLLECTIONS.CLIENTES);
+  const movimientosBilletera = datos?.movimientosBilletera || getCollection(COLLECTIONS.MOV_BILLETERA);
 
   const prodMap = new Map(productos.map((p) => [p.id, p]));
 
@@ -254,6 +256,7 @@ export function generarReportesConsolidados(
         : [{ metodo: v.metodoPago || "Efectivo", importeNeto: v.total }];
     for (const p of listaPagos) {
       const m = p.metodo || "Efectivo";
+      if (m === "Saldo a favor") continue;
       if (metodoPago !== "Todos" && m !== metodoPago) continue;
       const neto = roundCOP(
         p.importeNeto !== undefined
@@ -373,6 +376,62 @@ export function generarReportesConsolidados(
     cantidadAbonos: recaudosAbonosMovs.length
   };
 
+  // 13. Billetera de saldos a favor por cliente
+  const movsBilleteraPeriodo = movimientosBilletera
+    .filter((m) => {
+      if (!estaEnRangoFechas(m.fecha, { desde, hasta })) return false;
+      if (usuario !== "Todos" && String(m.usuario || "").toLowerCase() !== String(usuario).toLowerCase()) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+
+  const totalGeneradoPeriodo = movsBilleteraPeriodo
+    .filter((m) => m.tipo === "GENERACION")
+    .reduce((acc, m) => acc + roundCOP(m.monto), 0);
+  const totalRedimidoPeriodo = movsBilleteraPeriodo
+    .filter((m) => m.tipo === "REDENCION")
+    .reduce((acc, m) => acc + roundCOP(m.monto), 0);
+  const totalRestituidoPeriodo = movsBilleteraPeriodo
+    .filter((m) => m.tipo === "AJUSTE_COMPENSATORIO")
+    .reduce((acc, m) => acc + roundCOP(m.monto), 0);
+
+  const saldosPorCliente = clientes
+    .filter((c) => !c.esConsumidorFinal && c.id !== "cli-consumidor" && roundCOP(c.saldoAFavorDisponible || 0) > 0)
+    .map((c) => ({
+      clienteId: c.id,
+      nombre: c.nombre,
+      documento: c.documento,
+      saldoDisponible: roundCOP(c.saldoAFavorDisponible || 0),
+      totalGenerado: roundCOP(c.saldoAFavorGeneradoTotal || 0),
+      totalUtilizado: roundCOP(c.saldoAFavorUtilizadoTotal || 0),
+      ultimoMovimiento: c.ultimoMovimientoBilletera || null
+    }))
+    .sort((a, b) => b.saldoDisponible - a.saldoDisponible);
+
+  const saldoPendienteTotalClientes = saldosPorCliente.reduce((acc, c) => acc + c.saldoDisponible, 0);
+  const aplicacionesEnVentas = ventasEfectivas
+    .filter((v) => roundCOP(v.saldoAFavorAplicado || 0) > 0)
+    .map((v) => ({
+      ventaId: v.id,
+      numero: v.numero,
+      fecha: v.fecha,
+      cliente: v.cliente?.nombre || "Cliente",
+      montoAplicado: roundCOP(v.saldoAFavorAplicado || 0),
+      totalVenta: roundCOP(v.total)
+    }));
+
+  const resumenBilletera = {
+    saldoPendienteTotalClientes: roundCOP(saldoPendienteTotalClientes),
+    totalGeneradoPeriodo: roundCOP(totalGeneradoPeriodo),
+    totalRedimidoPeriodo: roundCOP(totalRedimidoPeriodo),
+    totalRestituidoPeriodo: roundCOP(totalRestituidoPeriodo),
+    saldosPorCliente,
+    movimientosBilletera: movsBilleteraPeriodo,
+    aplicacionesEnVentas
+  };
+
   return {
     kpis: {
       totalVentasPeriodo: roundCOP(totalVentasPeriodo),
@@ -399,7 +458,8 @@ export function generarReportesConsolidados(
     cierresDeCaja,
     diferenciasEfectivo,
     anulacionesYDevoluciones,
-    resumenCartera
+    resumenCartera,
+    resumenBilletera
   };
 }
 

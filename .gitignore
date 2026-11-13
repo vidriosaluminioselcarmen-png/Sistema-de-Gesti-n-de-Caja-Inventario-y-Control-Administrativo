@@ -1,1 +1,3 @@
 requisitos/
+node_modules/
+.firebase/

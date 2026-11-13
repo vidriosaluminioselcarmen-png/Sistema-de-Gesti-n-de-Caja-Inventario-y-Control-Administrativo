@@ -20,16 +20,22 @@ import {
   roundQty,
   roundCOP,
   validarCantidadPorUnidad,
-  calcularVidrioPersonalizado
+  calcularVidrioPersonalizado,
+  crearProducto
 } from "./inventario-service.js";
 import { TIPOS_CONTABLE } from "./contabilidad-service.js";
 
 export const METODOS_PAGO = [
   "Efectivo",
   "Transferencia",
+  "Nequi",
+  "Daviplata",
   "Tarjeta débito",
   "Tarjeta crédito"
 ];
+
+export const METODO_SALDO_FAVOR = "Saldo a favor";
+export const METODOS_PAGO_VENTA = [...METODOS_PAGO, METODO_SALDO_FAVOR];
 
 export const ESTADOS_CAJA = {
   ABIERTA: "Abierta",
@@ -222,47 +228,68 @@ export async function registrarMovimientoEfectivoCaja(
     throw new Error("El concepto del movimiento de caja es obligatorio.");
   }
 
-  return runAtomicTransaction(async (tx) => {
-    const caja = tx.get(COLLECTIONS.CAJAS, cajaId);
-    if (!caja || caja.estado !== ESTADOS_CAJA.ABIERTA) {
-      throw new Error("La caja ya está cerrada.");
+  if (!cajaId) {
+    throw new Error("Debe indicar una caja abierta para registrar el movimiento de efectivo.");
+  }
+
+  return runAtomicTransaction(
+    async (tx) => {
+      const caja = tx.get(COLLECTIONS.CAJAS, cajaId);
+      if (!caja || caja.estado !== ESTADOS_CAJA.ABIERTA) {
+        throw new Error("La caja ya está cerrada.");
+      }
+      const ahora = new Date().toISOString();
+      const mov = {
+        id: `mc-${Date.now()}`,
+        tipo,
+        monto: valor,
+        concepto: conc,
+        usuario: user.name || user.email,
+        fecha: ahora
+      };
+      const lista = Array.isArray(caja.movimientosEfectivoExtra) ? [...caja.movimientosEfectivoExtra, mov] : [mov];
+      tx.update(COLLECTIONS.CAJAS, caja.id, { movimientosEfectivoExtra: lista });
+
+      // Reflejar también en contabilidad interna manteniendo trazabilidad con caja
+      tx.insert(COLLECTIONS.MOV_CONTABLES, {
+        tipo: tipo === "Entrada" ? TIPOS_CONTABLE.INGRESO : TIPOS_CONTABLE.GASTO,
+        categoria: tipo === "Entrada" ? "Entrada de efectivo en caja" : "Salida de efectivo en caja",
+        concepto: conc,
+        monto: valor,
+        metodoPago: "Efectivo",
+        afectaCajaFisica: true,
+        cajaId: caja.id,
+        origen: "Movimiento de caja",
+        referenciaId: mov.id,
+        usuario: user.name || user.email,
+        fecha: ahora
+      });
+
+      return mov;
+    },
+    {
+      lockKey: `caja_mov_${cajaId}`,
+      readDocs: [{ collection: COLLECTIONS.CAJAS, id: cajaId }]
     }
-    const ahora = new Date().toISOString();
-    const mov = {
-      id: `mc-${Date.now()}`,
-      tipo,
-      monto: valor,
-      concepto: conc,
-      usuario: user.name || user.email,
-      fecha: ahora
-    };
-    const lista = Array.isArray(caja.movimientosEfectivoExtra) ? [...caja.movimientosEfectivoExtra, mov] : [mov];
-    tx.update(COLLECTIONS.CAJAS, caja.id, { movimientosEfectivoExtra: lista });
-
-    // Reflejar también en contabilidad interna manteniendo trazabilidad con caja
-    tx.insert(COLLECTIONS.MOV_CONTABLES, {
-      tipo: tipo === "Entrada" ? TIPOS_CONTABLE.INGRESO : TIPOS_CONTABLE.GASTO,
-      categoria: tipo === "Entrada" ? "Entrada de efectivo en caja" : "Salida de efectivo en caja",
-      concepto: conc,
-      monto: valor,
-      metodoPago: "Efectivo",
-      afectaCajaFisica: true,
-      cajaId: caja.id,
-      origen: "Movimiento de caja",
-      referenciaId: mov.id,
-      usuario: user.name || user.email,
-      fecha: ahora
-    });
-
-    return mov;
-  });
+  );
 }
 
 // ---------------------------------------------------------------------------
 // 2. CÁLCULOS DE LÍNEAS, SUBTOTAL, DESCUENTOS, IMPUESTOS Y TOTAL (Secciones 5 y 6)
 // ---------------------------------------------------------------------------
+function calcularDescuentoLinea(subtotalBruto, item = {}) {
+  const bruto = roundCOP(subtotalBruto);
+  const pct = Number(item.descuentoPorcentaje || 0);
+  const desc = pct > 0
+    ? roundCOP((bruto * pct) / 100)
+    : roundCOP(item.descuentoLinea || 0);
+  if (desc < 0) throw new Error("El descuento de línea no puede ser negativo.");
+  if (desc > bruto) throw new Error("El descuento de línea no puede superar el subtotal de la línea.");
+  return desc;
+}
+
 export function calcularLineaVenta(item) {
-  const esTemporal = Boolean(item.esTemporal);
+  const esTemporal = Boolean(item.esTemporal || item.es_temporal);
   const prodInv = !esTemporal && item.productoId ? getDocById(COLLECTIONS.PRODUCTOS, item.productoId) : null;
   const precioBase = item.precioUnitario ?? item.precio ?? item.dimensiones?.precioM2 ?? prodInv?.precio ?? 0;
   const lineId = String(item.lineId || "").trim() || generarLineId();
@@ -279,14 +306,18 @@ export function calcularLineaVenta(item) {
       costosAdicionales: item.costosAdicionales ?? d.costosAdicionales ?? 0,
       conceptoAdicional: item.conceptoAdicional ?? d.conceptoAdicional ?? ""
     });
+    const descuentoLinea = calcularDescuentoLinea(calc.precioFinalLinea, item);
     return {
       ...item,
       lineId,
+      esTemporal,
+      es_temporal: esTemporal,
       precioUnitario: calc.precioM2,
       cantidad: calc.areaTotal,
       precioMaterial: calc.precioMaterial,
       costosAdicionales: calc.costosAdicionales,
       conceptoAdicional: calc.conceptoAdicional,
+      descuentoLinea,
       dimensiones: {
         ancho: calc.ancho,
         largo: calc.largo,
@@ -297,7 +328,7 @@ export function calcularLineaVenta(item) {
         areaPorPieza: calc.areaPorPieza,
         areaTotal: calc.areaTotal
       },
-      subtotal: calc.precioFinalLinea
+      subtotal: roundCOP(calc.precioFinalLinea - descuentoLinea)
     };
   }
 
@@ -308,24 +339,31 @@ export function calcularLineaVenta(item) {
   if (!(precioUnitario >= 0)) throw new Error("El precio unitario no puede ser negativo.");
   if (costosAdicionales < 0) throw new Error("Los costos adicionales no pueden ser negativos.");
   const precioMaterial = roundCOP(precioUnitario * cantidad);
-  const subtotal = roundCOP(precioMaterial + costosAdicionales);
+  const subtotalBruto = roundCOP(precioMaterial + costosAdicionales);
+  const descuentoLinea = calcularDescuentoLinea(subtotalBruto, item);
+  const subtotal = roundCOP(subtotalBruto - descuentoLinea);
   return {
     ...item,
     lineId,
+    esTemporal,
+    es_temporal: esTemporal,
     precioUnitario,
     cantidad,
     precioMaterial,
     costosAdicionales,
+    descuentoLinea,
     subtotal
   };
 }
 
 // Fórmula general: Total = subtotal − descuentos + impuestos.
 // Si no se especifican descuentos o impuestos, subtotal === total.
-export function calcularTotalesVenta(items = [], { descuento = 0, impuesto = 0 } = {}) {
+export function calcularTotalesVenta(items = [], { descuento = 0, descuentoPorcentaje = 0, impuesto = 0 } = {}) {
   const lineas = items.map(calcularLineaVenta);
   const subtotal = lineas.reduce((acc, item) => acc + item.subtotal, 0);
-  const desc = roundCOP(descuento);
+  const pct = Number(descuentoPorcentaje || 0);
+  if (pct < 0 || pct > 100) throw new Error("El porcentaje de descuento debe estar entre 0 y 100.");
+  const desc = pct > 0 ? roundCOP((subtotal * pct) / 100) : roundCOP(descuento);
   const imp = roundCOP(impuesto);
 
   if (desc < 0) throw new Error("El descuento no puede ser negativo.");
@@ -342,26 +380,30 @@ export function calcularTotalesVenta(items = [], { descuento = 0, impuesto = 0 }
   };
 }
 
-// Calcula el cambio o faltante para un pago en efectivo o pagos divididos
-export function evaluarPagos({ total, pagos = [] }) {
+// Calcula el cambio o faltante para un pago en efectivo, saldo a favor o pagos divididos
+export function evaluarPagos({ total, pagos = [], permitirSaldoFavor = true }) {
   const totalVenta = roundCOP(total);
   if (!Array.isArray(pagos) || pagos.length === 0) {
     throw new Error("Debe seleccionar al menos un método de pago.");
   }
 
+  const metodosPermitidos = permitirSaldoFavor ? METODOS_PAGO_VENTA : METODOS_PAGO;
   let sumaEfectivoRecibido = 0;
   let sumaOtrosMetodos = 0;
+  let sumaSaldoFavor = 0;
 
   const pagosNormalizados = pagos.map((p) => {
     const metodo = p.metodo;
-    if (!METODOS_PAGO.includes(metodo)) {
+    if (!metodosPermitidos.includes(metodo)) {
       throw new Error(`Método de pago no válido: ${metodo}`);
     }
     const importe = roundCOP(p.importe ?? p.recibido ?? 0);
     if (!(importe > 0)) {
       throw new Error(`El importe del pago en ${metodo} debe ser mayor que cero.`);
     }
-    if (metodo !== "Efectivo") {
+    if (metodo === METODO_SALDO_FAVOR) {
+      sumaSaldoFavor += importe;
+    } else if (metodo !== "Efectivo") {
       sumaOtrosMetodos += importe;
     } else {
       sumaEfectivoRecibido += importe;
@@ -374,15 +416,15 @@ export function evaluarPagos({ total, pagos = [] }) {
     };
   });
 
-  if (sumaOtrosMetodos > totalVenta) {
-    throw new Error("La suma de pagos electrónicos no puede superar el total de la venta.");
+  if (sumaOtrosMetodos + sumaSaldoFavor > totalVenta) {
+    throw new Error("La suma de pagos electrónicos y saldo a favor no puede superar el total de la venta.");
   }
 
-  const totalRecibido = sumaEfectivoRecibido + sumaOtrosMetodos;
+  const totalRecibido = sumaEfectivoRecibido + sumaOtrosMetodos + sumaSaldoFavor;
   const faltante = Math.max(0, totalVenta - totalRecibido);
   const cambio = totalRecibido > totalVenta ? roundCOP(totalRecibido - totalVenta) : 0;
 
-  // Dinero neto en efectivo que entra y se queda en la caja física
+  // Dinero neto en efectivo que entra y se queda en la caja física (jamás incluye saldo a favor)
   const efectivoNetoCaja = Math.max(0, roundCOP(sumaEfectivoRecibido - cambio));
 
   return {
@@ -391,6 +433,7 @@ export function evaluarPagos({ total, pagos = [] }) {
     totalRecibido: roundCOP(totalRecibido),
     sumaEfectivoRecibido: roundCOP(sumaEfectivoRecibido),
     sumaOtrosMetodos: roundCOP(sumaOtrosMetodos),
+    sumaSaldoFavor: roundCOP(sumaSaldoFavor),
     efectivoNetoCaja,
     cambio,
     faltante,
@@ -410,10 +453,12 @@ export async function registrarVenta(
     valorRecibido,
     referenciaPago = "",
     descuento = 0,
+    descuentoPorcentaje = 0,
     impuesto = 0,
     clienteId = "cli-consumidor",
     ordenReferencia = "",
     anticipoPrevio = 0,
+    saldoAFavorAplicado = 0,
     esVentaCredito = false,
     idempotencyKey = null
   },
@@ -473,8 +518,9 @@ export async function registrarVenta(
         throw new Error("Agrega al menos un producto a la venta actual.");
       }
 
-      // Validar permiso de descuento si se aplica
-      if (Number(descuento) > 0) {
+      // Validar permiso de descuento si se aplica descuento general o de línea
+      const tieneDescLinea = items.some((i) => Number(i?.descuentoLinea || 0) > 0 || Number(i?.descuentoPorcentaje || 0) > 0);
+      if (Number(descuento) > 0 || Number(descuentoPorcentaje) > 0 || tieneDescLinea) {
         assertPermission("ventas.descuento", user);
       }
 
@@ -483,7 +529,7 @@ export async function registrarVenta(
       const acumuladoPorProducto = new Map();
 
       for (const item of items) {
-        if (item.esTemporal === true) {
+        if (item.esTemporal === true || item.es_temporal === true) {
           const nombreTemp = String(item.nombre || item.descripcion || "").trim();
           if (!nombreTemp) {
             throw new Error("La descripción o nombre del concepto temporal es obligatorio.");
@@ -502,12 +548,15 @@ export async function registrarVenta(
             throw new Error("Los costos adicionales no pueden ser negativos.");
           }
           const precioMaterialTemp = roundCOP(precioTemp * cantidadTemp);
-          const subtotalTemp = roundCOP(precioMaterialTemp + costosAdicTemp);
+          const subtotalBrutoTemp = roundCOP(precioMaterialTemp + costosAdicTemp);
+          const descuentoLineaTemp = calcularDescuentoLinea(subtotalBrutoTemp, item);
+          const subtotalTemp = roundCOP(subtotalBrutoTemp - descuentoLineaTemp);
 
           lineasValidadas.push({
             lineId: String(item.lineId || "").trim() || generarLineId(),
             productoId: null,
             esTemporal: true,
+            es_temporal: true,
             codigo: "",
             nombre: nombreTemp,
             descripcion: String(item.descripcion || nombreTemp).trim(),
@@ -523,6 +572,7 @@ export async function registrarVenta(
             precioMaterial: precioMaterialTemp,
             costosAdicionales: costosAdicTemp,
             conceptoAdicional: "",
+            descuentoLinea: descuentoLineaTemp,
             subtotal: subtotalTemp
           });
           continue;
@@ -598,10 +648,14 @@ export async function registrarVenta(
         }
         acumuladoPorProducto.set(prod.id, totalSolicitado);
 
+        const descuentoLinea = calcularDescuentoLinea(subtotalLinea, item);
+        const subtotalNetoLinea = roundCOP(subtotalLinea - descuentoLinea);
+
         lineasValidadas.push({
           lineId: String(item.lineId || "").trim() || generarLineId(),
           productoId: prod.id,
           esTemporal: false,
+          es_temporal: false,
           codigo: prod.codigo,
           nombre: prod.nombre,
           categoria: prod.categoria,
@@ -615,12 +669,13 @@ export async function registrarVenta(
           precioMaterial,
           costosAdicionales,
           conceptoAdicional,
-          subtotal: subtotalLinea
+          descuentoLinea,
+          subtotal: subtotalNetoLinea
         });
       }
 
       // 3. Recalcular subtotal, descuentos, impuestos y total en capa de negocio
-      const calculo = calcularTotalesVenta(lineasValidadas, { descuento, impuesto });
+      const calculo = calcularTotalesVenta(lineasValidadas, { descuento, descuentoPorcentaje, impuesto });
       if (!(calculo.total > 0)) {
         throw new Error("El total de la venta debe ser mayor que cero.");
       }
@@ -649,12 +704,19 @@ export async function registrarVenta(
 
       const montoExigibleEnCobro = roundCOP(calculo.total - anticipoReconocido);
 
-      // 4. Normalizar y validar pagos (pago único, pagos divididos o venta a crédito)
+      // 4. Normalizar y validar pagos (pago único, pagos divididos, saldo a favor o venta a crédito)
+      const saldoFavorSolicitado = Number(saldoAFavorAplicado || 0);
+      if (!Number.isFinite(saldoFavorSolicitado) || saldoFavorSolicitado < 0) {
+        throw new Error("El saldo a favor aplicado no puede ser negativo.");
+      }
+      const montoSaldoFavorParam = roundCOP(saldoFavorSolicitado);
+
       let evalPago = {
         pagos: [],
         totalRecibido: 0,
-        efectivoRecibido: 0,
-        otrosMetodos: 0,
+        sumaEfectivoRecibido: 0,
+        sumaOtrosMetodos: 0,
+        sumaSaldoFavor: 0,
         efectivoNetoCaja: 0,
         cambio: 0,
         faltante: 0,
@@ -662,37 +724,51 @@ export async function registrarVenta(
       };
       let saldoPendiente = 0;
 
-      if (esVentaCredito && (!Array.isArray(pagos) || pagos.length === 0) && !valorRecibido) {
+      const tienePagosExplicito = Array.isArray(pagos) && pagos.length > 0;
+      if (esVentaCredito && !tienePagosExplicito && !valorRecibido && montoSaldoFavorParam === 0) {
         // Venta 100% a crédito: no entra dinero en efectivo ni en bancos en este momento (Sección 7)
         saldoPendiente = montoExigibleEnCobro;
       } else if (montoExigibleEnCobro > 0) {
-        const listaPagos =
-          Array.isArray(pagos) && pagos.length > 0
-            ? pagos
+        let listaPagos = tienePagosExplicito
+          ? [...pagos]
+          : montoSaldoFavorParam > 0 && montoSaldoFavorParam >= montoExigibleEnCobro
+            ? []
             : [
                 {
                   metodo: metodoPago || "Efectivo",
                   importe:
                     (metodoPago || "Efectivo") === "Efectivo"
                       ? roundCOP(valorRecibido ?? 0)
-                      : montoExigibleEnCobro,
+                      : roundCOP(Math.max(0, montoExigibleEnCobro - montoSaldoFavorParam)),
                   referencia: referenciaPago
                 }
               ];
 
-        evalPago = evaluarPagos({ total: montoExigibleEnCobro, pagos: listaPagos });
-        if (!evalPago.completo) {
-          if (esVentaCredito) {
-            saldoPendiente = evalPago.faltante;
-          } else {
-            throw new Error(
-              `El valor recibido no cubre el total de la venta. Faltan $ ${evalPago.faltante.toLocaleString("es-CO")}.`
-            );
+        if (
+          montoSaldoFavorParam > 0 &&
+          !listaPagos.some((p) => p.metodo === METODO_SALDO_FAVOR)
+        ) {
+          listaPagos = [{ metodo: METODO_SALDO_FAVOR, importe: montoSaldoFavorParam }, ...listaPagos];
+        }
+        listaPagos = listaPagos.filter((p) => roundCOP(p.importe ?? p.recibido ?? 0) > 0);
+
+        if (listaPagos.length === 0 && esVentaCredito) {
+          saldoPendiente = montoExigibleEnCobro;
+        } else {
+          evalPago = evaluarPagos({ total: montoExigibleEnCobro, pagos: listaPagos, permitirSaldoFavor: true });
+          if (!evalPago.completo) {
+            if (esVentaCredito) {
+              saldoPendiente = evalPago.faltante;
+            } else {
+              throw new Error(
+                `El valor recibido no cubre el total de la venta. Faltan $ ${evalPago.faltante.toLocaleString("es-CO")}.`
+              );
+            }
           }
         }
       }
 
-      // 5. Resolver cliente asociado (por defecto Consumidor Final) y validar reglas de crédito
+      // 5. Resolver cliente asociado (por defecto Consumidor Final) y validar reglas de crédito y billetera
       const cliente =
         tx.get(COLLECTIONS.CLIENTES, clienteId) || {
           id: "cli-consumidor",
@@ -700,6 +776,20 @@ export async function registrarVenta(
           documento: "222222222222",
           esConsumidorFinal: true
         };
+
+      if (evalPago.sumaSaldoFavor > 0) {
+        if (!clienteId || clienteId === "cli-consumidor" || cliente.esConsumidorFinal) {
+          throw new Error(
+            "El uso de saldo a favor requiere un cliente identificado (no se permite para Consumidor Final)."
+          );
+        }
+        const disponibleBilletera = roundCOP(cliente.saldoAFavorDisponible ?? 0);
+        if (evalPago.sumaSaldoFavor > disponibleBilletera) {
+          throw new Error(
+            `Saldo a favor insuficiente para ${cliente.nombre} (disponible: $ ${disponibleBilletera.toLocaleString("es-CO")}).`
+          );
+        }
+      }
 
       if (esVentaCredito || saldoPendiente > 0) {
         assertPermission("ventas.credito", user);
@@ -780,6 +870,7 @@ export async function registrarVenta(
         impuesto: calculo.impuesto,
         total: calculo.total,
         anticipoAplicado: anticipoReconocido,
+        saldoAFavorAplicado: evalPago.sumaSaldoFavor || 0,
         importePagado: roundCOP(anticipoReconocido + importePagadoEnTurno),
         saldoPendiente,
         metodoPago: metodoResumen,
@@ -814,6 +905,49 @@ export async function registrarVenta(
         }
       }
 
+      // Si se utilizó Saldo a favor del cliente, descontar de su billetera y registrar movimiento inmutable
+      if (evalPago.sumaSaldoFavor > 0) {
+        const saldoAnterior = roundCOP(cliente.saldoAFavorDisponible ?? 0);
+        const saldoPosterior = roundCOP(saldoAnterior - evalPago.sumaSaldoFavor);
+        const movBil = tx.insert(COLLECTIONS.MOV_BILLETERA, {
+          ...(opDocId ? { id: `mb-red-${opDocId}` } : {}),
+          clienteId: cliente.id,
+          clienteNombre: cliente.nombre,
+          tipo: "REDENCION",
+          monto: evalPago.sumaSaldoFavor,
+          saldoAnterior,
+          saldoPosterior,
+          ventaId: ventaDoc.id,
+          numeroVenta,
+          devolucionId: null,
+          usuarioId: user.uid || user.email,
+          usuario: user.name || user.email,
+          fecha: ahora,
+          idempotencyKey: idempotencyKey || null,
+          observaciones: `Aplicación de saldo a favor en venta ${numeroVenta}`
+        });
+
+        tx.update(COLLECTIONS.CLIENTES, cliente.id, {
+          saldoAFavorDisponible: saldoPosterior,
+          saldoAFavorUtilizadoTotal: roundCOP((cliente.saldoAFavorUtilizadoTotal || 0) + evalPago.sumaSaldoFavor),
+          ultimoMovimientoBilletera: ahora,
+          ultimoMovimientoBilleteraId: movBil.id
+        });
+
+        tx.insert(COLLECTIONS.AUDITORIA, {
+          ...(opDocId ? { id: `aud-bil-${opDocId}` } : {}),
+          accion: "BILLETERA_REDENCION",
+          clienteId: cliente.id,
+          ventaId: ventaDoc.id,
+          numeroVenta,
+          monto: evalPago.sumaSaldoFavor,
+          saldoAnterior,
+          saldoPosterior,
+          usuario: user.name || user.email,
+          fecha: ahora
+        });
+      }
+
       // 8. Registrar en Contabilidad Básica únicamente los pagos efectivamente recibidos en este cobro,
       // desglosando cada método cuando hay pagos divididos y sin duplicar anticipos ni ventas a crédito (Sección 7).
       for (let idxPago = 0; idxPago < evalPago.pagos.length; idxPago++) {
@@ -821,20 +955,24 @@ export async function registrarVenta(
         const montoPagoNeto = roundCOP(pago.importeNeto ?? pago.importe ?? 0);
         if (montoPagoNeto <= 0) continue;
 
+        const esSaldoFavor = pago.metodo === METODO_SALDO_FAVOR;
         tx.insert(COLLECTIONS.MOV_CONTABLES, {
           ...(opDocId ? { id: `mc-${opDocId}-${idxPago + 1}` } : {}),
-          tipo: TIPOS_CONTABLE.INGRESO,
-          categoria: "Ventas de mostrador",
-          concepto: `Venta ${numeroVenta} · ${cliente.nombre}${evalPago.pagos.length > 1 ? ` (${pago.metodo})` : ""}`,
+          tipo: esSaldoFavor ? TIPOS_CONTABLE.BILLETERA_REDENCION : TIPOS_CONTABLE.INGRESO,
+          categoria: esSaldoFavor ? "Redención de saldo a favor" : "Ventas de mostrador",
+          concepto: esSaldoFavor
+            ? `Aplicación saldo a favor ${numeroVenta} · ${cliente.nombre}`
+            : `Venta ${numeroVenta} · ${cliente.nombre}${evalPago.pagos.length > 1 ? ` (${pago.metodo})` : ""}`,
           monto: montoPagoNeto,
           valor: montoPagoNeto,
           metodoPago: pago.metodo,
           afectaCajaFisica: pago.metodo === "Efectivo",
           cajaId: pago.metodo === "Efectivo" ? caja.id : null,
-          origen: "Venta POS",
+          origen: esSaldoFavor ? "Billetera cliente" : "Venta POS",
           referenciaId: ventaDoc.id,
           referencia: pago.referencia || numeroVenta,
           numeroVenta,
+          clienteId: cliente.id,
           clienteRelacionado: cliente.nombre,
           pedidoRelacionado: ordenRefLimpia,
           estado: "Confirmado",
@@ -1046,6 +1184,68 @@ export async function anularVenta(
       fecha: ahora
     });
 
+    // Si la venta utilizó Saldo a favor del cliente, restituirlo una sola vez mediante ajuste compensatorio
+    const montoSaldoFavorUsado = roundCOP(
+      venta.saldoAFavorAplicado ??
+        (Array.isArray(venta.pagos)
+          ? venta.pagos
+              .filter((p) => p.metodo === METODO_SALDO_FAVOR)
+              .reduce((acc, p) => acc + roundCOP(p.importe), 0)
+          : 0)
+    );
+    if (
+      montoSaldoFavorUsado > 0 &&
+      venta.cliente?.id &&
+      venta.cliente.id !== "cli-consumidor" &&
+      !tx.get(COLLECTIONS.MOV_BILLETERA, `mb-rev-${venta.id}`)
+    ) {
+      const cliBilletera = tx.get(COLLECTIONS.CLIENTES, venta.cliente.id);
+      if (cliBilletera) {
+        const saldoAnt = roundCOP(cliBilletera.saldoAFavorDisponible ?? 0);
+        const saldoPost = roundCOP(saldoAnt + montoSaldoFavorUsado);
+        const movBilRev = tx.insert(COLLECTIONS.MOV_BILLETERA, {
+          id: `mb-rev-${venta.id}`,
+          clienteId: cliBilletera.id,
+          clienteNombre: cliBilletera.nombre,
+          tipo: "AJUSTE_COMPENSATORIO",
+          monto: montoSaldoFavorUsado,
+          saldoAnterior: saldoAnt,
+          saldoPosterior: saldoPost,
+          ventaId: venta.id,
+          numeroVenta: venta.numero,
+          devolucionId: null,
+          usuarioId: user.uid || user.email,
+          usuario: user.name || user.email,
+          fecha: ahora,
+          idempotencyKey: `rev-anulacion-${venta.id}`,
+          observaciones: `Restitución de saldo a favor por anulación de venta ${venta.numero}: ${motivoLimpio}`
+        });
+
+        tx.update(COLLECTIONS.CLIENTES, cliBilletera.id, {
+          saldoAFavorDisponible: saldoPost,
+          saldoAFavorUtilizadoTotal: Math.max(
+            0,
+            roundCOP((cliBilletera.saldoAFavorUtilizadoTotal || 0) - montoSaldoFavorUsado)
+          ),
+          ultimoMovimientoBilletera: ahora,
+          ultimoMovimientoBilleteraId: movBilRev.id
+        });
+
+        tx.insert(COLLECTIONS.AUDITORIA, {
+          id: `aud-bil-rev-${venta.id}`,
+          accion: "BILLETERA_RESTITUCION",
+          clienteId: cliBilletera.id,
+          ventaId: venta.id,
+          numeroVenta: venta.numero,
+          monto: montoSaldoFavorUsado,
+          saldoAnterior: saldoAnt,
+          saldoPosterior: saldoPost,
+          usuario: user.name || user.email,
+          fecha: ahora
+        });
+      }
+    }
+
     tx.insert(COLLECTIONS.AUDITORIA, {
       accion: "VENTA_ANULADA",
       ventaId: venta.id,
@@ -1062,13 +1262,17 @@ export async function anularVenta(
     lockKey: `anular_${ventaId}`,
     readDocs: [
       { collection: COLLECTIONS.VENTAS, id: ventaId },
-      { collection: COLLECTIONS.CONTROL, id: "caja_activa" }
+      { collection: COLLECTIONS.CONTROL, id: "caja_activa" },
+      { collection: COLLECTIONS.MOV_BILLETERA, id: `mb-rev-${ventaId}` }
     ],
     resolveReadDocs: (snapshot) => {
       const v = (snapshot[COLLECTIONS.VENTAS] || []).find((x) => x.id === ventaId);
       if (!v) return [];
       const refs = [];
       if (v.cajaId) refs.push({ collection: COLLECTIONS.CAJAS, id: v.cajaId });
+      if (v.cliente?.id && v.cliente.id !== "cli-consumidor") {
+        refs.push({ collection: COLLECTIONS.CLIENTES, id: v.cliente.id });
+      }
       for (const item of v.items || []) {
         if (item.esTemporal !== true && item.productoId) {
           refs.push({ collection: COLLECTIONS.PRODUCTOS, id: item.productoId });
@@ -1284,6 +1488,11 @@ export async function registrarDevolucionVenta(
           montoReembolsado = excedenteReembolsable;
           esReembolsoEfectivo = false;
         } else {
+          if (!venta.cliente?.id || venta.cliente.id === "cli-consumidor") {
+            throw new Error(
+              "No se puede generar saldo a favor para Consumidor Final; seleccione Efectivo o Transferencia."
+            );
+          }
           tipoReembolsoFinal = "Saldo a favor";
           saldoAFavorGenerado = excedenteReembolsable;
           montoReembolsado = 0;
@@ -1333,6 +1542,53 @@ export async function registrarDevolucionVenta(
         fecha: ahora
       });
 
+      if (saldoAFavorGenerado > 0 && venta.cliente?.id && venta.cliente.id !== "cli-consumidor") {
+        const cliBilletera = tx.get(COLLECTIONS.CLIENTES, venta.cliente.id);
+        if (!cliBilletera) {
+          throw new Error("El cliente asociado a la venta no existe para acreditar saldo a favor.");
+        }
+        const saldoAnt = roundCOP(cliBilletera.saldoAFavorDisponible ?? 0);
+        const saldoPost = roundCOP(saldoAnt + saldoAFavorGenerado);
+        const movBilGen = tx.insert(COLLECTIONS.MOV_BILLETERA, {
+          ...(opDocId ? { id: `mb-gen-${opDocId}` } : {}),
+          clienteId: cliBilletera.id,
+          clienteNombre: cliBilletera.nombre,
+          tipo: "GENERACION",
+          monto: saldoAFavorGenerado,
+          saldoAnterior: saldoAnt,
+          saldoPosterior: saldoPost,
+          devolucionId: devDoc.id,
+          ventaId: venta.id,
+          numeroVenta: venta.numero,
+          usuarioId: user.uid || user.email,
+          usuario: user.name || user.email,
+          fecha: ahora,
+          idempotencyKey: idempotencyKey || null,
+          observaciones: `Saldo a favor por devolución sobre ${venta.numero}: ${motivoLimpio}`
+        });
+
+        tx.update(COLLECTIONS.CLIENTES, cliBilletera.id, {
+          saldoAFavorDisponible: saldoPost,
+          saldoAFavorGeneradoTotal: roundCOP((cliBilletera.saldoAFavorGeneradoTotal || 0) + saldoAFavorGenerado),
+          ultimoMovimientoBilletera: ahora,
+          ultimoMovimientoBilleteraId: movBilGen.id
+        });
+
+        tx.insert(COLLECTIONS.AUDITORIA, {
+          ...(opDocId ? { id: `aud-bil-gen-${opDocId}` } : {}),
+          accion: "BILLETERA_GENERACION",
+          clienteId: cliBilletera.id,
+          ventaId: venta.id,
+          devolucionId: devDoc.id,
+          numeroVenta: venta.numero,
+          monto: saldoAFavorGenerado,
+          saldoAnterior: saldoAnt,
+          saldoPosterior: saldoPost,
+          usuario: user.name || user.email,
+          fecha: ahora
+        });
+      }
+
       tx.insert(COLLECTIONS.MOV_CONTABLES, {
         ...(opDocId ? { id: `mc-${opDocId}` } : {}),
         tipo: TIPOS_CONTABLE.DEVOLUCION,
@@ -1347,7 +1603,9 @@ export async function registrarDevolucionVenta(
           ? "Efectivo"
           : tipoReembolsoFinal === "Transferencia"
             ? "Transferencia"
-            : "Ajuste / Nota crédito",
+            : tipoReembolsoFinal === "Saldo a favor"
+              ? "Saldo a favor"
+              : "Ajuste / Nota crédito",
         afectaCajaFisica: esReembolsoEfectivo,
         cajaId: esReembolsoEfectivo && cajaAbierta ? cajaAbierta.id : null,
         origen: "Devolución POS",
@@ -1392,7 +1650,13 @@ export async function registrarDevolucionVenta(
     },
     {
       lockKey: `devolucion_${ventaId}`,
-      readDocs: readDocsDev
+      readDocs: readDocsDev,
+      resolveReadDocs: (snapshot) => {
+        const v = (snapshot[COLLECTIONS.VENTAS] || []).find((x) => x.id === ventaId);
+        return v?.cliente?.id && v.cliente.id !== "cli-consumidor"
+          ? [{ collection: COLLECTIONS.CLIENTES, id: v.cliente.id }]
+          : [];
+      }
     }
   );
   } catch (err) {
@@ -1416,6 +1680,8 @@ export function calcularArqueoCaja(caja, ventasAll = getCollection(COLLECTIONS.V
   const porMetodo = {
     Efectivo: 0,
     Transferencia: 0,
+    Nequi: 0,
+    Daviplata: 0,
     "Tarjeta débito": 0,
     "Tarjeta crédito": 0
   };
@@ -1429,6 +1695,7 @@ export function calcularArqueoCaja(caja, ventasAll = getCollection(COLLECTIONS.V
     if (Array.isArray(v.pagos)) {
       for (const p of v.pagos) {
         if (p.tipoPago === "Abono") continue;
+        if (p.metodo === METODO_SALDO_FAVOR) continue;
         if (p.metodo === "Efectivo") {
           sumaEfectivoRecibidoVenta += roundCOP(p.importe);
         } else {
@@ -1484,10 +1751,13 @@ export function calcularArqueoCaja(caja, ventasAll = getCollection(COLLECTIONS.V
       v.cajaId !== caja.id &&
       v.anulacion?.cajaAjusteId === caja.id
   );
-  const salidasPorAnulaciones = anulacionesExternasEnEstaCaja.reduce(
-    (acc, v) => acc + roundCOP(v.efectivoNetoCaja || 0),
-    0
-  );
+  const salidasPorAnulaciones = anulacionesExternasEnEstaCaja.reduce((acc, v) => {
+    const yaReembolsadoEnEstaCaja = devsTurno
+      .filter((d) => d.ventaId === v.id)
+      .reduce((s, d) => s + roundCOP(d.montoReembolsado ?? d.totalDevuelto), 0);
+    const netoRestante = Math.max(0, roundCOP(v.efectivoNetoCaja || 0) - yaReembolsadoEnEstaCaja);
+    return acc + netoRestante;
+  }, 0);
 
   const montoInicial = roundCOP(caja.montoInicial);
   const totalEntradasEfectivo = roundCOP(entradasEfectivoVentas + entradasEfectivoAbonos + entradasEfectivoManual);
@@ -1865,6 +2135,7 @@ export function generarDatosComprobante(venta, devolucionesVenta = null) {
     impuesto: venta.impuesto || 0,
     total: venta.total,
     anticipoAplicado,
+    saldoAFavorAplicado: roundCOP(venta.saldoAFavorAplicado || 0),
     importePagado,
     pagos: venta.pagos || [{ metodo: venta.metodoPago, importe: venta.valorRecibido }],
     valorRecibido: venta.valorRecibido,
@@ -1873,5 +2144,27 @@ export function generarDatosComprobante(venta, devolucionesVenta = null) {
     devoluciones: devs,
     totalDevueltoAcumulado
   };
+}
+
+// Convierte un concepto temporal histórico en un producto permanente del catálogo sin alterar ventas pasadas.
+export async function convertirConceptoTemporalAProducto(datos, user = getCurrentUser()) {
+  if (!datos || !String(datos.nombre || "").trim()) {
+    throw new Error("El nombre del producto es obligatorio para convertir el concepto.");
+  }
+  return crearProducto(
+    {
+      nombre: datos.nombre,
+      descripcion: datos.descripcion || "",
+      codigo: datos.codigo || "",
+      categoria: datos.categoria || "Insumos",
+      unidad: datos.unidad ?? "",
+      precioCompra: datos.precioCompra ?? 0,
+      precio: datos.precio,
+      stock: datos.stock ?? 0,
+      stockMinimo: datos.stockMinimo ?? 0,
+      permiteDecimal: Boolean(datos.permiteDecimal)
+    },
+    user
+  );
 }
 

@@ -3,10 +3,82 @@
 import {
   COLLECTIONS,
   getCollection,
+  getDocById,
   subscribeCollection,
   runAtomicTransaction
 } from "./store.js";
 import { getCurrentUser, assertPermission } from "../auth.js";
+
+export function listarMovimientosBilletera() {
+  const list = getCollection(COLLECTIONS.MOV_BILLETERA);
+  return [...list].sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+}
+
+export function watchMovimientosBilletera(callback) {
+  return subscribeCollection(COLLECTIONS.MOV_BILLETERA, (items) => {
+    const sorted = [...items].sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+    callback(sorted);
+  });
+}
+
+export function obtenerResumenBilleteraCliente(
+  clienteId,
+  { clientes = null, movimientosBilletera = null } = {}
+) {
+  if (!clienteId || clienteId === "cli-consumidor") {
+    return {
+      clienteId: clienteId || "cli-consumidor",
+      saldoDisponible: 0,
+      totalGenerado: 0,
+      totalUtilizado: 0,
+      ultimoMovimiento: null,
+      movimientos: []
+    };
+  }
+  const cliente = Array.isArray(clientes)
+    ? clientes.find((c) => c.id === clienteId)
+    : getDocById(COLLECTIONS.CLIENTES, clienteId);
+  const movsAll = Array.isArray(movimientosBilletera)
+    ? movimientosBilletera
+    : listarMovimientosBilletera();
+  const movimientos = movsAll
+    .filter((m) => m.clienteId === clienteId)
+    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+
+  const saldoCalculado = movimientos.reduce((acc, m) => {
+    const monto = Math.max(0, Math.round(Number(m.monto) || 0));
+    if (m.tipo === "GENERACION" || m.tipo === "AJUSTE_COMPENSATORIO") return acc + monto;
+    if (m.tipo === "REDENCION") return Math.max(0, acc - monto);
+    return acc;
+  }, 0);
+
+  const totalGenerado = movimientos
+    .filter((m) => m.tipo === "GENERACION")
+    .reduce((acc, m) => acc + Math.max(0, Math.round(Number(m.monto) || 0)), 0);
+  const totalUtilizado = Math.max(
+    0,
+    movimientos
+      .filter((m) => m.tipo === "REDENCION")
+      .reduce((acc, m) => acc + Math.max(0, Math.round(Number(m.monto) || 0)), 0) -
+      movimientos
+        .filter((m) => m.tipo === "AJUSTE_COMPENSATORIO")
+        .reduce((acc, m) => acc + Math.max(0, Math.round(Number(m.monto) || 0)), 0)
+  );
+
+  const saldoDisponible =
+    cliente && cliente.saldoAFavorDisponible !== undefined && cliente.saldoAFavorDisponible !== null
+      ? Math.max(0, Math.round(Number(cliente.saldoAFavorDisponible) || 0))
+      : saldoCalculado;
+
+  return {
+    clienteId,
+    saldoDisponible,
+    totalGenerado: cliente?.saldoAFavorGeneradoTotal ?? totalGenerado,
+    totalUtilizado: cliente?.saldoAFavorUtilizadoTotal ?? totalUtilizado,
+    ultimoMovimiento: cliente?.ultimoMovimientoBilletera || movimientos[0]?.fecha || null,
+    movimientos
+  };
+}
 
 export function listarClientes() {
   return getCollection(COLLECTIONS.CLIENTES);
@@ -50,6 +122,11 @@ export async function crearCliente(
       tipoDocumento: String(tipoDocumento || "").trim(),
       telefono: String(telefono || "").trim(),
       esConsumidorFinal: false,
+      saldoAFavorDisponible: 0,
+      saldoAFavorGeneradoTotal: 0,
+      saldoAFavorUtilizadoTotal: 0,
+      ultimoMovimientoBilletera: null,
+      ultimoMovimientoBilleteraId: null,
       creadoPor: user.name || user.email,
       creadoEn: new Date().toISOString()
     });
@@ -109,6 +186,8 @@ export function obtenerHistorialCliente(
     if (saldo > 0) operacionesPendientes += 1;
   }
 
+  const billetera = obtenerResumenBilleteraCliente(clienteId);
+
   return {
     clienteId,
     ventas: ventasFiltradas,
@@ -116,7 +195,9 @@ export function obtenerHistorialCliente(
     totalPagado,
     saldoPendienteTotal,
     operacionesPendientes,
-    ultimoMovimiento
+    ultimoMovimiento,
+    saldoAFavorDisponible: billetera.saldoDisponible,
+    billetera
   };
 }
 

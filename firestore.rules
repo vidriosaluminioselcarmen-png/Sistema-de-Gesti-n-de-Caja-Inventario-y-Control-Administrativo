@@ -56,29 +56,67 @@ service cloud.firestore {
         && request.resource.data.precio >= 0
         && request.resource.data.stock >= 0
         && request.resource.data.stockMinimo >= 0
-        && (!('unidad' in request.resource.data) || request.resource.data.unidad in ['', 'u', 'm', 'm²']);
-      allow update: if (canManageInventory() || canManageCashAndSales())
+        && (!('unidad' in request.resource.data) || request.resource.data.unidad in ['', 'u', 'metro', 'm', 'm²', 'lámina', 'kg', 'L', 'caja', 'paquete', 'servicio']);
+      allow update: if (
+        canManageInventory() ||
+        (
+          canManageCashAndSales()
+          && request.resource.data.precio == resource.data.precio
+          && request.resource.data.nombre == resource.data.nombre
+          && request.resource.data.codigo == resource.data.codigo
+          && request.resource.data.stockMinimo == resource.data.stockMinimo
+        )
+      )
         && request.resource.data.precio >= 0
         && request.resource.data.stock >= 0
-        && (!('unidad' in request.resource.data) || request.resource.data.unidad in ['', 'u', 'm', 'm²']);
+        && (!('unidad' in request.resource.data) || request.resource.data.unidad in ['', 'u', 'metro', 'm', 'm²', 'lámina', 'kg', 'L', 'caja', 'paquete', 'servicio']);
       allow delete: if false;
     }
 
-    // Clientes
+    // Clientes: cualquier cambio a saldoAFavorDisponible exige crear atómicamente un movimiento nuevo en movimientos_billetera
     match /clientes/{clienteId} {
       allow read: if isActiveUser();
-      allow create, update: if canManageCashAndSales();
+      allow create: if canManageCashAndSales()
+        && (!('saldoAFavorDisponible' in request.resource.data) || request.resource.data.saldoAFavorDisponible == 0);
+      allow update: if canManageCashAndSales()
+        && (
+          !('saldoAFavorDisponible' in request.resource.data)
+          || request.resource.data.saldoAFavorDisponible == (
+            'saldoAFavorDisponible' in resource.data ? resource.data.saldoAFavorDisponible : 0
+          )
+          || (
+            request.resource.data.saldoAFavorDisponible >= 0
+            && request.resource.data.ultimoMovimientoBilleteraId is string
+            && request.resource.data.ultimoMovimientoBilleteraId != (
+              'ultimoMovimientoBilleteraId' in resource.data ? resource.data.ultimoMovimientoBilleteraId : ''
+            )
+            && (
+              isAdmin()
+              || request.resource.data.saldoAFavorDisponible < (
+                'saldoAFavorDisponible' in resource.data ? resource.data.saldoAFavorDisponible : 0
+              )
+            )
+            && getAfter(/databases/$(database)/documents/movimientos_billetera/$(request.resource.data.ultimoMovimientoBilleteraId)).data.clienteId == clienteId
+            && getAfter(/databases/$(database)/documents/movimientos_billetera/$(request.resource.data.ultimoMovimientoBilleteraId)).data.saldoAnterior == (
+              'saldoAFavorDisponible' in resource.data ? resource.data.saldoAFavorDisponible : 0
+            )
+            && getAfter(/databases/$(database)/documents/movimientos_billetera/$(request.resource.data.ultimoMovimientoBilleteraId)).data.saldoPosterior == request.resource.data.saldoAFavorDisponible
+          )
+        );
       allow delete: if false;
     }
 
-    // Cajas: una caja cerrada jamás puede reabrirse ni modificarse silenciosamente
+    // Cajas: una caja cerrada jamás puede reabrirse ni alterarse su base/apertura
     match /cajas/{cajaId} {
       allow read: if isActiveUser();
       allow create: if canManageCashAndSales()
         && request.resource.data.estado == 'Abierta'
         && request.resource.data.montoInicial >= 0;
       allow update: if canManageCashAndSales()
-        && resource.data.estado == 'Abierta';
+        && resource.data.estado == 'Abierta'
+        && request.resource.data.montoInicial == resource.data.montoInicial
+        && request.resource.data.fechaApertura == resource.data.fechaApertura
+        && request.resource.data.usuarioApertura == resource.data.usuarioApertura;
       allow delete: if false;
     }
 
@@ -87,6 +125,7 @@ service cloud.firestore {
     match /ventas/{ventaId} {
       allow read: if isActiveUser();
       allow create: if canManageCashAndSales()
+        && request.resource.data.estado == 'Completada'
         && request.resource.data.total > 0
         && request.resource.data.items.size() > 0;
       allow update: if (
@@ -138,8 +177,18 @@ service cloud.firestore {
       allow read: if isActiveUser();
       allow create: if (canManageAccounting() || canManageCashAndSales())
         && (request.resource.data.monto > 0 || request.resource.data.valor > 0);
-      allow update: if isAdmin()
-        && request.resource.data.monto == resource.data.monto;
+      allow update: if (
+        isAdmin()
+        && request.resource.data.monto == resource.data.monto
+      ) || (
+        (canManageAccounting() || canManageCashAndSales())
+        && request.resource.data.monto == resource.data.monto
+        && request.resource.data.tipo == resource.data.tipo
+        && request.resource.data.categoria == resource.data.categoria
+        && request.resource.data.metodoPago == resource.data.metodoPago
+        && (!('aplicadoEnVentaId' in resource.data) || resource.data.aplicadoEnVentaId == null)
+        && request.resource.data.aplicadoEnVentaId is string
+      );
       allow delete: if false;
     }
 
@@ -184,6 +233,48 @@ service cloud.firestore {
       allow read: if isActiveUser();
       allow create: if isActiveUser()
         && !exists(/databases/$(database)/documents/operaciones/$(opId));
+      allow update, delete: if false;
+    }
+
+    // Movimientos inmutables de billetera de saldos a favor por cliente (validados atómicamente con getAfter)
+    match /movimientos_billetera/{movId} {
+      allow read: if isActiveUser();
+      allow create: if canManageCashAndSales()
+        && request.resource.data.clienteId is string
+        && request.resource.data.monto > 0
+        && request.resource.data.saldoAnterior >= 0
+        && request.resource.data.saldoPosterior >= 0
+        && request.resource.data.tipo in ['GENERACION', 'REDENCION', 'AJUSTE_COMPENSATORIO']
+        && (
+          request.resource.data.tipo != 'GENERACION'
+          || (
+            isAdmin()
+            && request.resource.data.devolucionId is string
+            && request.resource.data.saldoPosterior == request.resource.data.saldoAnterior + request.resource.data.monto
+            && getAfter(/databases/$(database)/documents/devoluciones/$(request.resource.data.devolucionId)).data.cliente.id == request.resource.data.clienteId
+            && getAfter(/databases/$(database)/documents/devoluciones/$(request.resource.data.devolucionId)).data.saldoAFavorGenerado == request.resource.data.monto
+          )
+        )
+        && (
+          request.resource.data.tipo != 'AJUSTE_COMPENSATORIO'
+          || (
+            isAdmin()
+            && request.resource.data.ventaId is string
+            && request.resource.data.saldoPosterior == request.resource.data.saldoAnterior + request.resource.data.monto
+            && getAfter(/databases/$(database)/documents/ventas/$(request.resource.data.ventaId)).data.estado == 'Anulada'
+            && getAfter(/databases/$(database)/documents/ventas/$(request.resource.data.ventaId)).data.cliente.id == request.resource.data.clienteId
+            && getAfter(/databases/$(database)/documents/ventas/$(request.resource.data.ventaId)).data.saldoAFavorAplicado == request.resource.data.monto
+          )
+        )
+        && (
+          request.resource.data.tipo != 'REDENCION'
+          || (
+            request.resource.data.ventaId is string
+            && request.resource.data.saldoPosterior == request.resource.data.saldoAnterior - request.resource.data.monto
+            && getAfter(/databases/$(database)/documents/ventas/$(request.resource.data.ventaId)).data.cliente.id == request.resource.data.clienteId
+            && getAfter(/databases/$(database)/documents/ventas/$(request.resource.data.ventaId)).data.saldoAFavorAplicado == request.resource.data.monto
+          )
+        );
       allow update, delete: if false;
     }
   }

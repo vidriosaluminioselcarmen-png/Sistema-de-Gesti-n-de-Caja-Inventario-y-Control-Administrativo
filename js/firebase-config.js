@@ -83,6 +83,28 @@ export function getEffectiveFirebaseConfig() {
   return manualConnectionOverride || firebaseConfig;
 }
 
+export function isDemoProject(projectId = getEffectiveFirebaseConfig()?.projectId) {
+  return typeof projectId === "string" && projectId.startsWith("demo-");
+}
+
+export function assertSafeEmulatorEnvironment(expectedProjectId = "demo-el-carmen") {
+  const cfg = getEffectiveFirebaseConfig();
+  if (!emulatorConfig.enabled) {
+    throw new Error("Aislamiento de pruebas: emulatorConfig.enabled debe ser true para ejecutar pruebas.");
+  }
+  if (!cfg?.projectId || cfg.projectId === "inventario-10d9e" || !isDemoProject(cfg.projectId)) {
+    throw new Error(
+      `Aislamiento de pruebas: projectId "${cfg?.projectId || ""}" no es un proyecto demo-* seguro (producción bloqueada).`
+    );
+  }
+  if (expectedProjectId && cfg.projectId !== expectedProjectId) {
+    throw new Error(
+      `Aislamiento de pruebas: se esperaba projectId "${expectedProjectId}", pero se recibió "${cfg.projectId}".`
+    );
+  }
+  return cfg.projectId;
+}
+
 export function isFirebaseConfigured() {
   const cfg = getEffectiveFirebaseConfig();
   return Boolean(
@@ -169,6 +191,9 @@ export async function getFirebaseClients() {
           import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
         ]);
         const cfg = getEffectiveFirebaseConfig();
+        if (emulatorConfig.enabled) {
+          assertSafeEmulatorEnvironment(null);
+        }
         const app = getApps().length ? getApp() : initializeApp(cfg);
         const auth = authMod.getAuth(app);
         const db = firestoreMod.getFirestore(app);

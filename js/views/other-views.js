@@ -1717,6 +1717,51 @@ export function mountReportesView(root) {
             .join("")
         : `<tr><td colspan="5" class="text-muted" style="text-align:center; padding:1.25rem">No hay anulaciones ni devoluciones en el período.</td></tr>`;
     }
+
+    // 12. Resumen de Billetera de Saldos a Favor por Cliente
+    const anchorCard = tbAnul?.closest(".card");
+    if (anchorCard && anchorCard.parentElement && rep.resumenBilletera) {
+      let cardBil = $("#rep-card-billetera");
+      if (!cardBil) {
+        cardBil = document.createElement("div");
+        cardBil.id = "rep-card-billetera";
+        cardBil.className = "card";
+        cardBil.style.marginTop = "1rem";
+        anchorCard.parentElement.appendChild(cardBil);
+      }
+      const rb = rep.resumenBilletera;
+      cardBil.innerHTML = `
+        <div class="card-header">
+          <h3 class="card-title">Billetera de saldos a favor por cliente</h3>
+          <span class="badge">${rb.saldosPorCliente.length} clientes con saldo</span>
+        </div>
+        <div class="grid-3" style="margin-bottom:.75rem; gap:.75rem">
+          <div class="card" style="padding:.75rem"><div class="text-muted" style="font-size:.78rem">Saldo pendiente total</div><div class="num" style="font-size:1.05rem; font-weight:700; color:#166534">${formatCOP(rb.saldoPendienteTotalClientes)}</div></div>
+          <div class="card" style="padding:.75rem"><div class="text-muted" style="font-size:.78rem">Generado en el período</div><div class="num" style="font-size:1.05rem; font-weight:700">${formatCOP(rb.totalGeneradoPeriodo)}</div></div>
+          <div class="card" style="padding:.75rem"><div class="text-muted" style="font-size:.78rem">Redimido en el período</div><div class="num" style="font-size:1.05rem; font-weight:700">${formatCOP(rb.totalRedimidoPeriodo)}</div></div>
+        </div>
+        ${
+          rb.saldosPorCliente.length === 0
+            ? `<div class="text-muted" style="font-size:.85rem">No hay clientes con saldo a favor disponible actualmente.</div>`
+            : `<div class="table-wrap"><table>
+                <thead><tr><th>Cliente</th><th>Documento</th><th class="num">Generado</th><th class="num">Utilizado</th><th class="num">Disponible</th></tr></thead>
+                <tbody>
+                  ${rb.saldosPorCliente
+                    .map(
+                      (c) => `<tr>
+                        <td><b>${escapeHtml(c.nombre)}</b></td>
+                        <td>${escapeHtml(c.documento || "")}</td>
+                        <td class="num">${formatCOP(c.totalGenerado)}</td>
+                        <td class="num">${formatCOP(c.totalUtilizado)}</td>
+                        <td class="num" style="color:#166534"><b>${formatCOP(c.saldoDisponible)}</b></td>
+                      </tr>`
+                    )
+                    .join("")}
+                </tbody>
+              </table></div>`
+        }
+      `;
+    }
   }
 
   $("#form-filtro-reportes")?.addEventListener("submit", (e) => {

@@ -22,7 +22,8 @@ export const TIPOS_CONTABLE = {
   GASTO: "Gasto",
   TRASLADO: "Traslado interno",
   REVERSION: "Reversión",
-  DEVOLUCION: "Devolución"
+  DEVOLUCION: "Devolución",
+  BILLETERA_REDENCION: "Aplicación saldo a favor"
 };
 
 export const CATEGORIAS_INGRESO = [
@@ -211,6 +212,8 @@ export function calcularResumenContable(
   let gastos = 0;
   let totalDevoluciones = 0;
   let totalReembolsos = 0;
+  let saldoAFavorGenerado = 0;
+  let saldoAFavorRedimido = 0;
   let gastosOperativos = 0;
   let comprasInventario = 0;
   let ingresosEfectivo = 0;
@@ -255,6 +258,7 @@ export function calcularResumenContable(
       const reembolsoReal = roundCOP(m.montoReembolsado ?? 0);
       totalDevoluciones += montoDev;
       totalReembolsos += reembolsoReal;
+      saldoAFavorGenerado += roundCOP(m.saldoAFavorGenerado ?? 0);
       if (reembolsoReal > 0) {
         ingresos = roundCOP(ingresos - reembolsoReal);
         if (esEfectivo || m.afectaCajaFisica) {
@@ -264,6 +268,12 @@ export function calcularResumenContable(
           movimientosBancariosCount++;
         }
       }
+      continue;
+    }
+
+    if (m.tipo === TIPOS_CONTABLE.BILLETERA_REDENCION || m.metodoPago === "Saldo a favor") {
+      // Redención de saldo a favor: aplica obligación existente sin crear ingreso de efectivo ni bancos
+      saldoAFavorRedimido += monto;
       continue;
     }
 
@@ -348,6 +358,8 @@ export function calcularResumenContable(
     countIngresos,
     countGastos,
     totalMovimientos: countIngresos + countGastos,
+    saldoAFavorGenerado: roundCOP(saldoAFavorGenerado),
+    saldoAFavorRedimido: roundCOP(saldoAFavorRedimido),
     ultimoIngreso,
     ultimoGasto
   };
@@ -769,8 +781,9 @@ export async function revertirMovimientoContable(
     throw new Error("Debes indicar un motivo válido para la reversión o ajuste contable.");
   }
 
-  return runAtomicTransaction(async (tx) => {
-    const mov = tx.get(COLLECTIONS.MOV_CONTABLES, movimientoId);
+  return runAtomicTransaction(
+    async (tx) => {
+      const mov = tx.get(COLLECTIONS.MOV_CONTABLES, movimientoId);
     if (!mov) {
       throw new Error("El movimiento contable no existe.");
     }
@@ -823,8 +836,17 @@ export async function revertirMovimientoContable(
       fecha: ahora
     });
 
-    return actualizado;
-  });
+      return actualizado;
+    },
+    {
+      lockKey: `rev_mc_${movimientoId}`,
+      readDocs: [{ collection: COLLECTIONS.MOV_CONTABLES, id: movimientoId }],
+      resolveReadDocs: (snapshot) => {
+        const m = (snapshot[COLLECTIONS.MOV_CONTABLES] || []).find((x) => x.id === movimientoId);
+        return m?.cajaId ? [{ collection: COLLECTIONS.CAJAS, id: m.cajaId }] : [];
+      }
+    }
+  );
 }
 
 // Exporta a CSV los movimientos e informes financieros de Contabilidad (Sección 10)

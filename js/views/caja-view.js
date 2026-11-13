@@ -17,9 +17,11 @@ import {
 } from "../services/inventario-service.js";
 import {
   watchClientes,
+  watchMovimientosBilletera,
   crearCliente,
   buscarClientes,
   obtenerHistorialCliente,
+  obtenerResumenBilleteraCliente,
   listarCarteraClientes,
   calcularSaldoPendienteVenta
 } from "../services/clientes-service.js";
@@ -27,6 +29,7 @@ import { COLLECTIONS, getCollection } from "../services/store.js";
 import {
   watchCajas,
   watchVentas,
+  METODO_SALDO_FAVOR,
   abrirCaja,
   cerrarCaja,
   registrarMovimientoEfectivoCaja,
@@ -66,6 +69,7 @@ export function mountCajaView(root) {
 
   let productos = [];
   let clientes = [];
+  let movimientosBilletera = [];
   let cajaAbierta = null;
   let ventas = [];
   let categoriaActiva = "Todos";
@@ -484,18 +488,52 @@ export function mountCajaView(root) {
     const modalidad = $("#modalidad-cobro")?.value || "completo";
     if (modalidad === "credito") return [];
 
+    const cliId = $("#pos-cliente")?.value || "cli-consumidor";
+    const cliObj = clientes.find((c) => c.id === cliId);
+    const saldoDisp =
+      cliId !== "cli-consumidor" && !cliObj?.esConsumidorFinal
+        ? roundCOP(cliObj?.saldoAFavorDisponible || 0)
+        : 0;
+    const saldoAplicadoInput = Math.min(
+      saldoDisp,
+      roundCOP(totalVenta),
+      Math.max(0, roundCOP($("#pago-saldo-favor")?.value || 0))
+    );
+
     const metodo = $("#metodo-pago")?.value || "Efectivo";
+    const lista = [];
+    if (saldoAplicadoInput > 0) {
+      lista.push({ metodo: METODO_SALDO_FAVOR, importe: saldoAplicadoInput });
+    }
+
+    if (metodo === METODO_SALDO_FAVOR) {
+      if (saldoAplicadoInput <= 0 && saldoDisp > 0) {
+        lista.push({
+          metodo: METODO_SALDO_FAVOR,
+          importe: Math.min(saldoDisp, roundCOP(totalVenta))
+        });
+      }
+      return lista;
+    }
+
+    const restantePorCobrar = Math.max(0, roundCOP(totalVenta) - saldoAplicadoInput);
+    if (restantePorCobrar === 0 && saldoAplicadoInput > 0) {
+      return lista;
+    }
+
     if (metodo === "Efectivo") {
       const raw = $("#recibido")?.value;
       const recibido = raw === "" || raw === undefined ? 0 : roundCOP(raw);
-      return [{ metodo: "Efectivo", importe: recibido }];
+      if (recibido > 0 || saldoAplicadoInput === 0) {
+        lista.push({ metodo: "Efectivo", importe: recibido });
+      }
+      return lista;
     }
     if (metodo === "Mixto") {
       const ef = roundCOP($("#mixto-efectivo")?.value || 0);
       const otroMetodo = $("#mixto-otro-metodo")?.value || "Transferencia";
       const otroImp = roundCOP($("#mixto-otro-importe")?.value || 0);
       const ref = $("#mixto-referencia")?.value || "";
-      const lista = [];
       if (ef > 0) lista.push({ metodo: "Efectivo", importe: ef });
       if (otroImp > 0) lista.push({ metodo: otroMetodo, importe: otroImp, referencia: ref });
       return lista;
@@ -503,14 +541,15 @@ export function mountCajaView(root) {
     const importeMetodo =
       modalidad === "parcial"
         ? roundCOP($("#recibido")?.value || 0)
-        : roundCOP(totalVenta);
-    return [
-      {
+        : restantePorCobrar;
+    if (importeMetodo > 0 || saldoAplicadoInput === 0) {
+      lista.push({
         metodo,
         importe: importeMetodo,
         referencia: $("#referencia-pago")?.value || ""
-      }
-    ];
+      });
+    }
+    return lista;
   }
 
   function renderCarrito() {
@@ -556,6 +595,13 @@ export function mountCajaView(root) {
             ? `<span class="unit num">$ <input type="number" min="0" step="100" value="${item.precioUnitario}" data-price-input="${escapeHtml(item.lineId)}" aria-label="Precio unitario de ${escapeHtml(item.nombre)}" style="width:82px; padding:1px 4px; border:1px solid var(--border); border-radius:4px; font-size:.78rem">${item.unidad ? ` / ${escapeHtml(item.unidad)}` : ""}</span>`
             : `<span class="unit num">${formatCOP(item.precioUnitario)}${item.unidad ? ` / ${escapeHtml(item.unidad)}` : ""}</span>`;
 
+          const puedeDescLinea = hasPermission("ventas.descuento", user);
+          const descLineaHtml = puedeDescLinea
+            ? `<span class="unit num" style="margin-left:.45rem">Desc: $ <input type="number" min="0" step="100" value="${roundCOP(item.descuentoLinea || 0)}" data-line-desc-input="${escapeHtml(item.lineId)}" aria-label="Descuento de ${escapeHtml(item.nombre)}" style="width:68px; padding:1px 4px; border:1px solid var(--border); border-radius:4px; font-size:.76rem"></span>`
+            : roundCOP(item.descuentoLinea || 0) > 0
+              ? `<span class="unit num text-expense" style="margin-left:.45rem">Desc: −${formatCOP(item.descuentoLinea)}</span>`
+              : "";
+
           const obsHtml = esTemporal
             ? `<br><input type="text" maxlength="140" value="${escapeHtml(item.observacion || "")}" placeholder="Observación opcional..." data-obs-input="${escapeHtml(item.lineId)}" aria-label="Observación de ${escapeHtml(item.nombre)}" style="width:100%; max-width:240px; margin-top:3px; padding:2px 6px; border:1px solid var(--border); border-radius:4px; font-size:.76rem; color:var(--text-muted)">`
             : "";
@@ -564,7 +610,7 @@ export function mountCajaView(root) {
             <li class="cart-item" data-line="${escapeHtml(item.lineId)}">
               <span class="name">
                 ${escapeHtml(item.nombre)}${badgeHtml}
-                <br>${unitPriceHtml}
+                <br>${unitPriceHtml}${descLineaHtml}
                 ${dimText}
                 ${obsHtml}
               </span>
@@ -596,18 +642,70 @@ export function mountCajaView(root) {
     }
 
     recalcularResumenPago();
+    guardarBorradorPOS();
+  }
+
+  const POS_DRAFT_KEY = "el_carmen_pos_draft_v1";
+
+  function guardarBorradorPOS() {
+    try {
+      if (!cart || cart.length === 0) {
+        localStorage.removeItem(POS_DRAFT_KEY);
+        return;
+      }
+      localStorage.setItem(
+        POS_DRAFT_KEY,
+        JSON.stringify({
+          cart,
+          clienteId: $("#pos-cliente")?.value || "cli-consumidor",
+          descuento: $("#cart-descuento-input")?.value || "0",
+          descuentoTipo: $("#cart-descuento-tipo")?.value || "COP"
+        })
+      );
+    } catch {
+      // Ignorar si localStorage no está disponible
+    }
+  }
+
+  function restaurarBorradorPOS() {
+    try {
+      const raw = localStorage.getItem(POS_DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (Array.isArray(draft?.cart) && draft.cart.length > 0 && cart.length === 0) {
+        cart = draft.cart;
+        if ($("#cart-descuento-input") && draft.descuento !== undefined) {
+          $("#cart-descuento-input").value = String(draft.descuento);
+        }
+        if ($("#cart-descuento-tipo") && draft.descuentoTipo) {
+          $("#cart-descuento-tipo").value = draft.descuentoTipo;
+        }
+      }
+    } catch {
+      // Ignorar borradores corruptos
+    }
+  }
+
+  function obtenerDescuentoFormulario() {
+    const raw = Math.max(0, Number($("#cart-descuento-input")?.value || 0));
+    const tipo = $("#cart-descuento-tipo")?.value || "COP";
+    return tipo === "%"
+      ? { descuento: 0, descuentoPorcentaje: Math.min(100, raw) }
+      : { descuento: roundCOP(raw), descuentoPorcentaje: 0 };
   }
 
   function recalcularResumenPago() {
     const descInput = $("#cart-descuento-input");
+    const descTipo = $("#cart-descuento-tipo");
     const user = getCurrentUser();
     if (descInput) {
       const puedeDescuento = hasPermission("ventas.descuento", user);
       descInput.disabled = !puedeDescuento;
+      if (descTipo) descTipo.disabled = !puedeDescuento;
       if (!puedeDescuento) descInput.value = "0";
     }
 
-    const descuento = Math.max(0, roundCOP(descInput?.value || 0));
+    const descOpts = obtenerDescuentoFormulario();
     let calculo = { subtotal: 0, descuento: 0, impuesto: 0, total: 0 };
     const errEl = $("#cart-error");
     if (errEl) {
@@ -617,7 +715,7 @@ export function mountCajaView(root) {
 
     try {
       if (cart.length > 0) {
-        calculo = calcularTotalesVenta(cart, { descuento });
+        calculo = calcularTotalesVenta(cart, descOpts);
       }
     } catch (e) {
       if (errEl) {
@@ -667,10 +765,46 @@ export function mountCajaView(root) {
 
     const modalidad = modSel?.value || "completo";
     const esCreditoTotal = modalidad === "credito";
-    const metodo = $("#metodo-pago")?.value || "Efectivo";
+    const saldoFavorDisp =
+      cliId !== "cli-consumidor" && !cliObj?.esConsumidorFinal
+        ? roundCOP(cliObj?.saldoAFavorDisponible || 0)
+        : 0;
+    const optSaldoFavor = $("#opt-metodo-saldo-favor");
+    if (optSaldoFavor) {
+      optSaldoFavor.disabled = !(saldoFavorDisp > 0);
+    }
+    const metodoSel = $("#metodo-pago");
+    if (metodoSel && metodoSel.value === METODO_SALDO_FAVOR && !(saldoFavorDisp > 0)) {
+      metodoSel.value = "Efectivo";
+    }
+    const metodo = metodoSel?.value || "Efectivo";
+
+    const boxSaldoFavor = $("#box-saldo-favor");
+    const inputSaldoFavor = $("#pago-saldo-favor");
+    if (boxSaldoFavor) {
+      boxSaldoFavor.classList.toggle("hidden", esCreditoTotal || !(saldoFavorDisp > 0));
+    }
+    if (inputSaldoFavor) {
+      if (!(saldoFavorDisp > 0) || esCreditoTotal) {
+        inputSaldoFavor.value = "0";
+      } else if (metodo === METODO_SALDO_FAVOR && roundCOP(inputSaldoFavor.value || 0) === 0) {
+        inputSaldoFavor.value = String(Math.min(saldoFavorDisp, roundCOP(calculo.total)));
+      }
+      const aplicado = Math.min(
+        saldoFavorDisp,
+        roundCOP(calculo.total),
+        Math.max(0, roundCOP(inputSaldoFavor.value || 0))
+      );
+      if ($("#pos-billetera-disponible")) $("#pos-billetera-disponible").textContent = formatCOP(saldoFavorDisp);
+      if ($("#pos-billetera-otros")) $("#pos-billetera-otros").textContent = formatCOP(Math.max(0, roundCOP(calculo.total) - aplicado));
+      if ($("#pos-billetera-restante")) $("#pos-billetera-restante").textContent = formatCOP(Math.max(0, saldoFavorDisp - aplicado));
+    }
 
     $("#field-metodo-pago")?.classList.toggle("hidden", esCreditoTotal);
-    const mostrarBoxRecibido = !esCreditoTotal && (metodo === "Efectivo" || (modalidad === "parcial" && metodo !== "Mixto"));
+    const mostrarBoxRecibido =
+      !esCreditoTotal &&
+      metodo !== METODO_SALDO_FAVOR &&
+      (metodo === "Efectivo" || (modalidad === "parcial" && metodo !== "Mixto"));
     $("#box-pago-efectivo")?.classList.toggle("hidden", !mostrarBoxRecibido);
     const lblRecibido = $("#box-pago-efectivo label");
     if (lblRecibido) {
@@ -681,7 +815,7 @@ export function mountCajaView(root) {
     }
     $("#box-pago-electronico")?.classList.toggle(
       "hidden",
-      esCreditoTotal || metodo === "Efectivo" || metodo === "Mixto"
+      esCreditoTotal || metodo === "Efectivo" || metodo === "Mixto" || metodo === METODO_SALDO_FAVOR
     );
     $("#box-pago-mixto")?.classList.toggle("hidden", esCreditoTotal || metodo !== "Mixto");
     $("#row-cambio")?.classList.toggle(
@@ -701,11 +835,11 @@ export function mountCajaView(root) {
     const errEl = $("#cart-error");
     if (!btnCobrar) return;
 
-    const descuento = Math.max(0, roundCOP($("#cart-descuento-input")?.value || 0));
+    const descOpts = obtenerDescuentoFormulario();
     let total = totalActual;
     if (total === null) {
       try {
-        total = cart.length ? calcularTotalesVenta(cart, { descuento }).total : 0;
+        total = cart.length ? calcularTotalesVenta(cart, descOpts).total : 0;
       } catch {
         total = 0;
       }
@@ -805,9 +939,17 @@ export function mountCajaView(root) {
     if (docEl) docEl.textContent = `· ${cli.documento}${cli.telefono ? ` · ${cli.telefono}` : ""}`;
 
     const hist = esFinal ? { saldoPendienteTotal: 0 } : obtenerHistorialCliente(cli.id, { ventas });
+    const saldoFavor = esFinal ? 0 : roundCOP(cli.saldoAFavorDisponible || 0);
     if (saldoBadge) {
-      saldoBadge.classList.toggle("hidden", !(hist.saldoPendienteTotal > 0));
-      saldoBadge.textContent = `Saldo: ${formatCOP(hist.saldoPendienteTotal)}`;
+      const mostrarBadge = hist.saldoPendienteTotal > 0 || saldoFavor > 0;
+      saldoBadge.classList.toggle("hidden", !mostrarBadge);
+      const partes = [];
+      if (hist.saldoPendienteTotal > 0) partes.push(`Por cobrar: ${formatCOP(hist.saldoPendienteTotal)}`);
+      if (saldoFavor > 0) partes.push(`Saldo a favor: ${formatCOP(saldoFavor)}`);
+      saldoBadge.textContent = partes.join(" · ");
+    }
+    if ($("#pago-saldo-favor") && (esFinal || saldoFavor === 0)) {
+      $("#pago-saldo-favor").value = "0";
     }
     if (btnHist) btnHist.classList.toggle("hidden", esFinal);
     if (btnLimpiar) btnLimpiar.classList.toggle("hidden", esFinal);
@@ -948,6 +1090,55 @@ export function mountCajaView(root) {
 
     const tbody = $("#tbody-historial-cliente");
     if (!tbody) return;
+
+    // Renderizar resumen y movimientos de Billetera de saldo a favor en la ficha del cliente
+    const resumenBil = obtenerResumenBilleteraCliente(clienteHistorialId, { clientes, movimientosBilletera });
+    const modalBody = tbody.closest(".modal-body");
+    if (modalBody) {
+      let boxBil = $("#hist-cli-billetera-box", modalBody);
+      if (!boxBil) {
+        boxBil = document.createElement("div");
+        boxBil.id = "hist-cli-billetera-box";
+        boxBil.style.marginTop = "1rem";
+        boxBil.style.padding = ".75rem";
+        boxBil.style.border = "1px solid var(--border)";
+        boxBil.style.borderRadius = "var(--radius-sm)";
+        boxBil.style.background = "#f8fafc";
+        modalBody.appendChild(boxBil);
+      }
+      boxBil.innerHTML = `
+        <div class="flex justify-between items-center" style="margin-bottom:.5rem; flex-wrap:wrap; gap:.5rem">
+          <strong>Billetera de saldo a favor</strong>
+          <div class="flex gap-2" style="font-size:.82rem">
+            <span>Disponible: <b class="num" style="color:#166534">${formatCOP(resumenBil.saldoDisponible)}</b></span>
+            <span>· Generado: <b class="num">${formatCOP(resumenBil.totalGenerado)}</b></span>
+            <span>· Utilizado: <b class="num">${formatCOP(resumenBil.totalUtilizado)}</b></span>
+          </div>
+        </div>
+        ${
+          resumenBil.movimientos.length === 0
+            ? `<div class="text-muted" style="font-size:.82rem">Sin movimientos de billetera registrados.</div>`
+            : `<div class="table-wrap"><table style="font-size:.8rem">
+                <thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Monto</th><th class="num">Saldo</th><th>Referencia</th><th>Usuario</th></tr></thead>
+                <tbody>
+                  ${resumenBil.movimientos
+                    .map(
+                      (m) => `<tr>
+                        <td>${formatDateTime(m.fecha)}</td>
+                        <td><span class="badge">${escapeHtml(m.tipo)}</span></td>
+                        <td class="num"><b>${formatCOP(m.monto)}</b></td>
+                        <td class="num">${formatCOP(m.saldoAnterior)} → ${formatCOP(m.saldoPosterior)}</td>
+                        <td>${escapeHtml(m.numeroVenta || m.devolucionId || m.observaciones || "")}</td>
+                        <td>${escapeHtml(m.usuario || "")}</td>
+                      </tr>`
+                    )
+                    .join("")}
+                </tbody>
+              </table></div>`
+        }
+      `;
+    }
+
     if (hist.ventas.length === 0) {
       tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:1.25rem" class="text-muted">No hay ventas registradas para este cliente en el rango seleccionado.</td></tr>`;
       return;
@@ -1045,13 +1236,17 @@ export function mountCajaView(root) {
           v.estado !== "Anulada" && saldo > 0
             ? `<br><small class="text-expense">Saldo: ${formatCOP(saldo)}</small>`
             : "";
+        const billeteraHtml =
+          roundCOP(v.saldoAFavorAplicado || 0) > 0
+            ? `<br><small style="color:#166534">Billetera: ${formatCOP(v.saldoAFavorAplicado)}</small>`
+            : "";
         return `
           <tr>
             <td><b>${escapeHtml(v.numero)}</b></td>
             <td>${formatDateTime(v.fecha)}</td>
             <td>${escapeHtml(v.cliente?.nombre || "Consumidor Final")}</td>
             <td>${escapeHtml(v.vendedor)}</td>
-            <td><span class="badge">${escapeHtml(v.metodoPago)}</span></td>
+            <td><span class="badge">${escapeHtml(v.metodoPago)}</span>${billeteraHtml}</td>
             <td class="num"><b>${formatCOP(v.total)}</b>${saldoHtml}</td>
             <td><span class="badge ${badgeCls}">${escapeHtml(v.estado)}</span></td>
             <td class="text-right" style="white-space:nowrap">
@@ -1102,9 +1297,16 @@ export function mountCajaView(root) {
         const obsLine = i.esTemporal && i.observacion
           ? `<br><small class="text-muted">${escapeHtml(i.observacion)}</small>`
           : "";
+        const descLine = roundCOP(i.descuentoLinea || 0) > 0
+          ? `<br><small class="text-expense">Descuento línea: −${formatCOP(i.descuentoLinea)}</small>`
+          : "";
+        const btnConvertir =
+          i.esTemporal && hasPermission("inventario.gestionar", getCurrentUser())
+            ? ` <button type="button" class="btn btn-outline btn-xs" data-convert-temp-nombre="${escapeHtml(i.nombre)}" data-convert-temp-unidad="${escapeHtml(i.unidad || "")}" data-convert-temp-precio="${roundCOP(i.precioUnitario || 0)}">Convertir a producto</button>`
+            : "";
         const labelHtml = i.esTemporal
-          ? `${escapeHtml(i.nombre)} <span class="badge-temp">SOLO ESTA VENTA</span>${obsLine}`
-          : `${escapeHtml(i.nombre)} <small class="text-muted">(${escapeHtml(i.codigo)})</small>${detalleMedida}`;
+          ? `${escapeHtml(i.nombre)} <span class="badge-temp">SOLO ESTA VENTA</span>${btnConvertir}${obsLine}${descLine}`
+          : `${escapeHtml(i.nombre)} <small class="text-muted">(${escapeHtml(i.codigo)})</small>${detalleMedida}${descLine}`;
         return `
           <tr>
             <td>${labelHtml}</td>
@@ -1267,11 +1469,23 @@ export function mountCajaView(root) {
       renderCarrito();
       return;
     }
+    const lineDescInput = e.target.closest("[data-line-desc-input]");
+    if (lineDescInput) {
+      const idx = cart.findIndex((i) => i.lineId === lineDescInput.dataset.lineDescInput);
+      if (idx === -1) return;
+      const bruto = roundCOP((cart[idx].precioMaterial ?? cart[idx].precioUnitario * cart[idx].cantidad) + (cart[idx].costosAdicionales || 0));
+      const desc = Math.max(0, Math.min(bruto, roundCOP(Number(lineDescInput.value || 0))));
+      cart[idx].descuentoLinea = desc;
+      cart[idx].subtotal = roundCOP(bruto - desc);
+      renderCarrito();
+      return;
+    }
     const obsInput = e.target.closest("[data-obs-input]");
     if (obsInput) {
       const idx = cart.findIndex((i) => i.lineId === obsInput.dataset.obsInput);
       if (idx === -1 || !cart[idx].esTemporal) return;
       cart[idx].observacion = String(obsInput.value || "").trim();
+      guardarBorradorPOS();
     }
   });
 
@@ -1280,7 +1494,7 @@ export function mountCajaView(root) {
     renderCarrito();
   });
 
-  ["#cart-descuento-input", "#modalidad-cobro", "#metodo-pago", "#recibido", "#referencia-pago", "#mixto-efectivo", "#mixto-otro-metodo", "#mixto-otro-importe", "#mixto-referencia"].forEach((sel) => {
+  ["#cart-descuento-input", "#cart-descuento-tipo", "#modalidad-cobro", "#metodo-pago", "#recibido", "#referencia-pago", "#mixto-efectivo", "#mixto-otro-metodo", "#mixto-otro-importe", "#mixto-referencia"].forEach((sel) => {
     $(sel)?.addEventListener("input", recalcularResumenPago);
     $(sel)?.addEventListener("change", recalcularResumenPago);
   });
@@ -1505,8 +1719,8 @@ export function mountCajaView(root) {
     updateCobrarButtonState();
 
     try {
-      const descuento = Math.max(0, roundCOP($("#cart-descuento-input")?.value || 0));
-      const { total } = calcularTotalesVenta(cart, { descuento });
+      const descOpts = obtenerDescuentoFormulario();
+      const { total } = calcularTotalesVenta(cart, descOpts);
       const modalidad = $("#modalidad-cobro")?.value || "completo";
       const esVentaCredito = modalidad === "credito" || modalidad === "parcial";
       const pagos = obtenerPagosFormulario(total);
@@ -1517,7 +1731,8 @@ export function mountCajaView(root) {
           cajaId: cajaAbierta?.id,
           items: cart,
           pagos,
-          descuento,
+          descuento: descOpts.descuento,
+          descuentoPorcentaje: descOpts.descuentoPorcentaje,
           clienteId: $("#pos-cliente")?.value || "cli-consumidor",
           ordenReferencia: $("#pos-orden-ref")?.value || "",
           esVentaCredito,
@@ -1531,6 +1746,7 @@ export function mountCajaView(root) {
       if ($("#recibido")) $("#recibido").value = "";
       if ($("#referencia-pago")) $("#referencia-pago").value = "";
       if ($("#pos-orden-ref")) $("#pos-orden-ref").value = "";
+      if ($("#pago-saldo-favor")) $("#pago-saldo-favor").value = "0";
       if ($("#cart-descuento-input")) $("#cart-descuento-input").value = "0";
       if ($("#modalidad-cobro")) $("#modalidad-cobro").value = "completo";
       renderCarrito();
@@ -1860,8 +2076,46 @@ export function mountCajaView(root) {
     }
   });
 
+  $("#pago-saldo-favor")?.addEventListener("input", renderCarrito);
+  $("#btn-usar-todo-saldo")?.addEventListener("click", () => {
+    const cliId = $("#pos-cliente")?.value || "cli-consumidor";
+    const cliObj = clientes.find((c) => c.id === cliId);
+    const disp = cliId !== "cli-consumidor" && !cliObj?.esConsumidorFinal ? roundCOP(cliObj?.saldoAFavorDisponible || 0) : 0;
+    const descOpts = obtenerDescuentoFormulario();
+    const total = cart.length ? calcularTotalesVenta(cart, descOpts).total : 0;
+    if ($("#pago-saldo-favor")) {
+      $("#pago-saldo-favor").value = String(Math.min(disp, roundCOP(total)));
+    }
+    renderCarrito();
+  });
+
   $("#btn-imprimir-comprobante")?.addEventListener("click", () => {
     window.print();
+  });
+
+  $("#btn-compartir-comprobante")?.addEventListener("click", async () => {
+    const texto = $("#comprobante-body")?.innerText?.trim() || "Comprobante interno de venta — Vidrios y Aluminios El Carmen";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Comprobante interno de venta", text: texto });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(texto);
+        showFeedback("Comprobante copiado al portapapeles para compartir.", "info");
+      }
+    } catch {
+      // Cancelado por el usuario
+    }
+  });
+
+  $("#comprobante-body")?.addEventListener("click", (e) => {
+    const btnConv = e.target.closest("[data-convert-temp-nombre]");
+    if (!btnConv) return;
+    $("#modal-comprobante")?.classList.remove("is-open");
+    $("#btn-agregar-producto-concepto")?.click();
+    $("#tab-modo-permanente")?.click();
+    if ($("#pos-prod-nombre")) $("#pos-prod-nombre").value = btnConv.dataset.convertTempNombre || "";
+    if ($("#pos-prod-unidad")) $("#pos-prod-unidad").value = btnConv.dataset.convertTempUnidad || "";
+    if ($("#pos-prod-precio")) $("#pos-prod-precio").value = btnConv.dataset.convertTempPrecio || "0";
   });
 
   // Eventos de Cuentas por cobrar, Historial de cliente y Abonos (Fase 3)
@@ -2151,11 +2405,38 @@ export function mountCajaView(root) {
     if (clienteHistorialId) renderModalHistorialCliente();
   });
 
+  const unsubBilletera = watchMovimientosBilletera((lista) => {
+    movimientosBilletera = lista;
+    renderSelectorClientes();
+    if (clienteHistorialId) renderModalHistorialCliente();
+  });
+
+  restaurarBorradorPOS();
+
+  const onPosKeyDown = (e) => {
+    if (e.key === "F2") {
+      e.preventDefault();
+      $("#buscar-producto")?.focus();
+    } else if (e.key === "F4") {
+      e.preventDefault();
+      $("#btn-agregar-producto-concepto")?.click();
+    } else if (e.key === "F9") {
+      const btn = $("#btn-cobrar");
+      if (btn && !btn.disabled) {
+        e.preventDefault();
+        btn.click();
+      }
+    }
+  };
+  document.addEventListener("keydown", onPosKeyDown);
+
   return () => {
+    document.removeEventListener("keydown", onPosKeyDown);
     unsubProd();
     unsubCli();
     unsubCajas();
     unsubVentas();
+    unsubBilletera();
   };
 }
 

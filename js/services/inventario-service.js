@@ -12,10 +12,26 @@ import { getCurrentUser, assertPermission } from "../auth.js";
 
 export const UNIDADES_MEDIDA = {
   UNIDAD: "u",
+  METRO: "metro",
   METRO_LINEAL: "m",
   METRO_CUADRADO: "m²",
+  LAMINA: "lámina",
+  KILOGRAMO: "kg",
+  LITRO: "L",
+  CAJA: "caja",
+  PAQUETE: "paquete",
+  SERVICIO: "servicio",
   SIN_UNIDAD: ""
 };
+
+export const UNIDADES_PERMITIDAS = Object.values(UNIDADES_MEDIDA);
+const UNIDADES_DECIMALES = new Set(["m", "metro", "m²", "kg", "L"]);
+
+function resolverPermiteDecimal(unidad, permiteDecimalExplicit) {
+  if (UNIDADES_DECIMALES.has(unidad)) return true;
+  if (unidad === "u") return false;
+  return Boolean(permiteDecimalExplicit);
+}
 
 export function normalizarUnidadProducto(unidad) {
   if (unidad === undefined || unidad === null) return null;
@@ -222,7 +238,9 @@ export function filtrarCatalogo(productos, { categoria = "Todos", busqueda = "" 
     const matchText =
       !q ||
       String(p.nombre || "").toLowerCase().includes(q) ||
-      String(p.codigo || "").toLowerCase().includes(q);
+      String(p.codigo || "").toLowerCase().includes(q) ||
+      String(p.referencia || "").toLowerCase().includes(q) ||
+      String(p.codigoBarras || "").toLowerCase().includes(q);
     return matchCat && matchText;
   });
 }
@@ -233,7 +251,7 @@ export function validarCantidadPorUnidad(producto, cantidad) {
   if (!Number.isFinite(cant) || cant <= 0) {
     throw new Error("La cantidad debe ser un número mayor que cero.");
   }
-  const permiteDecimal = Boolean(producto.permiteDecimal || producto.unidad === "m" || producto.unidad === "m²");
+  const permiteDecimal = Boolean(producto.permiteDecimal || UNIDADES_DECIMALES.has(producto.unidad));
   if (!permiteDecimal && !Number.isInteger(cant)) {
     const sufijo = producto.unidad ? ` (${producto.unidad})` : "";
     throw new Error(`El producto "${producto.nombre}" se vende por unidades enteras${sufijo}.`);
@@ -262,15 +280,10 @@ export async function crearProducto(datos, user = getCurrentUser()) {
   const stockMinimo = roundQty(datos.stockMinimo ?? 0);
 
   if (!nombre) throw new Error("El nombre del producto es obligatorio.");
-  if (!["u", "m", "m²", ""].includes(unidad)) {
-    throw new Error("La unidad de medida debe ser unidad (u), metro lineal (m), metro cuadrado (m²) o Sin unidad.");
+  if (!UNIDADES_PERMITIDAS.includes(unidad)) {
+    throw new Error("Unidad de medida no válida para el catálogo.");
   }
-  const permiteDecimal =
-    unidad === "m" || unidad === "m²"
-      ? true
-      : unidad === "u"
-        ? false
-        : Boolean(datos.permiteDecimal);
+  const permiteDecimal = resolverPermiteDecimal(unidad, datos.permiteDecimal);
 
   if (!(precioCompra >= 0)) throw new Error("El precio de compra no puede ser negativo.");
   if (!(precio >= 0)) throw new Error("El precio de venta debe ser un valor numérico no negativo.");
@@ -360,17 +373,13 @@ export async function actualizarProducto(id, cambios, user = getCurrentUser()) {
 
     if (!nombre) throw new Error("El nombre del producto es obligatorio.");
     if (!codigo) throw new Error("El código del producto es obligatorio.");
-    if (!["u", "m", "m²", ""].includes(unidad)) {
-      throw new Error("La unidad de medida debe ser unidad (u), metro lineal (m), metro cuadrado (m²) o Sin unidad.");
+    if (!UNIDADES_PERMITIDAS.includes(unidad)) {
+      throw new Error("Unidad de medida no válida para el catálogo.");
     }
-    const permiteDecimal =
-      unidad === "m" || unidad === "m²"
-        ? true
-        : unidad === "u"
-          ? false
-          : cambios.permiteDecimal !== undefined
-            ? Boolean(cambios.permiteDecimal)
-            : Boolean(actual.permiteDecimal);
+    const permiteDecimal = resolverPermiteDecimal(
+      unidad,
+      cambios.permiteDecimal !== undefined ? cambios.permiteDecimal : actual.permiteDecimal
+    );
 
     if (!(precioCompra >= 0) || !(precio >= 0)) throw new Error("Los precios no pueden ser negativos.");
     if (!(stockMinimo >= 0)) throw new Error("El stock mínimo no puede ser negativo.");
@@ -447,8 +456,9 @@ export async function registrarMovimientoBodega(
     throw new Error("Debes indicar el motivo o soporte del movimiento de inventario.");
   }
 
-  return runAtomicTransaction(async (tx) => {
-    const prod = tx.get(COLLECTIONS.PRODUCTOS, productoId);
+  return runAtomicTransaction(
+    async (tx) => {
+      const prod = tx.get(COLLECTIONS.PRODUCTOS, productoId);
     if (!prod) throw new Error("Producto no encontrado en inventario.");
 
     const cantValida = validarCantidadPorUnidad(prod, cantidad);
@@ -550,6 +560,14 @@ export async function registrarMovimientoBodega(
       fecha: ahora
     });
 
-    return movInv;
-  });
+      return movInv;
+    },
+    {
+      lockKey: `inv_${productoId}`,
+      readDocs: [
+        { collection: COLLECTIONS.PRODUCTOS, id: productoId },
+        { collection: COLLECTIONS.CONTROL, id: "caja_activa" }
+      ]
+    }
+  );
 }

@@ -40,7 +40,8 @@ export const COLLECTIONS = {
   AUDITORIA: "auditoria",
   USUARIOS: "usuarios",
   CONTROL: "control",
-  OPERACIONES: "operaciones"
+  OPERACIONES: "operaciones",
+  MOV_BILLETERA: "movimientos_billetera"
 };
 
 // Catálogo base opcional para pruebas locales de desarrollo (nunca incluye ventas ni saldos ficticios)
@@ -534,19 +535,33 @@ export async function runAtomicTransaction(workFn, options = {}) {
         const readSpecs = resolveTxReadDocs(options, snapshotBefore);
 
         // Todas las lecturas transaccionales en servidor se ejecutan ANTES de cualquier escritura
-        for (const spec of readSpecs) {
-          const ref = firestoreMod.doc(db, spec.collection, spec.id);
+        const readSet = new Set();
+        const readFromServer = async (colName, docId) => {
+          const key = `${colName}::${docId}`;
+          if (readSet.has(key)) return null;
+          readSet.add(key);
+          const ref = firestoreMod.doc(db, colName, docId);
           const snap = await transaction.get(ref);
-          const list = snapshotBefore[spec.collection] || [];
-          const idx = list.findIndex((d) => d.id === spec.id);
+          const list = snapshotBefore[colName] || [];
+          const idx = list.findIndex((d) => d.id === docId);
+          let serverDoc = null;
           if (snap.exists()) {
-            const serverDoc = { ...snap.data(), id: snap.id };
+            serverDoc = { ...snap.data(), id: snap.id };
             if (idx !== -1) list[idx] = serverDoc;
             else list.push(serverDoc);
           } else if (idx !== -1) {
             list.splice(idx, 1);
           }
-          snapshotBefore[spec.collection] = list;
+          snapshotBefore[colName] = list;
+          return serverDoc;
+        };
+
+        for (const spec of readSpecs) {
+          const serverDoc = await readFromServer(spec.collection, spec.id);
+          // Si se leyó control/caja_activa, asegurar lectura transaccional de la caja referenciada
+          if (spec.collection === COLLECTIONS.CONTROL && spec.id === "caja_activa" && serverDoc?.cajaId) {
+            await readFromServer(COLLECTIONS.CAJAS, serverDoc.cajaId);
+          }
         }
 
         const { tx, getDirtyDocs, getTouchedCollections } = buildTxContext(snapshotBefore);

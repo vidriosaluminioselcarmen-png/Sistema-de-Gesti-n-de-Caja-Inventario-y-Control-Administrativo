@@ -1,0 +1,15 @@
+{
+  "name": "el-carmen-pos-admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema de Gestión de Caja, Inventario y Control Administrativo — Vidrios y Aluminios El Carmen",
+  "scripts": {
+    "emulators:start": "firebase emulators:start --only auth,firestore --project demo-el-carmen",
+    "test:emulators": "node --test tests/emulator-security-concurrency.test.mjs",
+    "test:emulators:exec": "firebase emulators:exec --only auth,firestore --project demo-el-carmen \"npm run test:emulators\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.3",
+    "firebase": "^10.12.2"
+  }
+}

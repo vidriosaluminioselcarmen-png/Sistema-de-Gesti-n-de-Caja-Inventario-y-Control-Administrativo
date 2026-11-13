@@ -125,9 +125,9 @@
           <!-- Columna 1: catálogo interactivo -->
           <section aria-label="Catálogo de productos">
             <div class="toolbar">
-              <input class="input" type="search" id="buscar-producto" placeholder="Buscar producto por nombre o código (ej. VT-006, espejo, bisagra)">
+              <input class="input" type="search" id="buscar-producto" placeholder="Buscar producto por nombre, código o código de barras (F2)">
               <button type="button" class="btn btn-outline" id="btn-medida-vidrio" title="Calcular corte de vidrio o espejo por ancho y alto">Corte a medida (m²)</button>
-              <button type="button" class="btn btn-primary" id="btn-agregar-producto-concepto" title="Crear un producto permanente o agregar un concepto solo a esta venta">+ Agregar producto o concepto</button>
+              <button type="button" class="btn btn-outline" id="btn-agregar-producto-concepto" title="Crear un producto permanente o agregar un concepto solo a esta venta (F4)">+ Producto rápido</button>
             </div>
             <div class="chips" id="pos-categorias" role="tablist" aria-label="Categorías de productos">
               <button type="button" class="chip active" data-categoria="Todos">Todos</button>
@@ -194,18 +194,43 @@
               <!-- Descuento autorizado (opcional) -->
               <div class="form-grid cart-pay-grid" style="margin-bottom:.65rem">
                 <div class="field">
-                  <label class="label" for="cart-descuento-input">Descuento (COP)</label>
-                  <input class="input num" id="cart-descuento-input" type="number" min="0" step="1" value="0">
+                  <label class="label" for="cart-descuento-input">Descuento general</label>
+                  <div class="flex" style="gap:.35rem">
+                    <input class="input num" id="cart-descuento-input" type="number" min="0" step="1" value="0" style="flex:1">
+                    <select class="select" id="cart-descuento-tipo" aria-label="Tipo de descuento" style="width:78px">
+                      <option value="COP">COP</option>
+                      <option value="%">%</option>
+                    </select>
+                  </div>
                 </div>
                 <div class="field" id="field-metodo-pago">
                   <label class="label" for="metodo-pago">Método de pago</label>
                   <select class="select" id="metodo-pago">
                     <option value="Efectivo">Efectivo</option>
-                    <option value="Transferencia">Transferencia (Nequi / Daviplata / Banco)</option>
+                    <option value="Transferencia">Transferencia bancaria</option>
+                    <option value="Nequi">Nequi</option>
+                    <option value="Daviplata">Daviplata</option>
                     <option value="Tarjeta débito">Tarjeta débito</option>
                     <option value="Tarjeta crédito">Tarjeta crédito</option>
+                    <option value="Saldo a favor" id="opt-metodo-saldo-favor" disabled>Saldo a favor (Billetera cliente)</option>
                     <option value="Mixto">Pago dividido (Mixto)</option>
                   </select>
+                </div>
+              </div>
+
+              <!-- Billetera de saldo a favor del cliente (visible solo si el cliente identificado tiene saldo disponible) -->
+              <div id="box-saldo-favor" class="hidden" style="margin-bottom:.75rem; padding:.65rem; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:var(--radius-sm)">
+                <div class="flex justify-between items-center" style="gap:.5rem; margin-bottom:.4rem; flex-wrap:wrap">
+                  <span style="font-size:.82rem; font-weight:600; color:#166534">Billetera · Saldo a favor disponible: <strong id="pos-billetera-disponible" class="num">$ 0</strong></span>
+                  <button type="button" class="btn btn-outline btn-xs" id="btn-usar-todo-saldo">Aplicar máximo</button>
+                </div>
+                <div class="field" style="margin-bottom:.35rem">
+                  <label class="label" for="pago-saldo-favor">Aplicar saldo a favor en esta venta (COP)</label>
+                  <input class="input num" id="pago-saldo-favor" type="number" min="0" step="1" value="0">
+                </div>
+                <div class="flex justify-between" style="font-size:.78rem; color:#166534; gap:.5rem; flex-wrap:wrap">
+                  <span>Otros medios de pago: <strong id="pos-billetera-otros" class="num">$ 0</strong></span>
+                  <span>Saldo restante de billetera: <strong id="pos-billetera-restante" class="num">$ 0</strong></span>
                 </div>
               </div>
 
@@ -284,6 +309,8 @@
                 <option value="Todos">Todos los métodos</option>
                 <option value="Efectivo">Efectivo</option>
                 <option value="Transferencia">Transferencia</option>
+                <option value="Nequi">Nequi</option>
+                <option value="Daviplata">Daviplata</option>
                 <option value="Tarjeta débito">Tarjeta débito</option>
                 <option value="Tarjeta crédito">Tarjeta crédito</option>
               </select>
@@ -416,6 +443,7 @@
             <div class="modal-body" id="comprobante-body"></div>
             <div class="modal-footer">
               <a class="btn btn-outline" href="#">Cerrar</a>
+              <button type="button" class="btn btn-outline" id="btn-compartir-comprobante">Compartir</button>
               <button type="button" class="btn btn-primary" id="btn-imprimir-comprobante">Imprimir / Guardar PDF</button>
             </div>
           </div>
@@ -655,8 +683,15 @@
                   <label class="label" for="pos-prod-unidad">Unidad de medida (opcional)</label>
                   <select class="select" id="pos-prod-unidad">
                     <option value="u">Unidad (u)</option>
+                    <option value="metro">Metro</option>
                     <option value="m">Metro lineal (m)</option>
                     <option value="m²">Metro cuadrado (m²)</option>
+                    <option value="lámina">Lámina</option>
+                    <option value="kg">Kilogramo (kg)</option>
+                    <option value="L">Litro (L)</option>
+                    <option value="caja">Caja</option>
+                    <option value="paquete">Paquete</option>
+                    <option value="servicio">Servicio</option>
                     <option value="">Sin unidad</option>
                   </select>
                 </div>
@@ -767,7 +802,9 @@
                     <label class="label" for="abono-metodo">Medio de pago</label>
                     <select class="select" id="abono-metodo">
                       <option value="Efectivo">Efectivo</option>
-                      <option value="Transferencia">Transferencia (Nequi / Daviplata / Banco)</option>
+                      <option value="Transferencia">Transferencia bancaria</option>
+                      <option value="Nequi">Nequi</option>
+                      <option value="Daviplata">Daviplata</option>
                       <option value="Tarjeta débito">Tarjeta débito</option>
                       <option value="Tarjeta crédito">Tarjeta crédito</option>
                     </select>
