@@ -50,6 +50,19 @@
 .cart-empty { padding: 2rem 1.25rem; text-align: center; color: var(--text-muted); }
 .cart-footer { padding: 1.25rem; border-top: 1px solid var(--border); background: var(--navy-50); border-radius: 0 0 var(--radius) var(--radius); }
 
+.badge-temp {
+  display: inline-block;
+  padding: .12rem .45rem;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  border-radius: 999px;
+  background: #fff3e0;
+  color: #c25900;
+  border: 1px solid #f5c28b;
+  vertical-align: middle;
+}
+
 /* ---------- Contabilidad ---------- */
 #tab-ingreso:checked ~ .tab-panels #panel-ingreso,
 #tab-gasto:checked ~ .tab-panels #panel-gasto { display: block; }

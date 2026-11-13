@@ -11,6 +11,7 @@ import {
   isNetworkOffline
 } from "../firebase-config.js";
 import {
+  ejecutarTransaccionFirestore,
   escribirLoteFirestore,
   suscribirColeccionFirestore
 } from "./firebase-service.js";
@@ -37,7 +38,9 @@ export const COLLECTIONS = {
   MOV_CONTABLES: "movimientos_contables",
   DEVOLUCIONES: "devoluciones",
   AUDITORIA: "auditoria",
-  USUARIOS: "usuarios"
+  USUARIOS: "usuarios",
+  CONTROL: "control",
+  OPERACIONES: "operaciones"
 };
 
 // Catálogo base opcional para pruebas locales de desarrollo (nunca incluye ventas ni saldos ficticios)
@@ -418,7 +421,98 @@ export function generateId(prefix = "doc") {
   return `${prefix}-${Date.now()}-${idCounter++}-${rand}`;
 }
 
+function cloneSnapshotFromCache() {
+  const snapshot = {};
+  for (const col of Object.values(COLLECTIONS)) {
+    snapshot[col] = readCollectionRaw(col)
+      ? JSON.parse(JSON.stringify(readCollectionRaw(col)))
+      : [];
+  }
+  return snapshot;
+}
+
+function buildTxContext(snapshotBefore) {
+  const touchedCollections = new Set();
+  const dirtyMap = new Map();
+
+  const tx = {
+    getAll(colName) {
+      return snapshotBefore[colName] ? JSON.parse(JSON.stringify(snapshotBefore[colName])) : [];
+    },
+    get(colName, id) {
+      const list = snapshotBefore[colName] || [];
+      const found = list.find((d) => d.id === id);
+      return found ? JSON.parse(JSON.stringify(found)) : null;
+    },
+    insert(colName, docData) {
+      const list = snapshotBefore[colName] || [];
+      const newDoc = {
+        ...JSON.parse(JSON.stringify(docData)),
+        id: docData.id || generateId(colName.slice(0, 3))
+      };
+      list.push(newDoc);
+      snapshotBefore[colName] = list;
+      touchedCollections.add(colName);
+      dirtyMap.set(`${colName}::${newDoc.id}`, { collection: colName, id: newDoc.id, data: newDoc });
+      return newDoc;
+    },
+    update(colName, id, patch) {
+      const list = snapshotBefore[colName] || [];
+      const idx = list.findIndex((d) => d.id === id);
+      if (idx === -1) throw new Error(`Registro no encontrado en ${colName}: ${id}`);
+      list[idx] = { ...list[idx], ...JSON.parse(JSON.stringify(patch)), id };
+      touchedCollections.add(colName);
+      dirtyMap.set(`${colName}::${id}`, { collection: colName, id, data: list[idx] });
+      return list[idx];
+    },
+    upsert(colName, id, docData) {
+      const list = snapshotBefore[colName] || [];
+      const idx = list.findIndex((d) => d.id === id);
+      const nextDoc = {
+        ...(idx !== -1 ? list[idx] : {}),
+        ...JSON.parse(JSON.stringify(docData)),
+        id
+      };
+      if (idx !== -1) {
+        list[idx] = nextDoc;
+      } else {
+        list.push(nextDoc);
+      }
+      snapshotBefore[colName] = list;
+      touchedCollections.add(colName);
+      dirtyMap.set(`${colName}::${id}`, { collection: colName, id, data: nextDoc });
+      return nextDoc;
+    }
+  };
+
+  return {
+    tx,
+    getDirtyDocs: () => Array.from(dirtyMap.values()),
+    getTouchedCollections: () => Array.from(touchedCollections)
+  };
+}
+
+function resolveTxReadDocs(options, snapshot) {
+  const specs = [];
+  if (Array.isArray(options.readDocs)) {
+    specs.push(...options.readDocs);
+  }
+  if (typeof options.resolveReadDocs === "function") {
+    const extra = options.resolveReadDocs(snapshot);
+    if (Array.isArray(extra)) specs.push(...extra);
+  }
+  const seen = new Set();
+  return specs.filter((spec) => {
+    if (!spec?.collection || !spec?.id) return false;
+    const key = `${spec.collection}::${spec.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // Ejecuta una transacción atómica sobre las colecciones con bloqueo contra ejecuciones simultáneas conflictivas.
+// En modo Firebase real utiliza runTransaction() nativo de Firestore (todas las lecturas antes de todas las escrituras).
 // Si cualquier validación lanza error o hay fallo de red, ningún cambio se persiste.
 export async function runAtomicTransaction(workFn, options = {}) {
   if (isNetworkOffline()) {
@@ -434,47 +528,61 @@ export async function runAtomicTransaction(workFn, options = {}) {
   try {
     ensureSeedData();
 
-    const snapshotBefore = {};
-    for (const col of Object.values(COLLECTIONS)) {
-      snapshotBefore[col] = readCollectionRaw(col)
-        ? JSON.parse(JSON.stringify(readCollectionRaw(col)))
-        : [];
+    if (!inMemoryTestMode && isFirebaseConfigured()) {
+      const txOutput = await ejecutarTransaccionFirestore(async ({ transaction, db, firestoreMod }) => {
+        const snapshotBefore = cloneSnapshotFromCache();
+        const readSpecs = resolveTxReadDocs(options, snapshotBefore);
+
+        // Todas las lecturas transaccionales en servidor se ejecutan ANTES de cualquier escritura
+        for (const spec of readSpecs) {
+          const ref = firestoreMod.doc(db, spec.collection, spec.id);
+          const snap = await transaction.get(ref);
+          const list = snapshotBefore[spec.collection] || [];
+          const idx = list.findIndex((d) => d.id === spec.id);
+          if (snap.exists()) {
+            const serverDoc = { ...snap.data(), id: snap.id };
+            if (idx !== -1) list[idx] = serverDoc;
+            else list.push(serverDoc);
+          } else if (idx !== -1) {
+            list.splice(idx, 1);
+          }
+          snapshotBefore[spec.collection] = list;
+        }
+
+        const { tx, getDirtyDocs, getTouchedCollections } = buildTxContext(snapshotBefore);
+        const result = await workFn(tx);
+
+        if (isNetworkOffline()) {
+          throw new Error("Se perdió la conexión de red antes de confirmar la escritura. No se guardaron cambios.");
+        }
+
+        const dirtyDocs = getDirtyDocs();
+        for (const op of dirtyDocs) {
+          const ref = firestoreMod.doc(db, op.collection, op.id);
+          transaction.set(ref, { ...op.data, id: op.id }, { merge: true });
+        }
+
+        return {
+          result,
+          snapshotAfter: snapshotBefore,
+          touchedCollections: getTouchedCollections()
+        };
+      });
+
+      if (txOutput) {
+        for (const col of txOutput.touchedCollections) {
+          writeCollectionRaw(col, txOutput.snapshotAfter[col]);
+        }
+        for (const col of txOutput.touchedCollections) {
+          notifyListeners(col);
+        }
+        return txOutput.result;
+      }
     }
 
-    const touchedCollections = new Set();
-    const dirtyDocs = [];
-
-    const tx = {
-      getAll(colName) {
-        return snapshotBefore[colName] ? JSON.parse(JSON.stringify(snapshotBefore[colName])) : [];
-      },
-      get(colName, id) {
-        const list = snapshotBefore[colName] || [];
-        const found = list.find((d) => d.id === id);
-        return found ? JSON.parse(JSON.stringify(found)) : null;
-      },
-      insert(colName, docData) {
-        const list = snapshotBefore[colName] || [];
-        const newDoc = {
-          ...JSON.parse(JSON.stringify(docData)),
-          id: docData.id || generateId(colName.slice(0, 3))
-        };
-        list.push(newDoc);
-        snapshotBefore[colName] = list;
-        touchedCollections.add(colName);
-        dirtyDocs.push({ collection: colName, id: newDoc.id, data: newDoc });
-        return newDoc;
-      },
-      update(colName, id, patch) {
-        const list = snapshotBefore[colName] || [];
-        const idx = list.findIndex((d) => d.id === id);
-        if (idx === -1) throw new Error(`Registro no encontrado en ${colName}: ${id}`);
-        list[idx] = { ...list[idx], ...JSON.parse(JSON.stringify(patch)), id };
-        touchedCollections.add(colName);
-        dirtyDocs.push({ collection: colName, id, data: list[idx] });
-        return list[idx];
-      }
-    };
+    // Modo local / pruebas en memoria
+    const snapshotBefore = cloneSnapshotFromCache();
+    const { tx, getTouchedCollections } = buildTxContext(snapshotBefore);
 
     const result = await workFn(tx);
 
@@ -483,13 +591,7 @@ export async function runAtomicTransaction(workFn, options = {}) {
       throw new Error("Se perdió la conexión de red antes de confirmar la escritura. No se guardaron cambios.");
     }
 
-    // Si Firebase está configurado en ejecución real, confirmar PRIMERO en Cloud Firestore mediante writeBatch
-    // antes de dar por guardada la operación (Etapa 4 y 13).
-    if (!inMemoryTestMode && isFirebaseConfigured() && dirtyDocs.length > 0) {
-      await escribirLoteFirestore(dirtyDocs);
-    }
-
-    // Confirmar (commit) en almacenamiento activo
+    const touchedCollections = getTouchedCollections();
     for (const col of touchedCollections) {
       writeCollectionRaw(col, snapshotBefore[col]);
     }

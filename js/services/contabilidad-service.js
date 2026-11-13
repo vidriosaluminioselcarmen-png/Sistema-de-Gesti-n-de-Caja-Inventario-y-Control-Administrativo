@@ -21,13 +21,15 @@ export const TIPOS_CONTABLE = {
   INGRESO: "Ingreso",
   GASTO: "Gasto",
   TRASLADO: "Traslado interno",
-  REVERSION: "Reversión"
+  REVERSION: "Reversión",
+  DEVOLUCION: "Devolución"
 };
 
 export const CATEGORIAS_INGRESO = [
   "Ventas de mostrador",
   "Anticipos de clientes",
   "Abonos de instalaciones",
+  "Abonos de cartera",
   "Otros ingresos"
 ];
 
@@ -207,6 +209,8 @@ export function calcularResumenContable(
 ) {
   let ingresos = 0;
   let gastos = 0;
+  let totalDevoluciones = 0;
+  let totalReembolsos = 0;
   let gastosOperativos = 0;
   let comprasInventario = 0;
   let ingresosEfectivo = 0;
@@ -241,6 +245,24 @@ export function calcularResumenContable(
         trasladosABancos += monto;
       } else if (m.cuentaDestino === "Caja física") {
         trasladosACaja += monto;
+      }
+      continue;
+    }
+
+    if (m.tipo === TIPOS_CONTABLE.DEVOLUCION) {
+      // Una devolución no es un gasto operativo: ajusta ingresos por el dinero realmente reembolsado
+      const montoDev = roundCOP(m.valor ?? m.monto);
+      const reembolsoReal = roundCOP(m.montoReembolsado ?? 0);
+      totalDevoluciones += montoDev;
+      totalReembolsos += reembolsoReal;
+      if (reembolsoReal > 0) {
+        ingresos = roundCOP(ingresos - reembolsoReal);
+        if (esEfectivo || m.afectaCajaFisica) {
+          ingresosEfectivo = roundCOP(ingresosEfectivo - reembolsoReal);
+        } else {
+          ingresosBancos = roundCOP(ingresosBancos - reembolsoReal);
+          movimientosBancariosCount++;
+        }
       }
       continue;
     }
@@ -309,6 +331,8 @@ export function calcularResumenContable(
   return {
     ingresos: roundCOP(ingresos),
     gastos: roundCOP(gastos),
+    totalDevoluciones: roundCOP(totalDevoluciones),
+    totalReembolsos: roundCOP(totalReembolsos),
     gastosOperativos: roundCOP(gastosOperativos),
     comprasInventario: roundCOP(comprasInventario),
     balance: roundCOP(ingresos - gastos),

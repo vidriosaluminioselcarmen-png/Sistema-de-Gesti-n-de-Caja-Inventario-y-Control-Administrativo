@@ -12,9 +12,18 @@ import {
   roundQty,
   roundCOP,
   calcularAreaM2,
-  calcularVidrioPersonalizado
+  calcularVidrioPersonalizado,
+  crearProducto
 } from "../services/inventario-service.js";
-import { watchClientes, crearCliente } from "../services/clientes-service.js";
+import {
+  watchClientes,
+  crearCliente,
+  buscarClientes,
+  obtenerHistorialCliente,
+  listarCarteraClientes,
+  calcularSaldoPendienteVenta
+} from "../services/clientes-service.js";
+import { COLLECTIONS, getCollection } from "../services/store.js";
 import {
   watchCajas,
   watchVentas,
@@ -24,11 +33,14 @@ import {
   calcularTotalesVenta,
   evaluarPagos,
   registrarVenta,
+  registrarAbonoVenta,
   anularVenta,
   registrarDevolucionVenta,
+  calcularDisponibilidadDevolucion,
   calcularArqueoCaja,
   filtrarHistorialVentas,
-  generarDatosComprobante
+  generarDatosComprobante,
+  generarLineId
 } from "../services/caja-service.js";
 
 function escapeHtml(str) {
@@ -210,8 +222,8 @@ export function mountCajaView(root) {
             </div>
             <span class="product-name">${escapeHtml(p.nombre)}</span>
             <span class="product-meta">Cód: <b>${escapeHtml(p.codigo)}</b> · ${escapeHtml(p.categoria)}</span>
-            <span class="product-meta">Disponible: <b>${p.stock} ${escapeHtml(p.unidad)}</b></span>
-            <span class="product-price num">${formatCOP(p.precio)} <small style="font-weight:500; font-size:.75rem; color:var(--text-muted)">/ ${escapeHtml(p.unidad)}</small></span>
+            <span class="product-meta">Disponible: <b>${p.stock}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""}</b></span>
+            <span class="product-price num">${formatCOP(p.precio)}${p.unidad ? ` <small style="font-weight:500; font-size:.75rem; color:var(--text-muted)">/ ${escapeHtml(p.unidad)}</small>` : ""}</span>
           </button>
         `;
       })
@@ -265,7 +277,7 @@ export function mountCajaView(root) {
     const enCarrito = getCantidadEnCarrito(prod.id);
     if (roundQty(enCarrito + cantSolicitada) > roundQty(prod.stock)) {
       showFeedback(
-        `No hay existencias suficientes para esta cantidad (${prod.nombre}: disponible ${prod.stock} ${prod.unidad}).`,
+        `No hay existencias suficientes para esta cantidad (${prod.nombre}: disponible ${prod.stock}${prod.unidad ? ` ${prod.unidad}` : ""}).`,
         "danger"
       );
       return false;
@@ -298,11 +310,11 @@ export function mountCajaView(root) {
       const subtotal = roundCOP(precioMaterial + costosAdicionales);
 
       cart.push({
-        lineId: `line-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        lineId: generarLineId(),
         productoId: prod.id,
         codigo: prod.codigo,
         nombre: prod.nombre,
-        unidad: prod.unidad,
+        unidad: prod.unidad ?? "",
         permiteDecimal: Boolean(prod.permiteDecimal || prod.unidad === "m" || prod.unidad === "m²"),
         precioUnitario,
         precioAutorizado: precioUnitario !== roundCOP(prod.precio),
@@ -379,6 +391,29 @@ export function mountCajaView(root) {
     renderCarrito();
   }
 
+  function agregarConceptoTemporalAlCarrito({ nombre, cantidad, precioUnitario, unidad, observacion }) {
+    hideFeedback();
+    const cant = roundQty(cantidad);
+    const precio = roundCOP(precioUnitario);
+    const sub = roundCOP(precio * cant);
+    cart.push({
+      lineId: generarLineId(),
+      esTemporal: true,
+      productoId: null,
+      codigo: "",
+      nombre: String(nombre || "").trim(),
+      unidad: String(unidad || "").trim(),
+      permiteDecimal: true,
+      cantidad: cant,
+      precioUnitario: precio,
+      precioMaterial: sub,
+      costosAdicionales: 0,
+      subtotal: sub,
+      observacion: String(observacion || "").trim()
+    });
+    renderCarrito();
+  }
+
   function actualizarCantidadLinea(lineId, nuevaCantidad) {
     hideFeedback();
     const idx = cart.findIndex((i) => i.lineId === lineId);
@@ -387,6 +422,20 @@ export function mountCajaView(root) {
     const item = cart[idx];
     if (item.dimensiones) {
       actualizarPiezasVidrioLinea(lineId, nuevaCantidad);
+      return;
+    }
+
+    if (item.esTemporal) {
+      const cant = roundQty(nuevaCantidad);
+      if (!(cant > 0)) {
+        showFeedback("La cantidad no puede ser cero ni negativa. Usa el botón × para eliminar la línea.", "danger");
+        renderCarrito();
+        return;
+      }
+      cart[idx].cantidad = cant;
+      cart[idx].precioMaterial = roundCOP(cart[idx].precioUnitario * cant);
+      cart[idx].subtotal = cart[idx].precioMaterial;
+      renderCarrito();
       return;
     }
 
@@ -412,7 +461,7 @@ export function mountCajaView(root) {
     );
     if (roundQty(otrosMismoProd + cant) > roundQty(prod.stock)) {
       showFeedback(
-        `No hay existencias suficientes para esta cantidad (máximo disponible: ${prod.stock} ${prod.unidad}).`,
+        `No hay existencias suficientes para esta cantidad (máximo disponible: ${prod.stock}${prod.unidad ? ` ${prod.unidad}` : ""}).`,
         "danger"
       );
       renderCarrito();
@@ -432,6 +481,9 @@ export function mountCajaView(root) {
   }
 
   function obtenerPagosFormulario(totalVenta) {
+    const modalidad = $("#modalidad-cobro")?.value || "completo";
+    if (modalidad === "credito") return [];
+
     const metodo = $("#metodo-pago")?.value || "Efectivo";
     if (metodo === "Efectivo") {
       const raw = $("#recibido")?.value;
@@ -448,10 +500,14 @@ export function mountCajaView(root) {
       if (otroImp > 0) lista.push({ metodo: otroMetodo, importe: otroImp, referencia: ref });
       return lista;
     }
+    const importeMetodo =
+      modalidad === "parcial"
+        ? roundCOP($("#recibido")?.value || 0)
+        : roundCOP(totalVenta);
     return [
       {
         metodo,
-        importe: roundCOP(totalVenta),
+        importe: importeMetodo,
         referencia: $("#referencia-pago")?.value || ""
       }
     ];
@@ -470,11 +526,13 @@ export function mountCajaView(root) {
       listEl.innerHTML = cart
         .map((item) => {
           const esMedida = Boolean(item.dimensiones);
+          const esTemporal = Boolean(item.esTemporal);
           const precioMaterial = roundCOP(item.precioMaterial ?? item.precioUnitario * item.cantidad);
           const costosAdic = roundCOP(item.costosAdicionales || 0);
           const subtotal = roundCOP(item.subtotal ?? precioMaterial + costosAdic);
           const step = esMedida ? "1" : item.permiteDecimal ? "0.01" : "1";
           const inputVal = esMedida ? item.dimensiones.piezas : item.cantidad;
+          const puedeEditarPrecio = esTemporal && hasPermission("ventas.modificar_precio", getCurrentUser());
 
           let dimText = "";
           if (esMedida) {
@@ -490,12 +548,25 @@ export function mountCajaView(root) {
             dimText = `<br><span class="unit">Medida: <b>${anchoVis} × ${largoVis} ${escapeHtml(uDim)}</b> · ${d.piezas} pza (${areaPza} m²/pza = <b>${item.cantidad} m²</b>)</span>${adicStr}`;
           }
 
+          const badgeHtml = esTemporal
+            ? ` <span class="badge-temp">SOLO ESTA VENTA</span>`
+            : ` <small class="text-muted">(${escapeHtml(item.codigo)})</small>`;
+
+          const unitPriceHtml = puedeEditarPrecio
+            ? `<span class="unit num">$ <input type="number" min="0" step="100" value="${item.precioUnitario}" data-price-input="${escapeHtml(item.lineId)}" aria-label="Precio unitario de ${escapeHtml(item.nombre)}" style="width:82px; padding:1px 4px; border:1px solid var(--border); border-radius:4px; font-size:.78rem">${item.unidad ? ` / ${escapeHtml(item.unidad)}` : ""}</span>`
+            : `<span class="unit num">${formatCOP(item.precioUnitario)}${item.unidad ? ` / ${escapeHtml(item.unidad)}` : ""}</span>`;
+
+          const obsHtml = esTemporal
+            ? `<br><input type="text" maxlength="140" value="${escapeHtml(item.observacion || "")}" placeholder="Observación opcional..." data-obs-input="${escapeHtml(item.lineId)}" aria-label="Observación de ${escapeHtml(item.nombre)}" style="width:100%; max-width:240px; margin-top:3px; padding:2px 6px; border:1px solid var(--border); border-radius:4px; font-size:.76rem; color:var(--text-muted)">`
+            : "";
+
           return `
             <li class="cart-item" data-line="${escapeHtml(item.lineId)}">
               <span class="name">
-                ${escapeHtml(item.nombre)} <small class="text-muted">(${escapeHtml(item.codigo)})</small>
-                <br><span class="unit num">${formatCOP(item.precioUnitario)} / ${escapeHtml(item.unidad)}</span>
+                ${escapeHtml(item.nombre)}${badgeHtml}
+                <br>${unitPriceHtml}
                 ${dimText}
+                ${obsHtml}
               </span>
               <span class="sub num">${formatCOP(subtotal)}</span>
               <span class="qty" title="${esMedida ? "Cantidad de piezas de esta medida" : "Cantidad"}">
@@ -567,17 +638,55 @@ export function mountCajaView(root) {
     }
     if (totEl) totEl.textContent = formatCOP(calculo.total);
 
-    // Visibilidad según método de pago seleccionado
+    // Visibilidad según modalidad de cobro y método de pago seleccionado
+    const cliId = $("#pos-cliente")?.value || "cli-consumidor";
+    const cliObj = clientes.find((c) => c.id === cliId);
+    const puedeCredito = hasPermission("ventas.credito", user) && cliId !== "cli-consumidor" && !cliObj?.esConsumidorFinal;
+    const modSel = $("#modalidad-cobro");
+    const hintEl = $("#cobro-credito-hint");
+    if (modSel) {
+      const optParcial = modSel.querySelector('option[value="parcial"]');
+      const optCredito = modSel.querySelector('option[value="credito"]');
+      if (optParcial) optParcial.disabled = !puedeCredito;
+      if (optCredito) optCredito.disabled = !puedeCredito;
+      if (!puedeCredito && modSel.value !== "completo") {
+        modSel.value = "completo";
+      }
+    }
+    if (hintEl) {
+      if (!hasPermission("ventas.credito", user)) {
+        hintEl.textContent = "Las ventas a crédito o con saldo pendiente requieren permiso de Administrador.";
+        hintEl.classList.remove("hidden");
+      } else if (cliId === "cli-consumidor" || cliObj?.esConsumidorFinal) {
+        hintEl.textContent = "Selecciona un cliente identificado para habilitar pago parcial o crédito.";
+        hintEl.classList.remove("hidden");
+      } else {
+        hintEl.classList.add("hidden");
+      }
+    }
+
+    const modalidad = modSel?.value || "completo";
+    const esCreditoTotal = modalidad === "credito";
     const metodo = $("#metodo-pago")?.value || "Efectivo";
-    $("#box-pago-efectivo")?.classList.toggle("hidden", metodo !== "Efectivo");
+
+    $("#field-metodo-pago")?.classList.toggle("hidden", esCreditoTotal);
+    const mostrarBoxRecibido = !esCreditoTotal && (metodo === "Efectivo" || (modalidad === "parcial" && metodo !== "Mixto"));
+    $("#box-pago-efectivo")?.classList.toggle("hidden", !mostrarBoxRecibido);
+    const lblRecibido = $("#box-pago-efectivo label");
+    if (lblRecibido) {
+      lblRecibido.textContent =
+        modalidad === "parcial" && metodo !== "Efectivo"
+          ? `Importe del abono inicial (${metodo})`
+          : "Valor recibido en efectivo (COP)";
+    }
     $("#box-pago-electronico")?.classList.toggle(
       "hidden",
-      metodo === "Efectivo" || metodo === "Mixto"
+      esCreditoTotal || metodo === "Efectivo" || metodo === "Mixto"
     );
-    $("#box-pago-mixto")?.classList.toggle("hidden", metodo !== "Mixto");
+    $("#box-pago-mixto")?.classList.toggle("hidden", esCreditoTotal || metodo !== "Mixto");
     $("#row-cambio")?.classList.toggle(
       "hidden",
-      metodo !== "Efectivo" && metodo !== "Mixto"
+      esCreditoTotal || (metodo !== "Efectivo" && metodo !== "Mixto")
     );
 
     updateCobrarButtonState(calculo.total);
@@ -587,6 +696,8 @@ export function mountCajaView(root) {
     const btnCobrar = $("#btn-cobrar");
     const labelCambio = $("#label-cambio-faltante");
     const cambioEl = $("#cart-cambio");
+    const rowSaldo = $("#row-saldo-pendiente");
+    const saldoEl = $("#cart-saldo-pendiente");
     const errEl = $("#cart-error");
     if (!btnCobrar) return;
 
@@ -607,28 +718,53 @@ export function mountCajaView(root) {
         cambioEl.textContent = "$ 0";
         cambioEl.className = "num";
       }
+      if (rowSaldo) rowSaldo.classList.add("hidden");
       return;
     }
+
+    const modalidad = $("#modalidad-cobro")?.value || "completo";
+    if (modalidad === "credito") {
+      if (rowSaldo) rowSaldo.classList.remove("hidden");
+      if (saldoEl) saldoEl.textContent = formatCOP(total);
+      btnCobrar.disabled = false;
+      btnCobrar.textContent = "Registrar venta a crédito";
+      return;
+    }
+
+    btnCobrar.textContent = modalidad === "parcial" ? "Registrar venta con saldo" : "Cobrar venta";
 
     try {
       const pagos = obtenerPagosFormulario(total);
       const ev = evaluarPagos({ total, pagos });
-      if (!ev.completo) {
-        if (labelCambio) labelCambio.textContent = "Faltante";
-        if (cambioEl) {
-          cambioEl.textContent = formatCOP(ev.faltante);
-          cambioEl.className = "num text-expense";
-        }
-        btnCobrar.disabled = true;
-      } else {
+      if (modalidad === "parcial") {
+        if (rowSaldo) rowSaldo.classList.remove("hidden");
+        if (saldoEl) saldoEl.textContent = formatCOP(ev.faltante);
         if (labelCambio) labelCambio.textContent = "Cambio";
         if (cambioEl) {
           cambioEl.textContent = formatCOP(ev.cambio);
           cambioEl.className = "num text-income";
         }
-        btnCobrar.disabled = false;
+        btnCobrar.disabled = ev.totalRecibido <= 0 || ev.faltante <= 0;
+      } else {
+        if (rowSaldo) rowSaldo.classList.add("hidden");
+        if (!ev.completo) {
+          if (labelCambio) labelCambio.textContent = "Faltante";
+          if (cambioEl) {
+            cambioEl.textContent = formatCOP(ev.faltante);
+            cambioEl.className = "num text-expense";
+          }
+          btnCobrar.disabled = true;
+        } else {
+          if (labelCambio) labelCambio.textContent = "Cambio";
+          if (cambioEl) {
+            cambioEl.textContent = formatCOP(ev.cambio);
+            cambioEl.className = "num text-income";
+          }
+          btnCobrar.disabled = false;
+        }
       }
     } catch {
+      if (rowSaldo) rowSaldo.classList.add("hidden");
       if (labelCambio) labelCambio.textContent = "Faltante";
       if (cambioEl) {
         cambioEl.textContent = formatCOP(total);
@@ -644,17 +780,232 @@ export function mountCajaView(root) {
   // -------------------------------------------------------------------------
   // 4. CLIENTES E HISTORIAL DE VENTAS (Secciones 7, 10, 11 y 13)
   // -------------------------------------------------------------------------
+  let clienteCarteraDetalleId = null;
+  let clienteHistorialId = null;
+  let clientSearchTimer = null;
+
   function renderSelectorClientes(seleccionarId = null) {
-    const sel = $("#pos-cliente");
-    if (!sel) return;
-    const prev = seleccionarId || sel.value || "cli-consumidor";
-    sel.innerHTML = clientes
-      .map(
-        (c) =>
-          `<option value="${escapeHtml(c.id)}">${escapeHtml(c.nombre)} · ${escapeHtml(c.documento)}</option>`
-      )
+    const hiddenEl = $("#pos-cliente");
+    if (!hiddenEl) return;
+    const prev = seleccionarId || hiddenEl.value || "cli-consumidor";
+    const cli =
+      clientes.find((c) => c.id === prev) ||
+      clientes.find((c) => c.id === "cli-consumidor") ||
+      { id: "cli-consumidor", nombre: "Consumidor Final", documento: "222222222222", esConsumidorFinal: true };
+    hiddenEl.value = cli.id;
+
+    const nomEl = $("#pos-cli-nombre");
+    const docEl = $("#pos-cli-doc");
+    const saldoBadge = $("#pos-cli-saldo-badge");
+    const btnHist = $("#btn-ver-historial-cliente");
+    const btnLimpiar = $("#btn-limpiar-cliente");
+    const esFinal = cli.id === "cli-consumidor" || cli.esConsumidorFinal;
+
+    if (nomEl) nomEl.textContent = cli.nombre;
+    if (docEl) docEl.textContent = `· ${cli.documento}${cli.telefono ? ` · ${cli.telefono}` : ""}`;
+
+    const hist = esFinal ? { saldoPendienteTotal: 0 } : obtenerHistorialCliente(cli.id, { ventas });
+    if (saldoBadge) {
+      saldoBadge.classList.toggle("hidden", !(hist.saldoPendienteTotal > 0));
+      saldoBadge.textContent = `Saldo: ${formatCOP(hist.saldoPendienteTotal)}`;
+    }
+    if (btnHist) btnHist.classList.toggle("hidden", esFinal);
+    if (btnLimpiar) btnLimpiar.classList.toggle("hidden", esFinal);
+
+    recalcularResumenPago();
+  }
+
+  function renderResultadosBusquedaClientes(termino = "") {
+    const box = $("#pos-cliente-resultados");
+    if (!box) return;
+    const q = String(termino || "").trim();
+    if (!q) {
+      box.classList.add("hidden");
+      box.innerHTML = "";
+      return;
+    }
+    const matches = buscarClientes(q, clientes).slice(0, 10);
+    if (matches.length === 0) {
+      box.innerHTML = `<div style="padding:.5rem .75rem; font-size:.82rem" class="text-muted">Sin coincidencias. Usa "+ Nuevo cliente" para registrarlo.</div>`;
+    } else {
+      box.innerHTML = matches
+        .map(
+          (c) => `
+          <button type="button" data-select-cliente="${escapeHtml(c.id)}" style="display:flex; justify-content:space-between; width:100%; text-align:left; padding:.45rem .7rem; border:0; border-bottom:1px solid var(--border); background:none; cursor:pointer; font-size:.82rem">
+            <span><b>${escapeHtml(c.nombre)}</b></span>
+            <span class="text-muted">${escapeHtml(c.documento)}${c.telefono ? ` · ${escapeHtml(c.telefono)}` : ""}</span>
+          </button>
+        `
+        )
+        .join("");
+    }
+    box.classList.remove("hidden");
+  }
+
+  function renderCarteraClientes() {
+    const tbody = $("#tbody-cartera-clientes");
+    const badge = $("#cartera-total-badge");
+    if (!tbody) return;
+
+    const q = $("#cartera-buscar")?.value || "";
+    const cartera = listarCarteraClientes(clientes, ventas, q);
+    const totalCartera = cartera.reduce((acc, r) => acc + r.totalPendiente, 0);
+    if (badge) badge.textContent = `${formatCOP(totalCartera)} por cobrar`;
+
+    if (cartera.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:1.25rem" class="text-muted">No hay clientes con saldo pendiente.</td></tr>`;
+    } else {
+      tbody.innerHTML = cartera
+        .map(
+          (r) => `
+          <tr>
+            <td><b>${escapeHtml(r.cliente.nombre)}</b></td>
+            <td>${escapeHtml(r.cliente.documento)}</td>
+            <td class="num"><b class="text-expense">${formatCOP(r.totalPendiente)}</b></td>
+            <td class="num">${r.operacionesPendientes}</td>
+            <td>${r.ultimoMovimiento ? formatDateTime(r.ultimoMovimiento) : "—"}</td>
+            <td class="text-right" style="white-space:nowrap">
+              <button type="button" class="btn btn-outline btn-xs" data-ver-cartera="${escapeHtml(r.cliente.id)}">Ver detalle</button>
+              <button type="button" class="btn btn-outline btn-xs" data-ver-hist-cli="${escapeHtml(r.cliente.id)}">Historial</button>
+            </td>
+          </tr>
+        `
+        )
+        .join("");
+    }
+
+    if (clienteCarteraDetalleId) {
+      renderDetalleCarteraCliente(clienteCarteraDetalleId);
+    }
+  }
+
+  function renderDetalleCarteraCliente(clienteId) {
+    const panel = $("#cartera-detalle-panel");
+    const tbody = $("#tbody-cartera-detalle");
+    const title = $("#cartera-detalle-titulo");
+    if (!panel || !tbody) return;
+
+    const cli = clientes.find((c) => c.id === clienteId);
+    const hist = obtenerHistorialCliente(clienteId, { ventas });
+    const pendientes = hist.ventas.filter((v) => calcularSaldoPendienteVenta(v) > 0);
+
+    if (!cli || pendientes.length === 0) {
+      clienteCarteraDetalleId = null;
+      panel.classList.add("hidden");
+      return;
+    }
+
+    if (title) {
+      title.textContent = `Cuentas pendientes de ${cli.nombre} (${cli.documento}) · Saldo total: ${formatCOP(hist.saldoPendienteTotal)}`;
+    }
+    const puedeAbonar = hasPermission("ventas.abonar", getCurrentUser());
+
+    tbody.innerHTML = pendientes
+      .map((v) => {
+        const saldo = calcularSaldoPendienteVenta(v);
+        const abonado = Math.max(0, roundCOP(v.total) - saldo);
+        return `
+          <tr>
+            <td><b>${escapeHtml(v.numero)}</b></td>
+            <td>${formatDateTime(v.fecha)}</td>
+            <td class="num">${formatCOP(v.total)}</td>
+            <td class="num">${formatCOP(abonado)}</td>
+            <td class="num"><b class="text-expense">${formatCOP(saldo)}</b></td>
+            <td><span class="badge badge-warning">Pendiente</span></td>
+            <td class="text-right" style="white-space:nowrap">
+              <button type="button" class="btn btn-outline btn-xs" data-ver-comprobante="${escapeHtml(v.id)}">Comprobante</button>
+              ${puedeAbonar ? `<button type="button" class="btn btn-primary btn-xs" data-abrir-abono="${escapeHtml(v.id)}">Registrar abono</button>` : ""}
+            </td>
+          </tr>
+        `;
+      })
       .join("");
-    if (clientes.some((c) => c.id === prev)) sel.value = prev;
+    panel.classList.remove("hidden");
+  }
+
+  function abrirModalHistorialCliente(clienteId) {
+    const cli = clientes.find((c) => c.id === clienteId);
+    if (!cli) return;
+    clienteHistorialId = clienteId;
+    renderModalHistorialCliente();
+    $("#modal-historial-cliente")?.classList.add("is-open");
+  }
+
+  function renderModalHistorialCliente() {
+    if (!clienteHistorialId) return;
+    const cli = clientes.find((c) => c.id === clienteHistorialId);
+    if (!cli) return;
+    const desde = $("#hist-cli-desde")?.value || "";
+    const hasta = $("#hist-cli-hasta")?.value || "";
+    const hist = obtenerHistorialCliente(clienteHistorialId, { desde, hasta, ventas });
+
+    if ($("#hist-cli-nombre")) $("#hist-cli-nombre").textContent = cli.nombre;
+    if ($("#hist-cli-doc")) {
+      $("#hist-cli-doc").textContent = `${cli.documento}${cli.telefono ? ` · Tel: ${cli.telefono}` : ""}`;
+    }
+    if ($("#hist-cli-total")) $("#hist-cli-total").textContent = formatCOP(hist.totalHistorico);
+    if ($("#hist-cli-saldo")) $("#hist-cli-saldo").textContent = formatCOP(hist.saldoPendienteTotal);
+
+    const tbody = $("#tbody-historial-cliente");
+    if (!tbody) return;
+    if (hist.ventas.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:1.25rem" class="text-muted">No hay ventas registradas para este cliente en el rango seleccionado.</td></tr>`;
+      return;
+    }
+
+    const puedeAbonar = hasPermission("ventas.abonar", getCurrentUser());
+    tbody.innerHTML = hist.ventas
+      .map((v) => {
+        const saldo = calcularSaldoPendienteVenta(v);
+        const pagado = v.estado === "Anulada" ? 0 : Math.max(0, roundCOP(v.total) - saldo);
+        const badgeEstado =
+          v.estado === "Anulada"
+            ? `<span class="badge badge-danger">Anulada</span>`
+            : saldo > 0
+              ? `<span class="badge badge-warning">Saldo pendiente</span>`
+              : `<span class="badge badge-success">Pagada</span>`;
+        return `
+          <tr>
+            <td><b>${escapeHtml(v.numero)}</b></td>
+            <td>${formatDateTime(v.fecha)}</td>
+            <td class="num">${formatCOP(v.total)}</td>
+            <td class="num">${formatCOP(pagado)}</td>
+            <td class="num ${saldo > 0 ? "text-expense" : ""}"><b>${formatCOP(saldo)}</b></td>
+            <td>${badgeEstado}</td>
+            <td>${escapeHtml(v.vendedor || "")}</td>
+            <td class="text-right" style="white-space:nowrap">
+              <button type="button" class="btn btn-outline btn-xs" data-ver-comprobante="${escapeHtml(v.id)}">Detalle</button>
+              ${v.estado !== "Anulada" && saldo > 0 && puedeAbonar ? `<button type="button" class="btn btn-primary btn-xs" data-abrir-abono="${escapeHtml(v.id)}">Abonar</button>` : ""}
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  function abrirModalRegistrarAbono(ventaId) {
+    const v = ventas.find((x) => x.id === ventaId);
+    if (!v) return;
+    const saldo = calcularSaldoPendienteVenta(v);
+    if (!(saldo > 0)) {
+      showFeedback("Esta venta ya está completamente pagada.", "info");
+      return;
+    }
+    const pagado = Math.max(0, roundCOP(v.total) - saldo);
+    if ($("#abono-venta-id")) $("#abono-venta-id").value = v.id;
+    if ($("#abono-venta-numero")) $("#abono-venta-numero").textContent = v.numero;
+    if ($("#abono-venta-cliente")) $("#abono-venta-cliente").textContent = `${v.cliente?.nombre || ""} (${v.cliente?.documento || ""})`;
+    if ($("#abono-venta-total")) $("#abono-venta-total").textContent = formatCOP(v.total);
+    if ($("#abono-venta-pagado")) $("#abono-venta-pagado").textContent = formatCOP(pagado);
+    if ($("#abono-venta-saldo")) $("#abono-venta-saldo").textContent = formatCOP(saldo);
+    if ($("#abono-importe")) {
+      $("#abono-importe").value = "";
+      $("#abono-importe").max = String(saldo);
+    }
+    if ($("#abono-referencia")) $("#abono-referencia").value = "";
+    if ($("#abono-nuevo-saldo")) $("#abono-nuevo-saldo").textContent = formatCOP(saldo);
+    $("#abono-error")?.classList.add("hidden");
+    $("#modal-registrar-abono")?.classList.add("is-open");
   }
 
   function renderHistorialVentas() {
@@ -678,10 +1029,22 @@ export function mountCajaView(root) {
     }
 
     const puedeAnular = hasPermission("ventas.anular", getCurrentUser());
+    const puedeDevolver = hasPermission("ventas.devolucion", getCurrentUser());
+    const puedeAbonar = hasPermission("ventas.abonar", getCurrentUser());
 
     tbody.innerHTML = filtradas
       .map((v) => {
-        const badgeCls = v.estado === "Completada" ? "badge-success" : "badge-danger";
+        const badgeCls =
+          v.estado === "Completada"
+            ? "badge-success"
+            : v.estado === "Devuelta"
+              ? "badge-warning"
+              : "badge-danger";
+        const saldo = calcularSaldoPendienteVenta(v);
+        const saldoHtml =
+          v.estado !== "Anulada" && saldo > 0
+            ? `<br><small class="text-expense">Saldo: ${formatCOP(saldo)}</small>`
+            : "";
         return `
           <tr>
             <td><b>${escapeHtml(v.numero)}</b></td>
@@ -689,13 +1052,23 @@ export function mountCajaView(root) {
             <td>${escapeHtml(v.cliente?.nombre || "Consumidor Final")}</td>
             <td>${escapeHtml(v.vendedor)}</td>
             <td><span class="badge">${escapeHtml(v.metodoPago)}</span></td>
-            <td class="num"><b>${formatCOP(v.total)}</b></td>
+            <td class="num"><b>${formatCOP(v.total)}</b>${saldoHtml}</td>
             <td><span class="badge ${badgeCls}">${escapeHtml(v.estado)}</span></td>
             <td class="text-right" style="white-space:nowrap">
               <button type="button" class="btn btn-outline" style="padding:.25rem .6rem; font-size:.78rem" data-ver-comprobante="${escapeHtml(v.id)}">Comprobante</button>
               ${
+                v.estado !== "Anulada" && saldo > 0 && puedeAbonar
+                  ? `<button type="button" class="btn btn-primary" style="padding:.25rem .6rem; font-size:.78rem" data-abrir-abono="${escapeHtml(v.id)}">Abonar</button>`
+                  : ""
+              }
+              ${
+                v.estado === "Completada" && puedeDevolver
+                  ? `<button type="button" class="btn btn-outline" style="padding:.25rem .6rem; font-size:.78rem" data-abrir-devolucion="${escapeHtml(v.id)}">Devolver</button>`
+                  : ""
+              }
+              ${
                 v.estado === "Completada" && puedeAnular
-                  ? `<button type="button" class="btn btn-outline" style="padding:.25rem .6rem; font-size:.78rem; color:var(--danger); border-color:var(--danger)" data-abrir-anular="${escapeHtml(v.id)}">Anular / Devolver</button>`
+                  ? `<button type="button" class="btn btn-outline" style="padding:.25rem .6rem; font-size:.78rem; color:var(--danger); border-color:var(--danger)" data-abrir-anular="${escapeHtml(v.id)}">Anular</button>`
                   : ""
               }
             </td>
@@ -726,10 +1099,16 @@ export function mountCajaView(root) {
               : "";
           detalleMedida = `<br><small class="text-muted">Medida: ${anchoVis} × ${largoVis} ${escapeHtml(uDim)} · ${d.piezas} pza (${areaPza} m²/pza · Total: ${i.cantidad} m²)</small>${adic}`;
         }
+        const obsLine = i.esTemporal && i.observacion
+          ? `<br><small class="text-muted">${escapeHtml(i.observacion)}</small>`
+          : "";
+        const labelHtml = i.esTemporal
+          ? `${escapeHtml(i.nombre)} <span class="badge-temp">SOLO ESTA VENTA</span>${obsLine}`
+          : `${escapeHtml(i.nombre)} <small class="text-muted">(${escapeHtml(i.codigo)})</small>${detalleMedida}`;
         return `
           <tr>
-            <td>${escapeHtml(i.nombre)} <small class="text-muted">(${escapeHtml(i.codigo)})</small>${detalleMedida}</td>
-            <td class="num">${i.cantidad} ${escapeHtml(i.unidad)}</td>
+            <td>${labelHtml}</td>
+            <td class="num">${i.cantidad}${i.unidad ? ` ${escapeHtml(i.unidad)}` : ""}</td>
             <td class="num">${formatCOP(i.precioUnitario)}</td>
             <td class="num">${formatCOP(i.subtotal)}</td>
           </tr>
@@ -738,18 +1117,37 @@ export function mountCajaView(root) {
       .join("");
 
     const filasPagos = comp.pagos
-      .map(
-        (p) =>
-          `<div class="summary-row"><span>Pago (${escapeHtml(p.metodo)}${p.referencia ? ` · Ref: ${escapeHtml(p.referencia)}` : ""})</span><span class="num">${formatCOP(p.importe)}</span></div>`
-      )
+      .map((p) => {
+        const tipoEtq = p.tipoPago === "Abono" ? "Abono" : "Pago inicial";
+        const fechaEtq = p.fecha ? ` · ${formatDateTime(p.fecha)}` : "";
+        return `<div class="summary-row"><span>${tipoEtq} (${escapeHtml(p.metodo)}${p.referencia ? ` · Ref: ${escapeHtml(p.referencia)}` : ""}${fechaEtq})</span><span class="num">${formatCOP(p.importe)}</span></div>`;
+      })
       .join("");
+
+    const devolucionesHtml =
+      Array.isArray(comp.devoluciones) && comp.devoluciones.length > 0
+        ? `
+          <div style="margin-top:.75rem; padding-top:.65rem; border-top:1px dashed var(--border)">
+            <b style="font-size:.82rem">Devoluciones registradas (${comp.devoluciones.length} · Total: ${formatCOP(comp.totalDevueltoAcumulado)})</b>
+            ${comp.devoluciones
+              .map(
+                (d) => `
+                <div style="font-size:.78rem; margin-top:.35rem; padding:.35rem .5rem; background:var(--navy-50); border-radius:4px">
+                  <div><b>${formatDateTime(d.fecha)}</b> · ${escapeHtml(d.tipoReembolso || "Reembolso")}: <b class="num">${formatCOP(d.totalDevuelto)}</b> · <i>${escapeHtml(d.motivo)}</i></div>
+                  <div class="text-muted">${(d.items || []).map((it) => `${escapeHtml(it.nombre)} × ${it.cantidad}${it.unidad ? ` ${escapeHtml(it.unidad)}` : ""}`).join(", ")}</div>
+                </div>`
+              )
+              .join("")}
+          </div>
+        `
+        : "";
 
     body.innerHTML = `
       <div style="border:1px solid var(--border); border-radius:var(--radius-sm); padding:1rem">
         <div style="text-align:center; border-bottom:1px dashed var(--border); padding-bottom:.75rem; margin-bottom:.75rem">
           <h4 style="margin:0">${escapeHtml(comp.establecimiento)}</h4>
           <p class="text-muted" style="margin:.15rem 0; font-size:.82rem">${escapeHtml(comp.tipoDocumento)} · <b>${escapeHtml(comp.numero)}</b></p>
-          <span class="badge ${comp.estado === "Completada" ? "badge-success" : "badge-danger"}">${escapeHtml(comp.estado)}</span>
+          <span class="badge ${comp.estado === "Completada" ? "badge-success" : comp.estado === "Devuelta" ? "badge-warning" : "badge-danger"}">${escapeHtml(comp.estado)}</span>
         </div>
         <div class="summary" style="font-size:.84rem">
           <div class="summary-row"><span>Fecha y hora:</span><span>${formatDateTime(comp.fecha)}</span></div>
@@ -767,10 +1165,13 @@ export function mountCajaView(root) {
           <div class="summary-row"><span>Subtotal</span><span class="num">${formatCOP(comp.subtotal)}</span></div>
           ${comp.descuento > 0 ? `<div class="summary-row"><span>Descuento</span><span class="num text-expense">− ${formatCOP(comp.descuento)}</span></div>` : ""}
           <div class="summary-row total"><span>Total venta</span><span class="num">${formatCOP(comp.total)}</span></div>
+          ${comp.anticipoAplicado > 0 ? `<div class="summary-row"><span>Anticipo aplicado</span><span class="num">${formatCOP(comp.anticipoAplicado)}</span></div>` : ""}
           ${filasPagos}
-          <div class="summary-row"><span>Total recibido</span><span class="num">${formatCOP(comp.valorRecibido)}</span></div>
-          <div class="summary-row"><span>Cambio entregado</span><b class="num">${formatCOP(comp.cambio)}</b></div>
+          <div class="summary-row"><span>Total pagado / abonado</span><span class="num">${formatCOP(comp.importePagado)}</span></div>
+          ${comp.cambio > 0 ? `<div class="summary-row"><span>Cambio entregado</span><b class="num">${formatCOP(comp.cambio)}</b></div>` : ""}
+          ${comp.saldoPendiente > 0 ? `<div class="summary-row"><span>Saldo pendiente</span><b class="num text-expense">${formatCOP(comp.saldoPendiente)}</b></div>` : ""}
         </div>
+        ${devolucionesHtml}
         <p class="text-muted" style="margin:.75rem 0 0; font-size:.74rem; text-align:center">${escapeHtml(comp.leyendaLegal)}</p>
       </div>
     `;
@@ -845,9 +1246,33 @@ export function mountCajaView(root) {
   });
 
   $("#cart-items")?.addEventListener("change", (e) => {
-    const input = e.target.closest("[data-qty-input]");
-    if (!input) return;
-    actualizarCantidadLinea(input.dataset.qtyInput, Number(input.value));
+    const qtyInput = e.target.closest("[data-qty-input]");
+    if (qtyInput) {
+      actualizarCantidadLinea(qtyInput.dataset.qtyInput, Number(qtyInput.value));
+      return;
+    }
+    const priceInput = e.target.closest("[data-price-input]");
+    if (priceInput) {
+      const idx = cart.findIndex((i) => i.lineId === priceInput.dataset.priceInput);
+      if (idx === -1 || !cart[idx].esTemporal) return;
+      const nuevoPrecio = roundCOP(Number(priceInput.value));
+      if (Number.isNaN(nuevoPrecio) || nuevoPrecio < 0) {
+        showFeedback("El precio del concepto temporal no puede ser negativo.", "danger");
+        renderCarrito();
+        return;
+      }
+      cart[idx].precioUnitario = nuevoPrecio;
+      cart[idx].precioMaterial = roundCOP(nuevoPrecio * cart[idx].cantidad);
+      cart[idx].subtotal = cart[idx].precioMaterial;
+      renderCarrito();
+      return;
+    }
+    const obsInput = e.target.closest("[data-obs-input]");
+    if (obsInput) {
+      const idx = cart.findIndex((i) => i.lineId === obsInput.dataset.obsInput);
+      if (idx === -1 || !cart[idx].esTemporal) return;
+      cart[idx].observacion = String(obsInput.value || "").trim();
+    }
   });
 
   $("#btn-vaciar")?.addEventListener("click", () => {
@@ -855,9 +1280,35 @@ export function mountCajaView(root) {
     renderCarrito();
   });
 
-  ["#cart-descuento-input", "#metodo-pago", "#recibido", "#referencia-pago", "#mixto-efectivo", "#mixto-otro-metodo", "#mixto-otro-importe", "#mixto-referencia"].forEach((sel) => {
+  ["#cart-descuento-input", "#modalidad-cobro", "#metodo-pago", "#recibido", "#referencia-pago", "#mixto-efectivo", "#mixto-otro-metodo", "#mixto-otro-importe", "#mixto-referencia"].forEach((sel) => {
     $(sel)?.addEventListener("input", recalcularResumenPago);
     $(sel)?.addEventListener("change", recalcularResumenPago);
+  });
+
+  // Buscador dinámico de clientes en el POS
+  $("#pos-cliente-buscar")?.addEventListener("input", (e) => {
+    clearTimeout(clientSearchTimer);
+    const val = e.target.value;
+    clientSearchTimer = setTimeout(() => {
+      renderResultadosBusquedaClientes(val);
+    }, 150);
+  });
+
+  $("#pos-cliente-resultados")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-select-cliente]");
+    if (!btn) return;
+    renderSelectorClientes(btn.dataset.selectCliente);
+    if ($("#pos-cliente-buscar")) $("#pos-cliente-buscar").value = "";
+    $("#pos-cliente-resultados")?.classList.add("hidden");
+  });
+
+  $("#btn-limpiar-cliente")?.addEventListener("click", () => {
+    renderSelectorClientes("cli-consumidor");
+  });
+
+  $("#btn-ver-historial-cliente")?.addEventListener("click", () => {
+    const cliId = $("#pos-cliente")?.value;
+    if (cliId && cliId !== "cli-consumidor") abrirModalHistorialCliente(cliId);
   });
 
   // Flujo de Venta de Vidrios por Medidas Personalizadas (m²)
@@ -1056,6 +1507,8 @@ export function mountCajaView(root) {
     try {
       const descuento = Math.max(0, roundCOP($("#cart-descuento-input")?.value || 0));
       const { total } = calcularTotalesVenta(cart, { descuento });
+      const modalidad = $("#modalidad-cobro")?.value || "completo";
+      const esVentaCredito = modalidad === "credito" || modalidad === "parcial";
       const pagos = obtenerPagosFormulario(total);
       const idempotencyKey = `sale-${cajaAbierta?.id || "nocaja"}-${Date.now()}`;
 
@@ -1067,6 +1520,7 @@ export function mountCajaView(root) {
           descuento,
           clienteId: $("#pos-cliente")?.value || "cli-consumidor",
           ordenReferencia: $("#pos-orden-ref")?.value || "",
+          esVentaCredito,
           idempotencyKey
         },
         getCurrentUser()
@@ -1078,6 +1532,7 @@ export function mountCajaView(root) {
       if ($("#referencia-pago")) $("#referencia-pago").value = "";
       if ($("#pos-orden-ref")) $("#pos-orden-ref").value = "";
       if ($("#cart-descuento-input")) $("#cart-descuento-input").value = "0";
+      if ($("#modalidad-cobro")) $("#modalidad-cobro").value = "completo";
       renderCarrito();
 
       showFeedback(`La venta ${ventaConfirmada.numero} se registró correctamente.`, "info");
@@ -1186,12 +1641,22 @@ export function mountCajaView(root) {
     $(sel)?.addEventListener("change", renderHistorialVentas);
   });
 
-  // Acciones en la tabla de historial (Ver comprobante / Anular o Devolver)
+  // Acciones en la tabla de historial (Ver comprobante / Abonar / Anular o Devolver)
   $("#tbody-historial-ventas")?.addEventListener("click", (e) => {
     const btnComp = e.target.closest("[data-ver-comprobante]");
     if (btnComp) {
       const v = ventas.find((x) => x.id === btnComp.dataset.verComprobante);
       if (v) mostrarModalComprobante(v);
+      return;
+    }
+    const btnAbono = e.target.closest("[data-abrir-abono]");
+    if (btnAbono) {
+      abrirModalRegistrarAbono(btnAbono.dataset.abrirAbono);
+      return;
+    }
+    const btnDev = e.target.closest("[data-abrir-devolucion]");
+    if (btnDev) {
+      abrirModalDevolucionVenta(btnDev.dataset.abrirDevolucion);
       return;
     }
     const btnAnular = e.target.closest("[data-abrir-anular]");
@@ -1203,6 +1668,155 @@ export function mountCajaView(root) {
       $("#anular-motivo").value = "";
       $("#anular-error")?.classList.add("hidden");
       $("#modal-anular-venta")?.classList.add("is-open");
+    }
+  });
+
+  function abrirModalDevolucionVenta(ventaId) {
+    const v = ventas.find((x) => x.id === ventaId);
+    if (!v) return;
+    const devs = getCollection(COLLECTIONS.DEVOLUCIONES).filter((d) => d.ventaId === v.id);
+    const disp = calcularDisponibilidadDevolucion(v, devs);
+    const saldo = calcularSaldoPendienteVenta(v);
+    const pagado = Math.max(0, roundCOP(v.total) - saldo);
+    const previasTotal = devs.reduce((acc, d) => acc + roundCOP(d.totalDevuelto), 0);
+
+    if ($("#dev-venta-id")) $("#dev-venta-id").value = v.id;
+    if ($("#dev-venta-numero")) $("#dev-venta-numero").textContent = `${v.numero} · ${formatDateTime(v.fecha)} (${v.estado})`;
+    if ($("#dev-venta-cliente")) $("#dev-venta-cliente").textContent = `${v.cliente?.nombre || "Consumidor Final"} · Vend.: ${v.vendedor || ""}`;
+    if ($("#dev-venta-totales")) $("#dev-venta-totales").textContent = `${formatCOP(v.total)} / Pagado: ${formatCOP(pagado)}`;
+    if ($("#dev-venta-saldo")) $("#dev-venta-saldo").textContent = formatCOP(saldo);
+    if ($("#dev-venta-previas")) $("#dev-venta-previas").textContent = `${devs.length} (${formatCOP(previasTotal)})`;
+    if ($("#dev-motivo")) $("#dev-motivo").value = "";
+    if ($("#dev-referencia-reembolso")) $("#dev-referencia-reembolso").value = "";
+    $("#dev-error")?.classList.add("hidden");
+
+    const tbody = $("#tbody-devolucion-lineas");
+    if (tbody) {
+      tbody.innerHTML = disp
+        .map((l) => {
+          const esTemp = Boolean(l.esTemporal || !l.productoId);
+          const badge = esTemp ? ` <span class="badge-temp">SOLO ESTA VENTA</span>` : "";
+          const dim = l.dimensiones
+            ? `<br><small class="text-muted">${l.dimensiones.ancho}×${l.dimensiones.largo} ${escapeHtml(l.dimensiones.unidadDimension || "m")} (${l.dimensiones.piezas} pza)</small>`
+            : "";
+          const step = l.dimensiones || l.permiteDecimal || esTemp ? "0.01" : "1";
+          return `
+            <tr data-dev-line="${escapeHtml(l.lineKey)}">
+              <td><b>${escapeHtml(l.nombre)}</b>${badge}${dim}</td>
+              <td class="num">${l.cantidad}${l.unidad ? ` ${escapeHtml(l.unidad)}` : ""}</td>
+              <td class="num">${l.devueltaPrevia}</td>
+              <td class="num"><b>${l.disponible}</b></td>
+              <td class="num">${formatCOP(l.precioUnitario)}</td>
+              <td class="num">
+                <input type="number" class="input num" min="0" max="${l.disponible}" step="${step}" value="0" data-dev-qty="${escapeHtml(l.lineKey)}" ${l.disponible <= 0 ? "disabled" : ""} style="width:80px; padding:.2rem .4rem; font-size:.8rem">
+              </td>
+              <td>
+                ${
+                  esTemp
+                    ? `<span class="text-muted" style="font-size:.76rem">No aplica</span>`
+                    : `<select class="select" data-dev-apto="${escapeHtml(l.lineKey)}" ${l.disponible <= 0 ? "disabled" : ""} style="padding:.2rem .4rem; font-size:.78rem">
+                        <option value="si">Apto (reintegrar)</option>
+                        <option value="no">Dañado (no reintegrar)</option>
+                      </select>`
+                }
+              </td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+    recalcularResumenDevolucionModal();
+    $("#modal-devolucion-venta")?.classList.add("is-open");
+  }
+
+  function recalcularResumenDevolucionModal() {
+    const v = ventas.find((x) => x.id === $("#dev-venta-id")?.value);
+    if (!v) return;
+    const devs = getCollection(COLLECTIONS.DEVOLUCIONES).filter((d) => d.ventaId === v.id);
+    const disp = calcularDisponibilidadDevolucion(v, devs);
+    const factorDesc =
+      roundCOP(v.subtotal) > 0 && roundCOP(v.descuento || 0) > 0
+        ? Math.max(0, roundCOP(v.subtotal) - roundCOP(v.descuento)) / roundCOP(v.subtotal)
+        : 1;
+
+    let totalDev = 0;
+    root.querySelectorAll("[data-dev-qty]").forEach((inp) => {
+      const qty = roundQty(inp.value || 0);
+      if (!(qty > 0)) return;
+      const linea = disp.find((l) => l.lineKey === inp.dataset.devQty);
+      if (!linea) return;
+      const costoAdicOrig = roundCOP(linea.costosAdicionales || 0);
+      const costoAdicProp = costoAdicOrig > 0 && linea.cantidad > 0 ? roundCOP((costoAdicOrig * qty) / linea.cantidad) : 0;
+      const bruto = roundCOP(qty * roundCOP(linea.precioUnitario) + costoAdicProp);
+      totalDev = roundCOP(totalDev + roundCOP(bruto * factorDesc));
+    });
+
+    const saldo = calcularSaldoPendienteVenta(v);
+    const reduccionCartera = Math.min(saldo, totalDev);
+    const excedente = roundCOP(totalDev - reduccionCartera);
+
+    if ($("#dev-res-total")) $("#dev-res-total").textContent = formatCOP(totalDev);
+    if ($("#dev-res-cartera")) $("#dev-res-cartera").textContent = formatCOP(reduccionCartera);
+    if ($("#dev-res-reembolsable")) $("#dev-res-reembolsable").textContent = formatCOP(excedente);
+    $("#field-dev-tipo-reembolso")?.classList.toggle("hidden", excedente <= 0);
+    $("#field-dev-referencia")?.classList.toggle("hidden", excedente <= 0);
+  }
+
+  $("#tbody-devolucion-lineas")?.addEventListener("input", (e) => {
+    if (e.target.closest("[data-dev-qty]")) recalcularResumenDevolucionModal();
+  });
+
+  let isProcessingDevolucion = false;
+  $("#form-devolucion-venta")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (isProcessingDevolucion) return;
+    const errEl = $("#dev-error");
+    const btn = $("#btn-confirmar-devolucion");
+    if (errEl) errEl.classList.add("hidden");
+    isProcessingDevolucion = true;
+    if (btn) btn.disabled = true;
+
+    try {
+      const ventaId = $("#dev-venta-id")?.value;
+      const itemsDevueltos = [];
+      root.querySelectorAll("[data-dev-qty]").forEach((inp) => {
+        const cant = roundQty(inp.value || 0);
+        if (cant > 0) {
+          const lineKey = inp.dataset.devQty;
+          const aptoSel = root.querySelector(`[data-dev-apto="${CSS.escape(lineKey)}"]`);
+          itemsDevueltos.push({
+            lineKey,
+            cantidad: cant,
+            aptoInventario: aptoSel ? aptoSel.value === "si" : true
+          });
+        }
+      });
+
+      const dev = await registrarDevolucionVenta(
+        {
+          ventaId,
+          itemsDevueltos,
+          motivo: $("#dev-motivo")?.value,
+          reintegrarStock: true,
+          tipoReembolso: $("#dev-tipo-reembolso")?.value,
+          referenciaReembolso: $("#dev-referencia-reembolso")?.value || "",
+          idempotencyKey: `dev-${ventaId}-${Date.now()}`
+        },
+        getCurrentUser()
+      );
+      $("#modal-devolucion-venta")?.classList.remove("is-open");
+      showFeedback(
+        `Devolución registrada sobre ${dev.numeroVenta} por ${formatCOP(dev.totalDevuelto)} (${dev.tipoReembolso}).`,
+        "info"
+      );
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = err.message;
+        errEl.classList.remove("hidden");
+      }
+    } finally {
+      isProcessingDevolucion = false;
+      if (btn) btn.disabled = false;
     }
   });
 
@@ -1250,6 +1864,264 @@ export function mountCajaView(root) {
     window.print();
   });
 
+  // Eventos de Cuentas por cobrar, Historial de cliente y Abonos (Fase 3)
+  $("#cartera-buscar")?.addEventListener("input", renderCarteraClientes);
+
+  $("#tbody-cartera-clientes")?.addEventListener("click", (e) => {
+    const btnDet = e.target.closest("[data-ver-cartera]");
+    if (btnDet) {
+      clienteCarteraDetalleId = btnDet.dataset.verCartera;
+      renderDetalleCarteraCliente(clienteCarteraDetalleId);
+      return;
+    }
+    const btnHist = e.target.closest("[data-ver-hist-cli]");
+    if (btnHist) {
+      abrirModalHistorialCliente(btnHist.dataset.verHistCli);
+    }
+  });
+
+  $("#btn-cerrar-detalle-cartera")?.addEventListener("click", () => {
+    clienteCarteraDetalleId = null;
+    $("#cartera-detalle-panel")?.classList.add("hidden");
+  });
+
+  $("#tbody-cartera-detalle")?.addEventListener("click", (e) => {
+    const btnComp = e.target.closest("[data-ver-comprobante]");
+    if (btnComp) {
+      const v = ventas.find((x) => x.id === btnComp.dataset.verComprobante);
+      if (v) mostrarModalComprobante(v);
+      return;
+    }
+    const btnAbono = e.target.closest("[data-abrir-abono]");
+    if (btnAbono) {
+      abrirModalRegistrarAbono(btnAbono.dataset.abrirAbono);
+    }
+  });
+
+  ["#hist-cli-desde", "#hist-cli-hasta"].forEach((sel) => {
+    $(sel)?.addEventListener("change", renderModalHistorialCliente);
+  });
+  $("#btn-hist-cli-limpiar")?.addEventListener("click", () => {
+    if ($("#hist-cli-desde")) $("#hist-cli-desde").value = "";
+    if ($("#hist-cli-hasta")) $("#hist-cli-hasta").value = "";
+    renderModalHistorialCliente();
+  });
+  $("#tbody-historial-cliente")?.addEventListener("click", (e) => {
+    const btnComp = e.target.closest("[data-ver-comprobante]");
+    if (btnComp) {
+      const v = ventas.find((x) => x.id === btnComp.dataset.verComprobante);
+      if (v) mostrarModalComprobante(v);
+      return;
+    }
+    const btnAbono = e.target.closest("[data-abrir-abono]");
+    if (btnAbono) {
+      abrirModalRegistrarAbono(btnAbono.dataset.abrirAbono);
+    }
+  });
+
+  $("#abono-importe")?.addEventListener("input", () => {
+    const v = ventas.find((x) => x.id === $("#abono-venta-id")?.value);
+    if (!v) return;
+    const saldo = calcularSaldoPendienteVenta(v);
+    const imp = roundCOP($("#abono-importe")?.value || 0);
+    const restante = Math.max(0, roundCOP(saldo - imp));
+    if ($("#abono-nuevo-saldo")) $("#abono-nuevo-saldo").textContent = formatCOP(restante);
+  });
+
+  let isProcessingAbono = false;
+  $("#form-registrar-abono")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (isProcessingAbono) return;
+    const errEl = $("#abono-error");
+    const btn = $("#btn-confirmar-abono");
+    if (errEl) errEl.classList.add("hidden");
+    isProcessingAbono = true;
+    if (btn) btn.disabled = true;
+
+    try {
+      const ventaId = $("#abono-venta-id")?.value;
+      const importe = Number($("#abono-importe")?.value);
+      const metodoPago = $("#abono-metodo")?.value || "Efectivo";
+      const referencia = $("#abono-referencia")?.value || "";
+      const res = await registrarAbonoVenta(
+        {
+          ventaId,
+          importe,
+          metodoPago,
+          referencia,
+          cajaId: cajaAbierta?.id || null,
+          idempotencyKey: `abn-${ventaId}-${Date.now()}`
+        },
+        getCurrentUser()
+      );
+      $("#modal-registrar-abono")?.classList.remove("is-open");
+      if (clienteHistorialId) renderModalHistorialCliente();
+      showFeedback(
+        `Abono de ${formatCOP(res.abono.importe)} (${res.abono.metodo}) registrado en ${res.venta.numero}. Saldo restante: ${formatCOP(res.venta.saldoPendiente)}.`,
+        "info"
+      );
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = err.message;
+        errEl.classList.remove("hidden");
+      }
+    } finally {
+      isProcessingAbono = false;
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  // Modal unificado: Agregar producto permanente o concepto temporal
+  function setModoProductoConcepto(modo) {
+    const esPermanente = modo === "permanente";
+    root.querySelectorAll("[data-modo-item]").forEach((btn) => {
+      const activo = btn.dataset.modoItem === modo;
+      btn.classList.toggle("btn-primary", activo);
+      btn.classList.toggle("btn-ghost", !activo);
+    });
+    $("#form-item-temporal")?.classList.toggle("hidden", esPermanente);
+    $("#form-item-permanente")?.classList.toggle("hidden", !esPermanente);
+  }
+
+  function syncPosProdDecimalField() {
+    const u = $("#pos-prod-unidad")?.value || "";
+    const field = $("#field-pos-prod-decimal");
+    const chk = $("#pos-prod-decimal");
+    if (u === "m" || u === "m²") {
+      if (chk) chk.checked = true;
+      field?.classList.add("hidden");
+    } else {
+      field?.classList.remove("hidden");
+    }
+  }
+
+  $("#btn-agregar-producto-concepto")?.addEventListener("click", () => {
+    $("#form-item-temporal")?.reset();
+    $("#form-item-permanente")?.reset();
+    $("#temp-error")?.classList.add("hidden");
+    $("#pos-prod-error")?.classList.add("hidden");
+    if ($("#temp-cantidad")) $("#temp-cantidad").value = "1";
+    if ($("#pos-prod-agregar-carrito")) $("#pos-prod-agregar-carrito").checked = true;
+    syncPosProdDecimalField();
+    setModoProductoConcepto("temporal");
+    $("#modal-producto-concepto")?.classList.add("is-open");
+  });
+
+  root.querySelectorAll("[data-modo-item]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $("#temp-error")?.classList.add("hidden");
+      $("#pos-prod-error")?.classList.add("hidden");
+      setModoProductoConcepto(btn.dataset.modoItem);
+    });
+  });
+
+  $("#pos-prod-unidad")?.addEventListener("change", syncPosProdDecimalField);
+
+  $("#form-item-temporal")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const errEl = $("#temp-error");
+    if (errEl) errEl.classList.add("hidden");
+    try {
+      const nombre = String($("#temp-nombre")?.value || "").trim();
+      const cantidad = Number($("#temp-cantidad")?.value);
+      const precioUnitario = Number($("#temp-precio")?.value);
+      const unidad = String($("#temp-unidad")?.value || "").trim();
+      const observacion = String($("#temp-observacion")?.value || "").trim();
+
+      if (!nombre) throw new Error("Ingresa el nombre o descripción del concepto.");
+      if (!(cantidad > 0)) throw new Error("La cantidad debe ser mayor a cero.");
+      if (Number.isNaN(precioUnitario) || precioUnitario < 0) {
+        throw new Error("El precio unitario debe ser mayor o igual a cero.");
+      }
+
+      agregarConceptoTemporalAlCarrito({
+        nombre,
+        cantidad,
+        precioUnitario,
+        unidad,
+        observacion
+      });
+      $("#modal-producto-concepto")?.classList.remove("is-open");
+      showFeedback(`Concepto temporal "${nombre}" agregado solo a esta venta.`, "info");
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = err.message;
+        errEl.classList.remove("hidden");
+      }
+    }
+  });
+
+  $("#form-item-permanente")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = $("#pos-prod-error");
+    if (errEl) errEl.classList.add("hidden");
+    const btn = $("#btn-confirmar-pos-prod");
+    if (btn) btn.disabled = true;
+    try {
+      const unidad = $("#pos-prod-unidad")?.value ?? "";
+      const permiteDecimal =
+        unidad === "m" || unidad === "m²" ? true : Boolean($("#pos-prod-decimal")?.checked);
+      const stockVal = $("#pos-prod-stock")?.value;
+      const stock = stockVal === "" || stockVal === undefined ? 0 : Number(stockVal);
+      const compraVal = $("#pos-prod-compra")?.value;
+      const precioCompra = compraVal === "" || compraVal === undefined ? 0 : Number(compraVal);
+
+      const creado = await crearProducto(
+        {
+          nombre: $("#pos-prod-nombre")?.value,
+          categoria: $("#pos-prod-categoria")?.value,
+          codigo: $("#pos-prod-codigo")?.value,
+          unidad,
+          permiteDecimal,
+          precioCompra,
+          precio: Number($("#pos-prod-precio")?.value),
+          stock,
+          stockMinimo: 0,
+          descripcion: $("#pos-prod-descripcion")?.value
+        },
+        getCurrentUser()
+      );
+
+      const agregarAlCarrito = Boolean($("#pos-prod-agregar-carrito")?.checked);
+      $("#modal-producto-concepto")?.classList.remove("is-open");
+
+      if (agregarAlCarrito) {
+        if (roundQty(creado.stock) > 0) {
+          cart.push({
+            lineId: generarLineId(),
+            esTemporal: false,
+            productoId: creado.id,
+            codigo: creado.codigo,
+            nombre: creado.nombre,
+            unidad: creado.unidad,
+            permiteDecimal: creado.permiteDecimal,
+            cantidad: 1,
+            precioUnitario: roundCOP(creado.precio),
+            precioMaterial: roundCOP(creado.precio),
+            costosAdicionales: 0,
+            subtotal: roundCOP(creado.precio)
+          });
+          renderCarrito();
+          showFeedback(`Producto permanente "${creado.nombre}" creado y agregado al carrito.`, "success");
+        } else {
+          showFeedback(
+            `Producto "${creado.nombre}" creado en el catálogo con stock 0. Registra existencias en Inventario antes de venderlo.`,
+            "info"
+          );
+        }
+      } else {
+        showFeedback(`Producto permanente "${creado.nombre}" creado en el catálogo.`, "success");
+      }
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = err.message;
+        errEl.classList.remove("hidden");
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   // -------------------------------------------------------------------------
   // 6. SUSCRIPCIONES EN TIEMPO REAL
   // -------------------------------------------------------------------------
@@ -1262,6 +2134,7 @@ export function mountCajaView(root) {
   const unsubCli = watchClientes((lista) => {
     clientes = lista;
     renderSelectorClientes();
+    renderCarteraClientes();
   });
 
   const unsubCajas = watchCajas(({ cajaAbierta: abierta }) => {
@@ -1273,6 +2146,9 @@ export function mountCajaView(root) {
     ventas = lista;
     renderEstadoCaja();
     renderHistorialVentas();
+    renderSelectorClientes();
+    renderCarteraClientes();
+    if (clienteHistorialId) renderModalHistorialCliente();
   });
 
   return () => {

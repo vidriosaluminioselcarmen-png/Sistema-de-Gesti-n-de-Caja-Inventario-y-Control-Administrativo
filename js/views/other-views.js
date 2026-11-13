@@ -135,9 +135,9 @@ export function mountInventarioView(root) {
                 </td>
                 <td>${escapeHtml(p.categoria)}</td>
                 <td class="num">${formatCOP(p.precioCompra || 0)}</td>
-                <td class="num"><b>${formatCOP(p.precio)}</b> / ${escapeHtml(p.unidad)}</td>
-                <td class="num"><b>${p.stock} ${escapeHtml(p.unidad)}</b></td>
-                <td class="num">${p.stockMinimo} ${escapeHtml(p.unidad)}</td>
+                <td class="num"><b>${formatCOP(p.precio)}</b>${p.unidad ? ` / ${escapeHtml(p.unidad)}` : ""}</td>
+                <td class="num"><b>${p.stock}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""}</b></td>
+                <td class="num">${p.stockMinimo}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""}</td>
                 <td><span class="badge ${est.claseBadge}">${est.etiqueta}</span></td>
                 <td class="text-right" style="white-space:nowrap">
                   ${
@@ -161,7 +161,7 @@ export function mountInventarioView(root) {
       ? activos
           .map(
             (p) =>
-              `<option value="${escapeHtml(p.id)}">${escapeHtml(p.nombre)} (${escapeHtml(p.codigo)} · Disp: ${p.stock} ${escapeHtml(p.unidad)})</option>`
+              `<option value="${escapeHtml(p.id)}">${escapeHtml(p.nombre)} (${escapeHtml(p.codigo)} · Disp: ${p.stock}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""})</option>`
           )
           .join("")
       : `<option value="">No hay productos disponibles</option>`;
@@ -187,7 +187,7 @@ export function mountInventarioView(root) {
                 <td>${escapeHtml(m.productoNombre)}</td>
                 <td><span class="badge ${esEntrada ? "badge-success" : "badge-warning"}">${escapeHtml(m.tipo)}</span></td>
                 <td>${escapeHtml(m.origen || "—")}</td>
-                <td class="num ${esEntrada ? "text-income" : "text-expense"}">${esEntrada ? "+ " : "− "}${m.cantidad} ${escapeHtml(m.unidad || "")}</td>
+                <td class="num ${esEntrada ? "text-income" : "text-expense"}">${esEntrada ? "+ " : "− "}${m.cantidad}${m.unidad ? ` ${escapeHtml(m.unidad)}` : ""}</td>
                 <td class="num">${m.stockAnterior ?? "—"}</td>
                 <td class="num"><b>${m.stockNuevo ?? "—"}</b></td>
                 <td>${escapeHtml(m.motivo || "—")}</td>
@@ -199,6 +199,17 @@ export function mountInventarioView(root) {
       : `<tr><td colspan="10" style="text-align:center; padding:1.5rem" class="text-muted">No hay movimientos de inventario registrados.</td></tr>`;
   }
 
+  let unidadTocadaManualmente = false;
+
+  function syncCampoDecimalProducto() {
+    const uVal = $("#prod-unidad")?.value ?? "";
+    const fieldDec = $("#field-prod-decimal");
+    const chkDec = $("#prod-permite-decimal");
+    if (fieldDec) fieldDec.classList.toggle("hidden", uVal !== "");
+    if (chkDec && (uVal === "m" || uVal === "m²")) chkDec.checked = true;
+    else if (chkDec && uVal === "u") chkDec.checked = false;
+  }
+
   function abrirModalProducto(prod = null) {
     const errEl = $("#prod-error");
     if (errEl) errEl.classList.add("hidden");
@@ -207,24 +218,29 @@ export function mountInventarioView(root) {
     const fieldStockInicial = $("#field-prod-stock-inicial");
 
     if (prod) {
+      unidadTocadaManualmente = true;
       if (titulo) titulo.textContent = `Editar producto · ${prod.codigo}`;
       if ($("#prod-id")) $("#prod-id").value = prod.id;
       if ($("#prod-nombre")) $("#prod-nombre").value = prod.nombre;
       if ($("#prod-codigo")) $("#prod-codigo").value = prod.codigo;
       if ($("#prod-categoria")) $("#prod-categoria").value = prod.categoria;
-      if ($("#prod-unidad")) $("#prod-unidad").value = prod.unidad;
+      if ($("#prod-unidad")) $("#prod-unidad").value = prod.unidad ?? "";
+      if ($("#prod-permite-decimal")) $("#prod-permite-decimal").checked = Boolean(prod.permiteDecimal);
       if ($("#prod-precio-compra")) $("#prod-precio-compra").value = prod.precioCompra ?? 0;
       if ($("#prod-precio")) $("#prod-precio").value = prod.precio;
       if ($("#prod-minimo")) $("#prod-minimo").value = prod.stockMinimo ?? 0;
       if ($("#prod-descripcion")) $("#prod-descripcion").value = prod.descripcion || "";
       if (fieldStockInicial) fieldStockInicial.classList.add("hidden");
     } else {
+      unidadTocadaManualmente = false;
       if (titulo) titulo.textContent = "Nuevo producto";
       $("#form-producto")?.reset();
       if ($("#prod-id")) $("#prod-id").value = "";
+      if ($("#prod-permite-decimal")) $("#prod-permite-decimal").checked = false;
       if (fieldStockInicial) fieldStockInicial.classList.remove("hidden");
     }
 
+    syncCampoDecimalProducto();
     $("#modal-producto")?.classList.add("is-open");
   }
 
@@ -234,11 +250,17 @@ export function mountInventarioView(root) {
   $("#solo-bajo")?.addEventListener("change", renderTablaInventario);
   $("#mostrar-inactivos")?.addEventListener("change", renderTablaInventario);
 
+  $("#prod-unidad")?.addEventListener("change", () => {
+    unidadTocadaManualmente = true;
+    syncCampoDecimalProducto();
+  });
+
   $("#prod-categoria")?.addEventListener("change", () => {
     const cat = $("#prod-categoria")?.value;
     const uEl = $("#prod-unidad");
-    if (uEl && !$("#prod-id")?.value) {
+    if (uEl && !$("#prod-id")?.value && !unidadTocadaManualmente) {
       uEl.value = cat === "Vidrios" ? "m²" : cat === "Perfiles" ? "m" : "u";
+      syncCampoDecimalProducto();
     }
   });
 
@@ -277,11 +299,18 @@ export function mountInventarioView(root) {
     if (errEl) errEl.classList.add("hidden");
     try {
       const id = $("#prod-id")?.value;
+      const unidadSel = $("#prod-unidad")?.value ?? "";
       const payload = {
         nombre: $("#prod-nombre")?.value,
         codigo: $("#prod-codigo")?.value,
         categoria: $("#prod-categoria")?.value,
-        unidad: $("#prod-unidad")?.value,
+        unidad: unidadSel,
+        permiteDecimal:
+          unidadSel === "m" || unidadSel === "m²"
+            ? true
+            : unidadSel === "u"
+              ? false
+              : Boolean($("#prod-permite-decimal")?.checked),
         precioCompra: $("#prod-precio-compra")?.value,
         precio: $("#prod-precio")?.value,
         stock: $("#prod-stock")?.value,
@@ -1501,13 +1530,16 @@ export function mountReportesView(root) {
               const med = d.dimensiones
                 ? ` · ${d.dimensiones.ancho}×${d.dimensiones.largo} ${d.dimensiones.unidadDimension || "m"} (${d.dimensiones.piezas} pza)`
                 : "";
+              const descHtml = d.esTemporal
+                ? `${escapeHtml(d.nombre)} <span class="badge-temp">SOLO ESTA VENTA</span>${d.observacion ? `<br><small class="text-muted">${escapeHtml(d.observacion)}</small>` : ""}`
+                : `${escapeHtml(d.nombre)} <small class="text-muted">(${escapeHtml(d.codigo)}${escapeHtml(med)})</small>`;
               return `
                 <tr>
                   <td><b>${escapeHtml(d.numero)}</b></td>
                   <td>${formatShortDate(d.fecha)}</td>
                   <td>${escapeHtml(d.cliente)}</td>
-                  <td>${escapeHtml(d.nombre)} <small class="text-muted">(${escapeHtml(d.codigo)}${escapeHtml(med)})</small></td>
-                  <td class="num">${d.cantidad} ${escapeHtml(d.unidad)}</td>
+                  <td>${descHtml}</td>
+                  <td class="num">${d.cantidad}${d.unidad ? ` ${escapeHtml(d.unidad)}` : ""}</td>
                   <td class="num">${formatCOP(d.subtotal)}</td>
                   <td><span class="badge ${d.estado === "Completada" ? "badge-success" : "badge-danger"}">${escapeHtml(d.estado)}</span></td>
                 </tr>

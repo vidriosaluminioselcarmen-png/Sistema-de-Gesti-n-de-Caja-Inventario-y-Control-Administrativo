@@ -55,10 +55,12 @@ service cloud.firestore {
       allow create: if canManageInventory()
         && request.resource.data.precio >= 0
         && request.resource.data.stock >= 0
-        && request.resource.data.stockMinimo >= 0;
+        && request.resource.data.stockMinimo >= 0
+        && (!('unidad' in request.resource.data) || request.resource.data.unidad in ['', 'u', 'm', 'm²']);
       allow update: if (canManageInventory() || canManageCashAndSales())
         && request.resource.data.precio >= 0
-        && request.resource.data.stock >= 0;
+        && request.resource.data.stock >= 0
+        && (!('unidad' in request.resource.data) || request.resource.data.unidad in ['', 'u', 'm', 'm²']);
       allow delete: if false;
     }
 
@@ -80,16 +82,47 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Ventas: inmutables en sus totales; solo un Administrador puede pasar su estado a Anulada o Devuelta
+    // Ventas: inmutables en sus totales; solo un Administrador puede pasar su estado a Anulada o Devuelta,
+    // y el personal autorizado de Caja/Ventas puede registrar abonos reduciendo saldoPendiente e incrementando pagos en 1.
     match /ventas/{ventaId} {
       allow read: if isActiveUser();
       allow create: if canManageCashAndSales()
         && request.resource.data.total > 0
         && request.resource.data.items.size() > 0;
-      allow update: if isAdmin()
+      allow update: if (
+        isAdmin()
         && resource.data.estado == 'Completada'
         && request.resource.data.estado in ['Anulada', 'Devuelta']
-        && request.resource.data.total == resource.data.total;
+        && request.resource.data.total == resource.data.total
+        && request.resource.data.items == resource.data.items
+        && request.resource.data.cliente == resource.data.cliente
+        && request.resource.data.numero == resource.data.numero
+        && request.resource.data.pagos == resource.data.pagos
+      ) || (
+        isAdmin()
+        && resource.data.estado == 'Completada'
+        && request.resource.data.estado in ['Completada', 'Devuelta']
+        && request.resource.data.total == resource.data.total
+        && request.resource.data.items == resource.data.items
+        && request.resource.data.cliente == resource.data.cliente
+        && request.resource.data.numero == resource.data.numero
+        && request.resource.data.pagos == resource.data.pagos
+        && request.resource.data.saldoPendiente >= 0
+        && request.resource.data.saldoPendiente <= resource.data.saldoPendiente
+        && request.resource.data.totalDevueltoAcumulado >= 0
+      ) || (
+        canManageCashAndSales()
+        && resource.data.estado == 'Completada'
+        && request.resource.data.estado == 'Completada'
+        && request.resource.data.total == resource.data.total
+        && request.resource.data.items == resource.data.items
+        && request.resource.data.cliente == resource.data.cliente
+        && request.resource.data.numero == resource.data.numero
+        && request.resource.data.saldoPendiente >= 0
+        && request.resource.data.saldoPendiente < resource.data.saldoPendiente
+        && request.resource.data.importePagado > resource.data.importePagado
+        && request.resource.data.pagos.size() == resource.data.pagos.size() + 1
+      );
       allow delete: if false;
     }
 
@@ -121,6 +154,36 @@ service cloud.firestore {
     match /auditoria/{audId} {
       allow read: if isAdmin();
       allow create: if isActiveUser();
+      allow update, delete: if false;
+    }
+
+    // Control transaccional de consecutivos (incremento estrictamente monotónico +1, sin retroceso ni borrado)
+    match /control/consecutivo_ventas {
+      allow read: if isActiveUser();
+      allow create: if canManageCashAndSales()
+        && request.resource.data.ultimoNumero is int
+        && request.resource.data.ultimoNumero >= 1;
+      allow update: if canManageCashAndSales()
+        && request.resource.data.ultimoNumero is int
+        && request.resource.data.ultimoNumero == resource.data.ultimoNumero + 1;
+      allow delete: if false;
+    }
+
+    // Control transaccional de caja activa única
+    match /control/caja_activa {
+      allow read: if isActiveUser();
+      allow create: if canManageCashAndSales()
+        && request.resource.data.activa == true;
+      allow update: if canManageCashAndSales()
+        && (resource.data.activa != request.resource.data.activa || isAdmin());
+      allow delete: if false;
+    }
+
+    // Registro persistente de idempotencia de operaciones (inmutable: crear una sola vez, jamás sobrescribir o borrar)
+    match /operaciones/{opId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser()
+        && !exists(/databases/$(database)/documents/operaciones/$(opId));
       allow update, delete: if false;
     }
   }

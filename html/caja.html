@@ -127,6 +127,7 @@
             <div class="toolbar">
               <input class="input" type="search" id="buscar-producto" placeholder="Buscar producto por nombre o código (ej. VT-006, espejo, bisagra)">
               <button type="button" class="btn btn-outline" id="btn-medida-vidrio" title="Calcular corte de vidrio o espejo por ancho y alto">Corte a medida (m²)</button>
+              <button type="button" class="btn btn-primary" id="btn-agregar-producto-concepto" title="Crear un producto permanente o agregar un concepto solo a esta venta">+ Agregar producto o concepto</button>
             </div>
             <div class="chips" id="pos-categorias" role="tablist" aria-label="Categorías de productos">
               <button type="button" class="chip active" data-categoria="Todos">Todos</button>
@@ -149,12 +150,25 @@
 
             <!-- Selección de cliente y referencia de pedido/cotización -->
             <div style="padding:.85rem 1.25rem; border-bottom:1px solid var(--border); background:var(--navy-50)">
-              <div class="field" style="margin-bottom:.5rem">
+              <div class="field" style="margin-bottom:.5rem; position:relative">
                 <div style="display:flex; justify-content:space-between; align-items:center">
-                  <label class="label" for="pos-cliente">Cliente</label>
+                  <label class="label" for="pos-cliente-buscar">Cliente</label>
                   <a href="#modal-cliente-pos" style="font-size:.78rem; font-weight:600">+ Nuevo cliente</a>
                 </div>
-                <select class="select" id="pos-cliente"></select>
+                <input type="hidden" id="pos-cliente" value="cli-consumidor">
+                <input class="input" type="search" id="pos-cliente-buscar" placeholder="Buscar por nombre, cédula, NIT o teléfono..." autocomplete="off" style="padding:.4rem .65rem; font-size:.84rem">
+                <div id="pos-cliente-resultados" class="hidden" style="max-height:170px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--white); margin-top:.3rem"></div>
+                <div id="pos-cliente-seleccionado" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem; margin-top:.4rem; padding:.4rem .6rem; background:var(--white); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:.82rem">
+                  <div>
+                    <strong id="pos-cli-nombre">Consumidor Final</strong>
+                    <span class="text-muted" id="pos-cli-doc">· 222222222222</span>
+                    <span class="badge badge-warning hidden" id="pos-cli-saldo-badge" style="margin-left:.35rem">Saldo: $ 0</span>
+                  </div>
+                  <div style="display:flex; gap:.3rem">
+                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-ver-historial-cliente">Historial</button>
+                    <button type="button" class="btn btn-ghost btn-xs hidden" id="btn-limpiar-cliente" title="Volver a Consumidor Final">Quitar</button>
+                  </div>
+                </div>
               </div>
               <div class="field">
                 <input class="input" id="pos-orden-ref" type="text" placeholder="Ref. pedido / cotización / instalación (opcional)" style="padding:.4rem .65rem; font-size:.82rem">
@@ -166,17 +180,28 @@
             <p class="cart-empty" id="cart-empty">El carrito está vacío. Selecciona productos del catálogo.</p>
 
             <div class="cart-footer">
+              <!-- Modalidad de cobro (Completo / Parcial / Crédito) -->
+              <div class="field" style="margin-bottom:.65rem">
+                <label class="label" for="modalidad-cobro">Modalidad de cobro</label>
+                <select class="select" id="modalidad-cobro">
+                  <option value="completo">Pago completo</option>
+                  <option value="parcial">Pago parcial / abono inicial (dejar saldo)</option>
+                  <option value="credito">Crédito total (sin abono inicial)</option>
+                </select>
+                <small class="text-muted hidden" id="cobro-credito-hint" style="display:block; margin-top:.25rem"></small>
+              </div>
+
               <!-- Descuento autorizado (opcional) -->
               <div class="form-grid cart-pay-grid" style="margin-bottom:.65rem">
                 <div class="field">
                   <label class="label" for="cart-descuento-input">Descuento (COP)</label>
                   <input class="input num" id="cart-descuento-input" type="number" min="0" step="1" value="0">
                 </div>
-                <div class="field">
+                <div class="field" id="field-metodo-pago">
                   <label class="label" for="metodo-pago">Método de pago</label>
                   <select class="select" id="metodo-pago">
                     <option value="Efectivo">Efectivo</option>
-                    <option value="Transferencia">Transferencia</option>
+                    <option value="Transferencia">Transferencia (Nequi / Daviplata / Banco)</option>
                     <option value="Tarjeta débito">Tarjeta débito</option>
                     <option value="Tarjeta crédito">Tarjeta crédito</option>
                     <option value="Mixto">Pago dividido (Mixto)</option>
@@ -228,6 +253,10 @@
                 <div class="summary-row"><span>Subtotal</span><span class="num" id="cart-subtotal">$ 0</span></div>
                 <div class="summary-row hidden" id="row-descuento"><span>Descuento</span><span class="num text-expense" id="cart-descuento">− $ 0</span></div>
                 <div class="summary-row total"><span>Total a pagar</span><span class="num" id="cart-total">$ 0</span></div>
+                <div class="summary-row hidden" id="row-saldo-pendiente">
+                  <span>Saldo pendiente (Por cobrar)</span>
+                  <b class="num text-expense" id="cart-saldo-pendiente">$ 0</b>
+                </div>
                 <div class="summary-row" id="row-cambio">
                   <span id="label-cambio-faltante">Cambio</span>
                   <b class="num" id="cart-cambio">$ 0</b>
@@ -261,6 +290,7 @@
               <select class="select" id="hist-estado" style="max-width:165px">
                 <option value="Todos">Todos los estados</option>
                 <option value="Completada">Completada</option>
+                <option value="Devuelta">Devuelta</option>
                 <option value="Anulada">Anulada</option>
               </select>
             </div>
@@ -281,6 +311,56 @@
                 </thead>
                 <tbody id="tbody-historial-ventas"></tbody>
               </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Cuentas por cobrar y cartera de clientes (Fase 3) -->
+        <section class="card" style="margin-top:1.5rem" aria-labelledby="titulo-cartera-clientes">
+          <div class="card-header">
+            <h3 id="titulo-cartera-clientes">Cuentas por cobrar (Cartera de clientes)</h3>
+            <span class="badge badge-warning" id="cartera-total-badge">$ 0 por cobrar</span>
+          </div>
+          <div class="card-body">
+            <div class="toolbar" style="margin-bottom:1rem">
+              <input class="input" type="search" id="cartera-buscar" placeholder="Buscar cliente en cartera por nombre o documento...">
+            </div>
+            <div class="table-wrap">
+              <table class="table" id="tabla-cartera-clientes">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Documento</th>
+                    <th class="num">Total pendiente</th>
+                    <th class="num">Operaciones pendientes</th>
+                    <th>Último movimiento</th>
+                    <th class="text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-cartera-clientes"></tbody>
+              </table>
+            </div>
+            <div id="cartera-detalle-panel" class="hidden" style="margin-top:1rem; padding:1rem; background:var(--navy-50); border:1px solid var(--border); border-radius:var(--radius-sm)">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; margin-bottom:.75rem">
+                <h4 style="margin:0" id="cartera-detalle-titulo">Detalle de cartera</h4>
+                <button type="button" class="btn btn-ghost btn-xs" id="btn-cerrar-detalle-cartera">Cerrar detalle</button>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>N° Venta</th>
+                      <th>Fecha</th>
+                      <th class="num">Total</th>
+                      <th class="num">Abonado</th>
+                      <th class="num">Saldo pendiente</th>
+                      <th>Estado</th>
+                      <th class="text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbody-cartera-detalle"></tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>
@@ -497,6 +577,283 @@
               <div class="modal-footer">
                 <a class="btn btn-outline" href="#">Cancelar</a>
                 <button type="submit" class="btn btn-danger">Confirmar ajuste autorizado</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Modal 7: Agregar producto permanente o concepto temporal exclusivo de esta venta -->
+        <div class="modal-overlay" id="modal-producto-concepto" role="dialog" aria-modal="true" aria-labelledby="titulo-producto-concepto">
+          <div class="modal">
+            <div class="modal-header">
+              <h3 id="titulo-producto-concepto">Agregar producto o concepto</h3>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <div class="modal-body" style="padding-bottom:.5rem">
+              <div class="chips" role="tablist" aria-label="Tipo de registro" style="margin-bottom:.75rem">
+                <button type="button" class="chip active" id="tab-modo-temporal" data-modo-item="temporal">B. Concepto solo esta venta</button>
+                <button type="button" class="chip" id="tab-modo-permanente" data-modo-item="permanente">A. Crear producto permanente</button>
+              </div>
+            </div>
+
+            <!-- Opción B: Concepto exclusivo de esta venta -->
+            <form id="form-item-temporal">
+              <div class="modal-body form-grid" style="padding-top:0">
+                <div class="field full">
+                  <span class="badge-temp">SOLO ESTA VENTA</span>
+                  <span class="help" style="display:inline; margin-left:.4rem">No se guarda en el catálogo ni modifica el inventario.</span>
+                </div>
+                <div class="field full">
+                  <label class="label" for="temp-nombre">Descripción o nombre del concepto *</label>
+                  <input class="input" id="temp-nombre" required placeholder="Ej: Instalación especial, Mano de obra, Transporte, Reparación">
+                </div>
+                <div class="field">
+                  <label class="label" for="temp-cantidad">Cantidad *</label>
+                  <input class="input num" id="temp-cantidad" type="number" min="0.01" step="any" value="1" required>
+                </div>
+                <div class="field">
+                  <label class="label" for="temp-precio">Precio unitario (COP) *</label>
+                  <input class="input num" id="temp-precio" type="number" min="0" step="1" placeholder="Ej: 35000" required>
+                </div>
+                <div class="field">
+                  <label class="label" for="temp-unidad">Unidad de medida (opcional)</label>
+                  <input class="input" id="temp-unidad" type="text" placeholder="Vacía o ej: servicio, viaje, m²">
+                </div>
+                <div class="field">
+                  <label class="label" for="temp-observacion">Observaciones (opcional)</label>
+                  <input class="input" id="temp-observacion" type="text" placeholder="Detalle para el cliente o taller">
+                </div>
+                <p id="temp-error" class="error-text full hidden" style="margin:0"></p>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-outline" href="#">Cancelar</a>
+                <button type="submit" class="btn btn-primary" id="btn-confirmar-temporal">Agregar a esta venta</button>
+              </div>
+            </form>
+
+            <!-- Opción A: Crear producto permanente en el catálogo -->
+            <form id="form-item-permanente" class="hidden">
+              <div class="modal-body form-grid" style="padding-top:0">
+                <div class="field full">
+                  <label class="label" for="pos-prod-nombre">Nombre del producto *</label>
+                  <input class="input" id="pos-prod-nombre" required placeholder="Ej: Silicona neutra transparente">
+                </div>
+                <div class="field">
+                  <label class="label" for="pos-prod-categoria">Categoría</label>
+                  <select class="select" id="pos-prod-categoria">
+                    <option value="Vidrios">Vidrios</option>
+                    <option value="Perfiles">Perfiles</option>
+                    <option value="Accesorios">Accesorios</option>
+                    <option value="Insumos">Insumos</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="pos-prod-codigo">Código o referencia (opcional)</label>
+                  <input class="input" id="pos-prod-codigo" placeholder="Auto si se deja vacío">
+                </div>
+                <div class="field">
+                  <label class="label" for="pos-prod-unidad">Unidad de medida (opcional)</label>
+                  <select class="select" id="pos-prod-unidad">
+                    <option value="u">Unidad (u)</option>
+                    <option value="m">Metro lineal (m)</option>
+                    <option value="m²">Metro cuadrado (m²)</option>
+                    <option value="">Sin unidad</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="pos-prod-precio">Precio de venta (COP) *</label>
+                  <input class="input num" id="pos-prod-precio" type="number" min="0" step="1" required placeholder="0">
+                </div>
+                <div class="field">
+                  <label class="label" for="pos-prod-compra">Costo de compra (COP)</label>
+                  <input class="input num" id="pos-prod-compra" type="number" min="0" step="1" value="0">
+                </div>
+                <div class="field">
+                  <label class="label" for="pos-prod-stock">Existencias iniciales (opcional)</label>
+                  <input class="input num" id="pos-prod-stock" type="number" min="0" step="any" value="0">
+                </div>
+                <div class="field full hidden" id="field-pos-prod-decimal">
+                  <label class="check">
+                    <input type="checkbox" id="pos-prod-decimal">
+                    Permitir cantidades decimales para este producto sin unidad
+                  </label>
+                </div>
+                <div class="field full">
+                  <label class="label" for="pos-prod-descripcion">Descripción (opcional)</label>
+                  <input class="input" id="pos-prod-descripcion" placeholder="Especificación o acabado">
+                </div>
+                <div class="field full">
+                  <label class="check">
+                    <input type="checkbox" id="pos-prod-agregar-carrito" checked>
+                    Agregar automáticamente al carrito después de guardar (si tiene existencias)
+                  </label>
+                </div>
+                <p id="pos-prod-error" class="error-text full hidden" style="margin:0"></p>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-outline" href="#">Cancelar</a>
+                <button type="submit" class="btn btn-primary" id="btn-confirmar-pos-prod">Guardar producto permanente</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Modal 8: Historial comercial y saldos pendientes del cliente (Fase 3) -->
+        <div class="modal-overlay" id="modal-historial-cliente" role="dialog" aria-modal="true" aria-labelledby="titulo-historial-cliente">
+          <div class="modal modal-lg">
+            <div class="modal-header">
+              <h3 id="titulo-historial-cliente">Historial comercial del cliente</h3>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <div class="modal-body">
+              <div class="summary" style="margin-bottom:1rem; padding:.75rem 1rem; background:var(--navy-50); border:1px solid var(--border); border-radius:var(--radius-sm)">
+                <div class="summary-row"><span>Cliente</span><b id="hist-cli-nombre">—</b></div>
+                <div class="summary-row"><span>Documento / Teléfono</span><span id="hist-cli-doc">—</span></div>
+                <div class="summary-row"><span>Total histórico de compras válidas</span><span class="num" id="hist-cli-total">$ 0</span></div>
+                <div class="summary-row total"><span>Saldo pendiente del cliente</span><b class="num text-expense" id="hist-cli-saldo">$ 0</b></div>
+              </div>
+              <div class="toolbar" style="margin-bottom:.75rem">
+                <input class="input" type="date" id="hist-cli-desde" title="Desde fecha" style="max-width:170px">
+                <input class="input" type="date" id="hist-cli-hasta" title="Hasta fecha" style="max-width:170px">
+                <button type="button" class="btn btn-outline btn-xs" id="btn-hist-cli-limpiar">Ver todo</button>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>N° Venta</th>
+                      <th>Fecha</th>
+                      <th class="num">Total</th>
+                      <th class="num">Pagado</th>
+                      <th class="num">Saldo</th>
+                      <th>Estado</th>
+                      <th>Vendedor</th>
+                      <th class="text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbody-historial-cliente"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <a class="btn btn-outline" href="#">Cerrar</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal 9: Registrar abono a venta pendiente (Fase 3) -->
+        <div class="modal-overlay" id="modal-registrar-abono" role="dialog" aria-modal="true" aria-labelledby="titulo-registrar-abono">
+          <div class="modal">
+            <div class="modal-header">
+              <h3 id="titulo-registrar-abono">Registrar abono a venta</h3>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <form id="form-registrar-abono">
+              <div class="modal-body">
+                <input type="hidden" id="abono-venta-id">
+                <div class="summary" style="margin-bottom:.85rem; padding:.75rem 1rem; background:var(--navy-50); border:1px solid var(--border); border-radius:var(--radius-sm)">
+                  <div class="summary-row"><span>Venta</span><b id="abono-venta-numero">—</b></div>
+                  <div class="summary-row"><span>Cliente</span><b id="abono-venta-cliente">—</b></div>
+                  <div class="summary-row"><span>Total original</span><span class="num" id="abono-venta-total">$ 0</span></div>
+                  <div class="summary-row"><span>Total abonado</span><span class="num" id="abono-venta-pagado">$ 0</span></div>
+                  <div class="summary-row total"><span>Saldo pendiente</span><b class="num text-expense" id="abono-venta-saldo">$ 0</b></div>
+                </div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label class="label" for="abono-importe">Importe del abono (COP)</label>
+                    <input class="input num" id="abono-importe" type="number" min="1" step="1" required placeholder="0">
+                  </div>
+                  <div class="field">
+                    <label class="label" for="abono-metodo">Medio de pago</label>
+                    <select class="select" id="abono-metodo">
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Transferencia">Transferencia (Nequi / Daviplata / Banco)</option>
+                      <option value="Tarjeta débito">Tarjeta débito</option>
+                      <option value="Tarjeta crédito">Tarjeta crédito</option>
+                    </select>
+                  </div>
+                  <div class="field full" id="field-abono-referencia">
+                    <label class="label" for="abono-referencia">Referencia / comprobante (opcional en efectivo)</label>
+                    <input class="input" id="abono-referencia" type="text" placeholder="Ej: Nequi #84920 o recibo">
+                  </div>
+                </div>
+                <div class="summary" style="margin-top:.75rem">
+                  <div class="summary-row"><span>Nuevo saldo restante</span><b class="num" id="abono-nuevo-saldo">$ 0</b></div>
+                </div>
+                <p id="abono-error" class="error-text hidden" style="margin:.6rem 0 0"></p>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-outline" href="#">Cancelar</a>
+                <button type="submit" class="btn btn-primary" id="btn-confirmar-abono">Confirmar abono</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Modal 10: Devolución parcial o total por líneas (Fase 4) -->
+        <div class="modal-overlay" id="modal-devolucion-venta" role="dialog" aria-modal="true" aria-labelledby="titulo-devolucion-venta">
+          <div class="modal modal-lg">
+            <div class="modal-header">
+              <h3 id="titulo-devolucion-venta">Registrar devolución de venta</h3>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <form id="form-devolucion-venta">
+              <div class="modal-body">
+                <input type="hidden" id="dev-venta-id">
+                <div class="summary" style="margin-bottom:.85rem; padding:.75rem 1rem; background:var(--navy-50); border:1px solid var(--border); border-radius:var(--radius-sm)">
+                  <div class="summary-row"><span>Venta / Fecha</span><b id="dev-venta-numero">—</b></div>
+                  <div class="summary-row"><span>Cliente / Vendedor</span><span id="dev-venta-cliente">—</span></div>
+                  <div class="summary-row"><span>Total original / Pagado</span><span class="num" id="dev-venta-totales">$ 0</span></div>
+                  <div class="summary-row"><span>Saldo pendiente actual</span><b class="num text-expense" id="dev-venta-saldo">$ 0</b></div>
+                  <div class="summary-row"><span>Devoluciones anteriores</span><span class="num" id="dev-venta-previas">$ 0</span></div>
+                </div>
+
+                <div class="table-wrap" style="margin-bottom:.85rem">
+                  <table class="table" style="font-size:.82rem">
+                    <thead>
+                      <tr>
+                        <th>Producto / Concepto</th>
+                        <th class="num">Vendido</th>
+                        <th class="num">Devuelto</th>
+                        <th class="num">Disp.</th>
+                        <th class="num">Unitario</th>
+                        <th class="num">Cant. devolver</th>
+                        <th>Condición</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbody-devolucion-lineas"></tbody>
+                  </table>
+                </div>
+
+                <div class="summary" style="margin-bottom:.85rem; padding:.65rem 1rem; background:var(--white); border:1px solid var(--border); border-radius:var(--radius-sm)">
+                  <div class="summary-row"><span>Total de esta devolución (neto)</span><b class="num" id="dev-res-total">$ 0</b></div>
+                  <div class="summary-row"><span>Aplicado a reducción de cartera</span><span class="num" id="dev-res-cartera">$ 0</span></div>
+                  <div class="summary-row total"><span>Excedente reembolsable / saldo a favor</span><b class="num text-expense" id="dev-res-reembolsable">$ 0</b></div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="field" id="field-dev-tipo-reembolso">
+                    <label class="label" for="dev-tipo-reembolso">Tratamiento del excedente</label>
+                    <select class="select" id="dev-tipo-reembolso">
+                      <option value="Efectivo">Reembolso en efectivo (caja abierta)</option>
+                      <option value="Transferencia">Reembolso electrónico (Transferencia)</option>
+                      <option value="Saldo a favor">Saldo a favor / Nota crédito (sin salida de dinero)</option>
+                    </select>
+                  </div>
+                  <div class="field" id="field-dev-referencia">
+                    <label class="label" for="dev-referencia-reembolso">Referencia reembolso (opcional)</label>
+                    <input class="input" id="dev-referencia-reembolso" type="text" placeholder="Ej: Nequi / comprobante">
+                  </div>
+                  <div class="field full">
+                    <label class="label" for="dev-motivo">Motivo obligatorio de la devolución</label>
+                    <textarea class="textarea" id="dev-motivo" rows="2" required placeholder="Explique la razón de la devolución"></textarea>
+                  </div>
+                </div>
+                <p id="dev-error" class="error-text hidden" style="margin:.6rem 0 0"></p>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-outline" href="#">Cancelar</a>
+                <button type="submit" class="btn btn-primary" id="btn-confirmar-devolucion">Confirmar devolución</button>
               </div>
             </form>
           </div>

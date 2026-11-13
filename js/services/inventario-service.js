@@ -13,8 +13,18 @@ import { getCurrentUser, assertPermission } from "../auth.js";
 export const UNIDADES_MEDIDA = {
   UNIDAD: "u",
   METRO_LINEAL: "m",
-  METRO_CUADRADO: "m²"
+  METRO_CUADRADO: "m²",
+  SIN_UNIDAD: ""
 };
+
+export function normalizarUnidadProducto(unidad) {
+  if (unidad === undefined || unidad === null) return null;
+  const val = String(unidad).trim();
+  if (val === "" || val.toLowerCase() === "sin unidad" || val.toLowerCase() === "n/a") {
+    return "";
+  }
+  return val;
+}
 
 export const CATEGORIAS_PRODUCTO = [
   "Todos",
@@ -225,7 +235,8 @@ export function validarCantidadPorUnidad(producto, cantidad) {
   }
   const permiteDecimal = Boolean(producto.permiteDecimal || producto.unidad === "m" || producto.unidad === "m²");
   if (!permiteDecimal && !Number.isInteger(cant)) {
-    throw new Error(`El producto "${producto.nombre}" se vende por unidades enteras (${producto.unidad}).`);
+    const sufijo = producto.unidad ? ` (${producto.unidad})` : "";
+    throw new Error(`El producto "${producto.nombre}" se vende por unidades enteras${sufijo}.`);
   }
   return roundQty(cant);
 }
@@ -236,23 +247,36 @@ export async function crearProducto(datos, user = getCurrentUser()) {
   const descripcion = String(datos.descripcion || "").trim();
   const codigo = String(datos.codigo || "").trim().toUpperCase();
   const categoria = datos.categoria || "Vidrios";
+  const unidadNormalizada = normalizarUnidadProducto(datos.unidad);
   const unidad =
-    datos.unidad ||
-    (categoria === "Vidrios" ? "m²" : categoria === "Perfiles" ? "m" : "u");
+    unidadNormalizada !== null
+      ? unidadNormalizada
+      : categoria === "Vidrios"
+        ? "m²"
+        : categoria === "Perfiles"
+          ? "m"
+          : "u";
   const precioCompra = roundCOP(datos.precioCompra ?? 0);
   const precio = roundCOP(datos.precio);
   const stock = roundQty(datos.stock ?? 0);
   const stockMinimo = roundQty(datos.stockMinimo ?? 0);
 
   if (!nombre) throw new Error("El nombre del producto es obligatorio.");
-  if (!["u", "m", "m²"].includes(unidad)) {
-    throw new Error("La unidad de medida debe ser unidad (u), metro lineal (m) o metro cuadrado (m²).");
+  if (!["u", "m", "m²", ""].includes(unidad)) {
+    throw new Error("La unidad de medida debe ser unidad (u), metro lineal (m), metro cuadrado (m²) o Sin unidad.");
   }
+  const permiteDecimal =
+    unidad === "m" || unidad === "m²"
+      ? true
+      : unidad === "u"
+        ? false
+        : Boolean(datos.permiteDecimal);
+
   if (!(precioCompra >= 0)) throw new Error("El precio de compra no puede ser negativo.");
   if (!(precio >= 0)) throw new Error("El precio de venta debe ser un valor numérico no negativo.");
   if (!(stock >= 0) || !(stockMinimo >= 0)) throw new Error("Las existencias no pueden ser negativas.");
-  if (unidad === "u" && (!Number.isInteger(stock) || !Number.isInteger(stockMinimo))) {
-    throw new Error("Para productos por unidad (u), el stock inicial y el mínimo deben ser números enteros.");
+  if (!permiteDecimal && (!Number.isInteger(stock) || !Number.isInteger(stockMinimo))) {
+    throw new Error("Para productos con cantidades enteras, el stock inicial y el mínimo deben ser números enteros.");
   }
 
   return runAtomicTransaction(async (tx) => {
@@ -267,7 +291,7 @@ export async function crearProducto(datos, user = getCurrentUser()) {
       descripcion,
       categoria,
       unidad,
-      permiteDecimal: unidad === "m" || unidad === "m²",
+      permiteDecimal,
       permiteDimensiones: unidad === "m²",
       esPersonalizado: unidad === "m²",
       precioCompra,
@@ -327,7 +351,8 @@ export async function actualizarProducto(id, cambios, user = getCurrentUser()) {
     const descripcion = cambios.descripcion !== undefined ? String(cambios.descripcion).trim() : (actual.descripcion || "");
     const codigo = cambios.codigo !== undefined ? String(cambios.codigo).trim().toUpperCase() : actual.codigo;
     const categoria = cambios.categoria !== undefined ? cambios.categoria : actual.categoria;
-    const unidad = cambios.unidad !== undefined ? cambios.unidad : actual.unidad;
+    const unidadNorm = cambios.unidad !== undefined ? normalizarUnidadProducto(cambios.unidad) : (actual.unidad ?? "");
+    const unidad = unidadNorm !== null ? unidadNorm : (actual.unidad ?? "");
     const precioCompra = cambios.precioCompra !== undefined ? roundCOP(cambios.precioCompra) : roundCOP(actual.precioCompra || 0);
     const precio = cambios.precio !== undefined ? roundCOP(cambios.precio) : roundCOP(actual.precio);
     const stockMinimo = cambios.stockMinimo !== undefined ? roundQty(cambios.stockMinimo) : roundQty(actual.stockMinimo);
@@ -335,6 +360,18 @@ export async function actualizarProducto(id, cambios, user = getCurrentUser()) {
 
     if (!nombre) throw new Error("El nombre del producto es obligatorio.");
     if (!codigo) throw new Error("El código del producto es obligatorio.");
+    if (!["u", "m", "m²", ""].includes(unidad)) {
+      throw new Error("La unidad de medida debe ser unidad (u), metro lineal (m), metro cuadrado (m²) o Sin unidad.");
+    }
+    const permiteDecimal =
+      unidad === "m" || unidad === "m²"
+        ? true
+        : unidad === "u"
+          ? false
+          : cambios.permiteDecimal !== undefined
+            ? Boolean(cambios.permiteDecimal)
+            : Boolean(actual.permiteDecimal);
+
     if (!(precioCompra >= 0) || !(precio >= 0)) throw new Error("Los precios no pueden ser negativos.");
     if (!(stockMinimo >= 0)) throw new Error("El stock mínimo no puede ser negativo.");
 
@@ -350,7 +387,7 @@ export async function actualizarProducto(id, cambios, user = getCurrentUser()) {
       descripcion,
       categoria,
       unidad,
-      permiteDecimal: unidad === "m" || unidad === "m²",
+      permiteDecimal,
       permiteDimensiones: unidad === "m²",
       esPersonalizado: unidad === "m²",
       precioCompra,

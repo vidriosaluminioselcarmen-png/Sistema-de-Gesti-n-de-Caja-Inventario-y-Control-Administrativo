@@ -94,6 +94,12 @@ export function traducirErrorFirebase(error) {
   if (code.includes("not-found")) {
     return "El documento solicitado no existe en Firebase Firestore.";
   }
+  if (code.includes("aborted") || code.includes("failed-precondition")) {
+    return "Conflicto de concurrencia: otro usuario modificó este registro al mismo tiempo. Intenta nuevamente.";
+  }
+  if (code.includes("resource-exhausted")) {
+    return "Límite de operaciones simultáneas alcanzado en Firestore. Espera un momento e intenta nuevamente.";
+  }
   if (code.includes("auth/invalid-credential") || code.includes("auth/wrong-password") || code.includes("auth/user-not-found")) {
     return "Correo electrónico o contraseña incorrectos en Firebase Authentication.";
   }
@@ -232,6 +238,30 @@ export async function escribirLoteFirestore(operaciones = []) {
     await batch.commit();
     markFirebaseConnectionVerified(true);
     return true;
+  } catch (err) {
+    const mensaje = traducirErrorFirebase(err);
+    markFirebaseConnectionVerified(false, mensaje);
+    throw new Error(mensaje);
+  }
+}
+
+// Ejecuta una transacción nativa real de Firestore (runTransaction) con lecturas y escrituras atómicas
+export async function ejecutarTransaccionFirestore(workCallback) {
+  if (isNetworkOffline()) {
+    throw new Error("No se pudo confirmar la transacción en Firestore: sin conexión de red.");
+  }
+  if (!isFirebaseConfigured()) {
+    return null;
+  }
+  try {
+    const fb = await getFirebaseClients();
+    if (!fb) return null;
+    const { db, firestoreMod } = fb;
+    const result = await firestoreMod.runTransaction(db, async (transaction) => {
+      return await workCallback({ transaction, db, firestoreMod });
+    });
+    markFirebaseConnectionVerified(true);
+    return result;
   } catch (err) {
     const mensaje = traducirErrorFirebase(err);
     markFirebaseConnectionVerified(false, mensaje);

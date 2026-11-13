@@ -250,12 +250,19 @@
                   </select>
                 </div>
                 <div class="field">
-                  <label class="label" for="prod-unidad">Unidad de medida *</label>
+                  <label class="label" for="prod-unidad">Unidad de medida (opcional)</label>
                   <select class="select" id="prod-unidad">
                     <option value="m²">Metro cuadrado (m²)</option>
                     <option value="m">Metro lineal (m)</option>
                     <option value="u">Unidad (u)</option>
+                    <option value="">Sin unidad</option>
                   </select>
+                </div>
+                <div class="field full hidden" id="field-prod-decimal">
+                  <label class="check">
+                    <input type="checkbox" id="prod-permite-decimal">
+                    Permitir cantidades decimales para este producto sin unidad
+                  </label>
                 </div>
                 <div class="field">
                   <label class="label" for="prod-precio-compra">Precio de compra (COP)</label>

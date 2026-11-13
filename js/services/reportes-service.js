@@ -105,8 +105,9 @@ export function generarReportesConsolidados(
   const detalleVentas = [];
   for (const v of ventasFiltradas) {
     for (const item of v.items || []) {
-      const prod = prodMap.get(item.productoId);
-      const catItem = item.categoria || prod?.categoria || "General";
+      const esTemporal = Boolean(item.esTemporal || !item.productoId);
+      const prod = !esTemporal && item.productoId ? prodMap.get(item.productoId) : null;
+      const catItem = esTemporal ? "Concepto temporal" : (item.categoria || prod?.categoria || "General");
       if (productoId !== "Todos" && item.productoId !== productoId) continue;
       if (categoria !== "Todas" && categoria !== "Todos" && catItem !== categoria) continue;
 
@@ -118,11 +119,13 @@ export function generarReportesConsolidados(
         vendedor: v.vendedor,
         metodoPago: v.metodoPago,
         estado: v.estado,
-        productoId: item.productoId,
-        codigo: item.codigo,
+        esTemporal,
+        productoId: item.productoId || null,
+        codigo: esTemporal ? "" : (item.codigo || prod?.codigo || ""),
         nombre: item.nombre,
+        observacion: item.observacion || "",
         categoria: catItem,
-        unidad: item.unidad,
+        unidad: item.unidad ?? "",
         cantidad: item.cantidad,
         dimensiones: item.dimensiones || null,
         precioUnitario: roundCOP(item.precioUnitario),
@@ -132,10 +135,11 @@ export function generarReportesConsolidados(
     }
   }
 
-  // 3. Productos más vendidos (solo de ventas efectivas no anuladas)
+  // 3. Productos más vendidos (solo productos inventariables de ventas efectivas no anuladas)
   const mapaMasVendidos = new Map();
   for (const v of ventasEfectivas) {
     for (const item of v.items || []) {
+      if (item.esTemporal || !item.productoId) continue;
       const prod = prodMap.get(item.productoId);
       const catItem = item.categoria || prod?.categoria || "General";
       if (productoId !== "Todos" && item.productoId !== productoId) continue;
@@ -146,7 +150,7 @@ export function generarReportesConsolidados(
         codigo: item.codigo || prod?.codigo || "",
         nombre: item.nombre || prod?.nombre || "Producto",
         categoria: catItem,
-        unidad: item.unidad || prod?.unidad || "u",
+        unidad: item.unidad ?? prod?.unidad ?? "",
         cantidadVendida: 0,
         numeroVentas: 0,
         totalIngresos: 0
@@ -243,9 +247,11 @@ export function generarReportesConsolidados(
 
   let sumaTotalPagos = 0;
   for (const v of ventasEfectivas) {
-    const listaPagos = Array.isArray(v.pagos) && v.pagos.length
+    const listaPagos = Array.isArray(v.pagos)
       ? v.pagos
-      : [{ metodo: v.metodoPago || "Efectivo", importeNeto: v.total }];
+      : roundCOP(v.saldoPendiente || 0) > 0
+        ? []
+        : [{ metodo: v.metodoPago || "Efectivo", importeNeto: v.total }];
     for (const p of listaPagos) {
       const m = p.metodo || "Efectivo";
       if (metodoPago !== "Todos" && m !== metodoPago) continue;
@@ -322,6 +328,51 @@ export function generarReportesConsolidados(
     .filter((p) => p.activo !== false)
     .reduce((acc, p) => acc + p.valorCostoTotal, 0);
 
+  // 12. Resumen de cartera, crédito, devoluciones y recaudos por abonos (sin duplicar ventas del período)
+  const ventasPagadas = ventasEfectivas.filter((v) => roundCOP(v.saldoPendiente || 0) === 0);
+  const ventasConSaldo = ventasEfectivas.filter((v) => roundCOP(v.saldoPendiente || 0) > 0);
+  const recaudosAbonosMovs = (movsContables || []).filter(
+    (m) =>
+      !m.anulado &&
+      m.estado !== "Revertido" &&
+      (m.categoria === "Abonos de cartera" || m.origen === "Abono venta") &&
+      estaEnRangoFechas(m.fecha, { desde, hasta }) &&
+      (metodoPago === "Todos" || m.metodoPago === metodoPago)
+  );
+  const recaudosPorAbonos = recaudosAbonosMovs.reduce((acc, m) => acc + roundCOP(m.monto ?? m.valor ?? 0), 0);
+  const saldoPorCobrarVigente = ventas
+    .filter((v) => v.estado !== "Anulada" && roundCOP(v.saldoPendiente || 0) > 0)
+    .reduce((acc, v) => acc + roundCOP(v.saldoPendiente || 0), 0);
+
+  const devsPeriodo = devoluciones.filter((d) => estaEnRangoFechas(d.fecha, { desde, hasta }));
+  const totalDevoluciones = devsPeriodo.reduce((acc, d) => acc + roundCOP(d.totalDevuelto), 0);
+  const reembolsosRealizados = devsPeriodo.reduce(
+    (acc, d) => acc + roundCOP(d.montoReembolsado ?? (d.reembolsoEfectivo ? d.totalDevuelto : 0)),
+    0
+  );
+  const ajustesCarteraDevoluciones = devsPeriodo.reduce(
+    (acc, d) => acc + roundCOP(d.reduccionCartera || 0),
+    0
+  );
+  const ventasBrutas = roundCOP(totalVentasPeriodo);
+  const ventasNetas = Math.max(0, roundCOP(ventasBrutas - totalDevoluciones));
+
+  const resumenCartera = {
+    ventasBrutas,
+    totalDevoluciones: roundCOP(totalDevoluciones),
+    ventasNetas,
+    reembolsosRealizados: roundCOP(reembolsosRealizados),
+    ajustesCarteraDevoluciones: roundCOP(ajustesCarteraDevoluciones),
+    ventasTotales: ventasBrutas,
+    ventasPagadasCount: ventasPagadas.length,
+    ventasPagadasTotal: roundCOP(ventasPagadas.reduce((acc, v) => acc + roundCOP(v.total), 0)),
+    ventasConSaldoCount: ventasConSaldo.length,
+    ventasConSaldoTotal: roundCOP(ventasConSaldo.reduce((acc, v) => acc + roundCOP(v.total), 0)),
+    saldoPorCobrarVigente: roundCOP(saldoPorCobrarVigente),
+    recaudosPorAbonos: roundCOP(recaudosPorAbonos),
+    cantidadAbonos: recaudosAbonosMovs.length
+  };
+
   return {
     kpis: {
       totalVentasPeriodo: roundCOP(totalVentasPeriodo),
@@ -347,7 +398,8 @@ export function generarReportesConsolidados(
     metodosDePago,
     cierresDeCaja,
     diferenciasEfectivo,
-    anulacionesYDevoluciones
+    anulacionesYDevoluciones,
+    resumenCartera
   };
 }
 
