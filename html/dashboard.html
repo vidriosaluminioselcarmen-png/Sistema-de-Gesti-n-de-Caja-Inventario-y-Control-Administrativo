@@ -30,11 +30,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span class="nav-text">Dashboard</span></a></li>
         <li><a class="nav-link" href="caja.html" data-route="caja" title="Caja y Ventas">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="nav-text">Caja y Ventas</span></a></li>
-        <li><a class="nav-link" href="inventario.html" data-route="inventario" title="Inventario">
+        <li data-role="admin"><a class="nav-link" href="inventario.html" data-route="inventario" title="Inventario">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg><span class="nav-text">Inventario</span></a></li>
-        <li><a class="nav-link" href="contabilidad.html" data-route="contabilidad" title="Contabilidad">
+        <li data-role="admin"><a class="nav-link" href="contabilidad.html" data-route="contabilidad" title="Contabilidad">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span class="nav-text">Contabilidad</span></a></li>
-        <li><a class="nav-link" href="reportes.html" data-route="reportes" title="Consultas y Reportes">
+        <li data-role="admin"><a class="nav-link" href="reportes.html" data-route="reportes" title="Consultas y Reportes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span class="nav-text">Reportes</span></a></li>
         <li data-role="admin"><a class="nav-link" href="usuarios.html" data-route="usuarios" title="Usuarios">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span class="nav-text">Usuarios</span></a></li>
@@ -67,208 +67,87 @@
     </header>
 
     <main id="app-root">
-      <!-- VISTA: Dashboard Operativo (estado en vivo y acciones rápidas del día · Sección 5) -->
+      <!-- VISTA: Dashboard Operativo -->
       <div class="view" data-view="dashboard">
 
-        <!-- Cabecera limpia con acciones operativas inmediatas -->
         <div class="page-header">
           <div>
-            <h2>Operación de hoy</h2>
-            <p class="text-muted" id="dash-subtitulo-fecha" style="margin:.15rem 0 0; font-size:.86rem">Monitoreo en tiempo real de Caja y Ventas, Inventario y Contabilidad</p>
+            <h2>Resumen del negocio</h2>
+            <p class="text-muted" id="dash-subtitulo-fecha" style="margin:.15rem 0 0; font-size:.94rem">Hoy</p>
           </div>
-          <div class="page-actions">
-            <a class="btn btn-primary" href="caja.html">+ Nueva venta</a>
-            <a class="btn btn-outline" href="inventario.html">+ Producto</a>
-            <a class="btn btn-outline" href="contabilidad.html">+ Ingreso / Gasto</a>
+          <div class="dash-period-group" role="group" aria-label="Período del resumen">
+            <button type="button" class="btn btn-primary btn-sm dash-period-btn active" data-dash-periodo="hoy" aria-pressed="true">Hoy</button>
+            <button type="button" class="btn btn-outline btn-sm dash-period-btn" data-dash-periodo="semana" aria-pressed="false">Esta semana</button>
+            <button type="button" class="btn btn-outline btn-sm dash-period-btn" data-dash-periodo="mes" aria-pressed="false">Este mes</button>
           </div>
         </div>
 
-        <div id="dash-error-alert" class="alert alert-danger hidden" role="status" style="margin-bottom:1rem"></div>
+        <!-- SECCIÓN A: Resumen general (3 tarjetas KPI) -->
+        <div class="dash-kpis">
+          <article class="card stat dash-kpi-card">
+            <div class="stat-label">Ventas del período</div>
+            <p class="stat-value num" id="dash-kpi-ventas">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-ventas-sub">0 ventas registradas</div>
+          </article>
+          <article class="card stat income dash-kpi-card">
+            <div class="stat-label">Dinero efectivamente recibido</div>
+            <p class="stat-value num text-success" id="dash-kpi-recibido">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-recibido-sub">Efectivo: $ 0 · Bancos: $ 0</div>
+          </article>
+          <article class="card stat dash-kpi-card" style="border-left-color:var(--warning)">
+            <div class="stat-label">Cuentas por cobrar</div>
+            <p class="stat-value num" style="color:var(--warning)" id="dash-kpi-por-cobrar">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-por-cobrar-sub">Sin saldos pendientes</div>
+          </article>
+        </div>
 
-        <!-- 3 tarjetas objetivas (1 por módulo: Caja y Ventas · Inventario · Contabilidad Básica) -->
-        <div class="dash-pillars">
-
-          <!-- 1. CAJA Y VENTAS -->
-          <section class="card pillar-card" aria-labelledby="pilar-caja">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-caja">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>
-                </span>
-                <span>Caja y Ventas</span>
-              </div>
-              <span class="badge badge-warning" id="dash-caja-estado">Caja cerrada</span>
+        <!-- SECCIÓN B y C: Gráfica principal y Alertas importantes -->
+        <div class="dash-main-grid">
+          <section class="card" id="dash-card-grafica">
+            <div class="card-header">
+              <h3>Evolución de ventas</h3>
+              <span class="badge badge-neutral" id="dash-grafica-badge">Hoy</span>
             </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Ventas efectivas (turno / hoy)</span>
-                  <div class="big num" id="dash-ventas-turno">$ 0</div>
-                </div>
-                <span class="badge" id="dash-ventas-count">0 ventas</span>
-              </div>
-
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-ef-label">Efectivo (0 %)</span><b class="num" id="dash-met-ef-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-ef-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-tr-label">Transferencia (0 %)</span><b class="num" id="dash-met-tr-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-tr-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-tj-label">Tarjeta (0 %)</span><b class="num" id="dash-met-tj-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-tj-bar" style="width:0%"></div></div>
-              </div>
-
-              <div class="summary" style="margin:0; padding-top:.55rem; border-top:1px solid var(--border)">
-                <div class="summary-row"><span>Base inicial</span><b class="num" id="dash-caja-base">$ 0</b></div>
-                <div class="summary-row"><span>Efectivo esperado en caja</span><b class="num" id="dash-caja-esperado">$ 0</b></div>
-              </div>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted" id="dash-caja-cajero">Sin turno activo</span>
-              <a href="caja.html">Abrir Punto de Venta →</a>
+            <div class="card-body" id="dash-chart-wrap">
+              <svg id="dash-chart-ventas" class="dash-chart-svg" viewBox="0 0 640 240" role="img" aria-label="Evolución de ventas del período"></svg>
             </div>
           </section>
 
-          <!-- 2. INVENTARIO -->
-          <section class="card pillar-card" aria-labelledby="pilar-inventario">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-inventario">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>
-                </span>
-                <span>Inventario</span>
-              </div>
-              <span class="badge badge-warning" id="dash-inv-badge">0 por reponer</span>
+          <section class="card" id="dash-card-alertas">
+            <div class="card-header">
+              <h3>Alertas importantes</h3>
+              <span class="badge badge-neutral" id="dash-alertas-badge">0 alertas</span>
             </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Alertas de reposición</span>
-                  <div class="big" id="dash-alertas-stock">0 críticos</div>
-                </div>
-                <span class="badge" id="dash-total-productos">0 productos</span>
+            <div class="card-body">
+              <div class="dash-alerts-list" id="dash-alertas-list">
+                <div class="dash-alert-ok">✓ Todo está en orden. No hay alertas pendientes en este momento.</div>
               </div>
-
-              <p class="label" style="margin:0">Estado de existencias críticas</p>
-              <ul class="mini-list" id="dash-lista-alertas">
-                <li><span class="text-muted">No hay productos registrados.</span></li>
-              </ul>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted" id="dash-inv-resumen-pie">0 agotados · 0 en stock bajo</span>
-              <a href="inventario.html">Gestionar stock →</a>
-            </div>
-          </section>
-
-          <!-- 3. CONTABILIDAD BÁSICA -->
-          <section class="card pillar-card" aria-labelledby="pilar-contabilidad">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-contabilidad">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                </span>
-                <span>Contabilidad Básica</span>
-              </div>
-              <span class="badge badge-success" id="dash-cont-badge">Sin movimientos</span>
-            </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Resultado del período</span>
-                  <div class="big num" id="dash-balance-hoy">$ 0</div>
-                </div>
-                <span class="badge" id="dash-cont-count">0 mov.</span>
-              </div>
-
-              <div class="meter">
-                <div class="meter-head"><span>Ingresos registrados</span><b class="num text-income" id="dash-ingresos-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill success" id="dash-ingresos-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span>Gastos registrados</span><b class="num text-expense" id="dash-gastos-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill danger" id="dash-gastos-bar" style="width:0%"></div></div>
-              </div>
-
-              <div class="summary" style="margin:0; padding-top:.55rem; border-top:1px solid var(--border)">
-                <div class="summary-row"><span>Último ingreso</span><span id="dash-ultimo-ingreso">Sin registros</span></div>
-                <div class="summary-row"><span>Último gasto</span><span id="dash-ultimo-gasto">Sin registros</span></div>
-              </div>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted">Control financiero real</span>
-              <a href="contabilidad.html">Registrar movimiento →</a>
             </div>
           </section>
         </div>
 
-        <!-- Actividad en vivo del turno -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
-            <div class="card-header">
-              <h3>Últimas ventas registradas</h3>
-              <a class="btn btn-outline" href="caja.html">Ir a Caja</a>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Hora</th><th>Detalle</th><th>Pago</th><th class="num">Total</th></tr></thead>
-                <tbody id="dash-ultimas-ventas">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <h3>Actividad reciente (Bodega y Contabilidad)</h3>
-              <a class="btn btn-outline" href="reportes.html">Ver reportes históricos</a>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Hora</th><th>Módulo</th><th>Operación</th><th class="num">Impacto</th></tr></thead>
-                <tbody id="dash-actividad-reciente">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay movimientos registrados.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        <!-- Productos más vendidos y Ventas por día -->
-        <div class="grid grid-2">
-          <section class="card">
-            <div class="card-header">
-              <h3>Productos más vendidos</h3>
-              <span class="badge" id="dash-top-prod-badge">Período actual</span>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Producto</th><th>Categoría</th><th class="num">Cant. vendida</th><th class="num">Importe</th></tr></thead>
-                <tbody id="dash-mas-vendidos">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas para calcular productos más vendidos.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <h3>Ventas por día</h3>
-              <span class="badge">Excluye anuladas</span>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Fecha</th><th class="num">Operaciones</th><th class="num">Total vendido</th></tr></thead>
-                <tbody id="dash-ventas-por-dia">
-                  <tr><td colspan="3" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas en el período.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+        <!-- SECCIÓN D: Actividad reciente (Últimas 5 operaciones) -->
+        <section class="card" id="dash-card-actividad">
+          <div class="card-header">
+            <h3>Actividad reciente</h3>
+            <span class="badge badge-neutral">Últimas 5 operaciones</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Fecha y hora</th>
+                  <th>Tipo de operación</th>
+                  <th>Descripción breve</th>
+                  <th class="text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody id="dash-actividad-body">
+                <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">Aún no hay operaciones registradas.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
       </div>
     </main>

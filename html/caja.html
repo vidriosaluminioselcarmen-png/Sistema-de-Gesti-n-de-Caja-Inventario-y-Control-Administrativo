@@ -30,11 +30,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span class="nav-text">Dashboard</span></a></li>
         <li><a class="nav-link active" href="caja.html" data-route="caja" title="Caja y Ventas">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="nav-text">Caja y Ventas</span></a></li>
-        <li><a class="nav-link" href="inventario.html" data-route="inventario" title="Inventario">
+        <li data-role="admin"><a class="nav-link" href="inventario.html" data-route="inventario" title="Inventario">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg><span class="nav-text">Inventario</span></a></li>
-        <li><a class="nav-link" href="contabilidad.html" data-route="contabilidad" title="Contabilidad">
+        <li data-role="admin"><a class="nav-link" href="contabilidad.html" data-route="contabilidad" title="Contabilidad">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span class="nav-text">Contabilidad</span></a></li>
-        <li><a class="nav-link" href="reportes.html" data-route="reportes" title="Consultas y Reportes">
+        <li data-role="admin"><a class="nav-link" href="reportes.html" data-route="reportes" title="Consultas y Reportes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span class="nav-text">Reportes</span></a></li>
         <li data-role="admin"><a class="nav-link" href="usuarios.html" data-route="usuarios" title="Usuarios">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span class="nav-text">Usuarios</span></a></li>
@@ -87,13 +87,14 @@
             <span>Efectivo esperado: <b class="num" id="caja-efectivo-esperado">$ 0</b></span>
           </div>
           <div class="page-actions" id="caja-status-actions">
+            <button type="button" class="btn btn-outline" id="btn-ver-historial-caja">Ver ventas del turno</button>
             <a class="btn btn-outline" href="#modal-mov-caja" id="btn-abrir-mov-caja">Movimiento efectivo</a>
             <a class="btn btn-outline" href="#modal-cierre" id="btn-abrir-cierre">Cerrar caja</a>
           </div>
         </section>
 
         <!-- Panel de Apertura de Caja (se muestra cuando NO hay una caja abierta) -->
-        <section class="card hidden" id="panel-apertura-caja" style="margin-bottom:1.25rem; border-left:4px solid var(--navy-800)">
+        <section class="card hidden" id="panel-apertura-caja">
           <div class="card-header">
             <h3>Apertura de caja — Iniciar turno</h3>
             <span class="badge badge-warning">Caja cerrada</span>
@@ -111,18 +112,18 @@
                 <label class="label" for="apertura-fecha">Fecha y hora de apertura</label>
                 <input class="input" id="apertura-fecha" type="text" readonly>
               </div>
-              <div class="field">
+              <div class="field full">
                 <label class="label" for="apertura-monto">Monto inicial de efectivo (COP)</label>
-                <input class="input num" id="apertura-monto" name="montoInicial" type="number" min="0" step="1" placeholder="Ej: 200000" required>
+                <input class="input num" id="apertura-monto" name="montoInicial" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 200,000" required>
               </div>
-              <div class="field">
+              <div class="field full">
                 <label class="label" for="apertura-obs">Observaciones (opcional)</label>
                 <input class="input" id="apertura-obs" name="observaciones" type="text" placeholder="Ej: Base en billetes sencillos">
               </div>
             </div>
             <p id="apertura-error" class="error-text hidden" style="margin:.75rem 0 0"></p>
-            <div style="margin-top:1rem">
-              <button type="submit" class="btn btn-primary" id="btn-confirmar-apertura">Abrir caja e iniciar punto de venta</button>
+            <div style="margin-top:1.25rem">
+              <button type="submit" class="btn btn-primary btn-block" id="btn-confirmar-apertura">Abrir caja e iniciar punto de venta</button>
             </div>
           </form>
         </section>
@@ -135,17 +136,12 @@
               <input class="input" type="search" id="buscar-producto" placeholder="Buscar producto por nombre, código o código de barras (F2)">
               <button type="button" class="btn btn-outline" id="btn-medida-vidrio" title="Calcular corte de vidrio o espejo por ancho y alto">Corte a medida (m²)</button>
               <button type="button" class="btn btn-outline" id="btn-agregar-producto-concepto" title="Crear un producto permanente o agregar un concepto solo a esta venta (F4)">+ Producto rápido</button>
-            </div>
-            <div class="chips" id="pos-categorias" role="tablist" aria-label="Categorías de productos">
-              <button type="button" class="chip active" data-categoria="Todos">Todos</button>
-              <button type="button" class="chip" data-categoria="Vidrios">Vidrios</button>
-              <button type="button" class="chip" data-categoria="Perfiles">Perfiles</button>
-              <button type="button" class="chip" data-categoria="Accesorios">Accesorios</button>
-              <button type="button" class="chip" data-categoria="Insumos">Insumos</button>
+              <button type="button" class="btn btn-primary" id="btn-ver-todo-catalogo">Ver todos (<span id="catalogo-total-count">0</span>)</button>
             </div>
 
             <!-- Cuadrícula de productos obtenida en tiempo real desde el módulo de Inventario -->
             <div class="product-grid" id="product-grid"></div>
+            <div id="box-ver-mas-catalogo" class="hidden" style="margin-top:1rem"><button type="button" class="btn btn-outline btn-block" id="btn-ver-catalogo-inferior">Ver catálogo completo (<span id="catalogo-inferior-count">0</span> productos)</button></div>
           </section>
 
           <!-- Columna 2: carrito de compra (Punto de Venta) -->
@@ -158,43 +154,51 @@
             <!-- Selección de cliente y referencia de pedido/cotización -->
             <div style="padding:.85rem 1.25rem; border-bottom:1px solid var(--border); background:var(--navy-50)">
               <div class="field" style="margin-bottom:.5rem; position:relative">
-                <div style="display:flex; justify-content:space-between; align-items:center">
-                  <label class="label" for="pos-cliente-buscar">Cliente</label>
-                  <a href="#modal-cliente-pos" style="font-size:.78rem; font-weight:600">+ Nuevo cliente</a>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem; margin-bottom:.35rem">
+                  <label class="label" style="margin:0">Cliente</label>
+                  <div style="display:flex; gap:.4rem; align-items:center; flex-wrap:wrap">
+                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-cambiar-cliente">Cambiar cliente</button>
+                    <a class="btn btn-outline btn-xs" href="#modal-cliente-pos">+ Nuevo cliente</a>
+                  </div>
                 </div>
-                <input type="hidden" id="pos-cliente" value="cli-consumidor">
-                <input class="input" type="search" id="pos-cliente-buscar" placeholder="Buscar por nombre, cédula, NIT o teléfono..." autocomplete="off" style="padding:.4rem .65rem; font-size:.84rem">
-                <div id="pos-cliente-resultados" class="hidden" style="max-height:170px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--white); margin-top:.3rem"></div>
-                <div id="pos-cliente-seleccionado" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem; margin-top:.4rem; padding:.4rem .6rem; background:var(--white); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:.82rem">
+                <input type="hidden" id="pos-cliente" value="">
+                <div id="pos-cliente-aviso" class="alert alert-info" style="padding:.5rem .7rem; font-size:.86rem; margin-bottom:.45rem">
+                  <b>Ningún cliente seleccionado</b> — Busque o registre un cliente para comenzar.
+                </div>
+                <div id="pos-cliente-seleccionado" class="hidden" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem; padding:.5rem .7rem; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:var(--radius-sm); font-size:.9rem">
                   <div>
-                    <strong id="pos-cli-nombre">Consumidor Final</strong>
-                    <span class="text-muted" id="pos-cli-doc">· 222222222222</span>
+                    <strong id="pos-cli-nombre">—</strong>
+                    <span class="text-muted" id="pos-cli-doc"></span>
                     <span class="badge badge-warning hidden" id="pos-cli-saldo-badge" style="margin-left:.35rem">Saldo: $ 0</span>
                   </div>
-                  <div style="display:flex; gap:.3rem">
-                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-ver-historial-cliente">Historial</button>
-                    <button type="button" class="btn btn-ghost btn-xs hidden" id="btn-limpiar-cliente" title="Volver a Consumidor Final">Quitar</button>
+                  <div style="display:flex; gap:.35rem; flex-wrap:wrap">
+                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-ver-historial-cliente">Ver productos / Historial</button>
+                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-limpiar-cliente" title="Quitar cliente seleccionado">Quitar</button>
                   </div>
                 </div>
-              </div>
-              <div class="field">
-                <input class="input" id="pos-orden-ref" type="text" placeholder="Ref. pedido / cotización / instalación (opcional)" style="padding:.4rem .65rem; font-size:.82rem">
+                <div id="box-buscar-cliente" style="margin-top:.45rem">
+                  <div style="display:flex; gap:.4rem">
+                    <input class="input" type="search" id="pos-cliente-buscar" placeholder="Buscar por nombre, cédula o teléfono..." autocomplete="off" style="flex:1">
+                    <button type="button" class="btn btn-outline btn-xs" id="btn-cerrar-buscar-cliente">Cancelar</button>
+                  </div>
+                  <div id="pos-cliente-resultados" class="hidden" style="max-height:170px; overflow:auto; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-surface); margin-top:.3rem"></div>
+                </div>
               </div>
             </div>
 
             <!-- Líneas de productos de la venta actual -->
             <ul class="cart-list" id="cart-items"></ul>
-            <p class="cart-empty" id="cart-empty">Todavía no hay productos en esta venta. Busque un producto arriba para agregarlo.</p>
+            <p class="cart-empty" id="cart-empty">1. Seleccione o registre un cliente arriba. 2. Luego agregue los productos con el botón + Agregar.</p>
 
             <div class="cart-footer">
               <!-- Modalidad de cobro (Completo / Parcial / Crédito) -->
               <div class="field" style="margin-bottom:.65rem">
-                <label class="label" for="modalidad-cobro">Modalidad de cobro</label>
-                <select class="select" id="modalidad-cobro">
-                  <option value="completo">Pago completo</option>
-                  <option value="parcial">Pago parcial / abono inicial (dejar saldo)</option>
-                  <option value="credito">Crédito total (sin abono inicial)</option>
-                </select>
+                <span class="label">Modalidad de cobro</span>
+                <input type="hidden" id="modalidad-cobro" value="completo">
+                <div class="modalidad-toggle" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem">
+                  <button type="button" class="btn btn-primary" data-modalidad-btn="completo" aria-pressed="true">Pago completo</button>
+                  <button type="button" class="btn btn-outline" data-modalidad-btn="parcial" aria-pressed="false">Abono inicial</button>
+                </div>
                 <small class="text-muted hidden" id="cobro-credito-hint" style="display:block; margin-top:.25rem"></small>
               </div>
 
@@ -203,7 +207,7 @@
                 <div class="field">
                   <label class="label" for="cart-descuento-input">Descuento general</label>
                   <div class="flex" style="gap:.35rem">
-                    <input class="input num" id="cart-descuento-input" type="number" min="0" step="1" value="0" style="flex:1">
+                    <input class="input num" id="cart-descuento-input" type="text" inputmode="numeric" data-money-input="1" value="0" style="flex:1">
                     <select class="select" id="cart-descuento-tipo" aria-label="Tipo de descuento" style="width:78px">
                       <option value="COP">COP</option>
                       <option value="%">%</option>
@@ -217,8 +221,6 @@
                     <option value="Transferencia">Transferencia bancaria</option>
                     <option value="Nequi">Nequi</option>
                     <option value="Daviplata">Daviplata</option>
-                    <option value="Tarjeta débito">Tarjeta débito</option>
-                    <option value="Tarjeta crédito">Tarjeta crédito</option>
                     <option value="Saldo a favor" id="opt-metodo-saldo-favor" disabled>Saldo a favor (Billetera cliente)</option>
                     <option value="Mixto">Pago dividido (Mixto)</option>
                   </select>
@@ -233,7 +235,7 @@
                 </div>
                 <div class="field" style="margin-bottom:.35rem">
                   <label class="label" for="pago-saldo-favor">Aplicar saldo a favor en esta venta (COP)</label>
-                  <input class="input num" id="pago-saldo-favor" type="number" min="0" step="1" value="0">
+                  <input class="input num" id="pago-saldo-favor" type="text" inputmode="numeric" data-money-input="1" value="0">
                 </div>
                 <div class="flex justify-between" style="font-size:.78rem; color:#166534; gap:.5rem; flex-wrap:wrap">
                   <span>Otros medios de pago: <strong id="pos-billetera-otros" class="num">$ 0</strong></span>
@@ -244,7 +246,7 @@
               <!-- Campo para pago en Efectivo -->
               <div id="box-pago-efectivo" class="field" style="margin-bottom:.75rem">
                 <label class="label" for="recibido">Valor recibido en efectivo (COP)</label>
-                <input class="input num" id="recibido" type="number" min="0" step="1" placeholder="0">
+                <input class="input num" id="recibido" type="text" inputmode="numeric" data-money-input="1" placeholder="0">
               </div>
 
               <!-- Campo para pagos electrónicos (Transferencia / Tarjetas) -->
@@ -258,21 +260,21 @@
                 <div class="form-grid cart-pay-grid" style="margin-bottom:.5rem">
                   <div class="field">
                     <label class="label" for="mixto-efectivo">Efectivo (COP)</label>
-                    <input class="input num" id="mixto-efectivo" type="number" min="0" step="1" value="0">
+                    <input class="input num" id="mixto-efectivo" type="text" inputmode="numeric" data-money-input="1" value="0">
                   </div>
                   <div class="field">
                     <label class="label" for="mixto-otro-metodo">2° Método</label>
                     <select class="select" id="mixto-otro-metodo">
-                      <option value="Transferencia">Transferencia</option>
-                      <option value="Tarjeta débito">Tarjeta débito</option>
-                      <option value="Tarjeta crédito">Tarjeta crédito</option>
+                      <option value="Transferencia">Transferencia bancaria</option>
+                      <option value="Nequi">Nequi</option>
+                      <option value="Daviplata">Daviplata</option>
                     </select>
                   </div>
                 </div>
                 <div class="form-grid cart-pay-grid" style="margin-bottom:0">
                   <div class="field">
                     <label class="label" for="mixto-otro-importe">Importe 2° método</label>
-                    <input class="input num" id="mixto-otro-importe" type="number" min="0" step="1" value="0">
+                    <input class="input num" id="mixto-otro-importe" type="text" inputmode="numeric" data-money-input="1" value="0">
                   </div>
                   <div class="field">
                     <label class="label" for="mixto-referencia">Referencia</label>
@@ -301,32 +303,19 @@
           </aside>
         </div>
 
-        <!-- Historial y consulta de ventas realizadas (Sección 13) -->
-        <section class="card" style="margin-top:1.5rem" aria-labelledby="titulo-historial-ventas">
-          <div class="card-header">
-            <h3 id="titulo-historial-ventas">Historial y consulta de ventas</h3>
-            <span class="badge" id="historial-ventas-count">0 ventas</span>
-          </div>
-          <div class="card-body">
-            <div class="toolbar" style="margin-bottom:1rem">
-              <input class="input" type="search" id="hist-buscar" placeholder="Buscar por N° venta (V-0001), cliente o vendedor">
-              <input class="input" type="date" id="hist-desde" title="Desde fecha" style="max-width:165px">
-              <input class="input" type="date" id="hist-hasta" title="Hasta fecha" style="max-width:165px">
-              <select class="select" id="hist-metodo" style="max-width:185px">
-                <option value="Todos">Todos los métodos</option>
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Nequi">Nequi</option>
-                <option value="Daviplata">Daviplata</option>
-                <option value="Tarjeta débito">Tarjeta débito</option>
-                <option value="Tarjeta crédito">Tarjeta crédito</option>
-              </select>
-              <select class="select" id="hist-estado" style="max-width:165px">
-                <option value="Todos">Todos los estados</option>
-                <option value="Completada">Completada</option>
-                <option value="Devuelta">Devuelta</option>
-                <option value="Anulada">Anulada</option>
-              </select>
+        <!-- Modal: Historial y consulta de ventas del turno (fuera de la pantalla principal de cobro) -->
+        <div class="modal-overlay" id="modal-historial-caja" role="dialog" aria-modal="true" aria-labelledby="titulo-historial-ventas">
+          <div class="modal" style="max-width:1080px; width:96%">
+            <div class="modal-header">
+              <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap">
+                <h3 id="titulo-historial-ventas">Ventas del turno y reimpresión</h3>
+                <span class="badge" id="historial-ventas-count">0 ventas</span>
+              </div>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <div class="modal-body">
+                        <div class="toolbar" style="margin-bottom:1rem">
+              <input class="input" type="search" id="hist-buscar" placeholder="Buscar venta por número (ej. 3 o V-0003), nombre del cliente o método de pago...">
             </div>
 
             <div class="table-wrap">
@@ -336,7 +325,6 @@
                     <th>N° Venta</th>
                     <th>Fecha y hora</th>
                     <th>Cliente</th>
-                    <th>Vendedor</th>
                     <th>Método de pago</th>
                     <th class="num">Total</th>
                     <th>Estado</th>
@@ -346,91 +334,41 @@
                 <tbody id="tbody-historial-ventas"></tbody>
               </table>
             </div>
+          
+            </div>
+            <div class="modal-footer">
+              <a class="btn btn-outline" href="#">Cerrar</a>
+            </div>
           </div>
-        </section>
+        </div>
 
-        <!-- Cuentas por cobrar y cartera de clientes (Fase 3) -->
-        <section class="card" style="margin-top:1.5rem" aria-labelledby="titulo-cartera-clientes">
-          <div class="card-header">
-            <h3 id="titulo-cartera-clientes">Cuentas por cobrar (Cartera de clientes)</h3>
-            <span class="badge badge-warning" id="cartera-total-badge">$ 0 por cobrar</span>
-          </div>
-          <div class="card-body">
-            <div class="toolbar" style="margin-bottom:1rem">
-              <input class="input" type="search" id="cartera-buscar" placeholder="Buscar cliente en cartera por nombre o documento...">
-            </div>
-            <div class="table-wrap">
-              <table class="table" id="tabla-cartera-clientes">
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Documento</th>
-                    <th class="num">Total pendiente</th>
-                    <th class="num">Operaciones pendientes</th>
-                    <th>Último movimiento</th>
-                    <th class="text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="tbody-cartera-clientes"></tbody>
-              </table>
-            </div>
-            <div id="cartera-detalle-panel" class="hidden" style="margin-top:1rem; padding:1rem; background:var(--navy-50); border:1px solid var(--border); border-radius:var(--radius-sm)">
-              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; margin-bottom:.75rem">
-                <h4 style="margin:0" id="cartera-detalle-titulo">Detalle de cartera</h4>
-                <button type="button" class="btn btn-ghost btn-xs" id="btn-cerrar-detalle-cartera">Cerrar detalle</button>
-              </div>
-              <div class="table-wrap">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>N° Venta</th>
-                      <th>Fecha</th>
-                      <th class="num">Total</th>
-                      <th class="num">Abonado</th>
-                      <th class="num">Saldo pendiente</th>
-                      <th>Estado</th>
-                      <th class="text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbody-cartera-detalle"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Modal 1: Cierre de caja con arqueo detallado (Sección 12) -->
+        <!-- Modal 1: Cerrar caja -->
         <div class="modal-overlay" id="modal-cierre" role="dialog" aria-modal="true" aria-labelledby="titulo-cierre">
           <div class="modal">
-            <div class="modal-header"><h3 id="titulo-cierre">Arqueo y cierre de caja</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+            <div class="modal-header"><h3 id="titulo-cierre">Cerrar caja</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
             <form id="form-cierre">
               <div class="modal-body">
                 <div class="summary" id="cierre-resumen-box">
-                  <div class="summary-row"><span>Responsable apertura</span><b id="cierre-responsable">Administrador</b></div>
-                  <div class="summary-row"><span>Fecha y hora apertura</span><span id="cierre-fecha-apertura">—</span></div>
-                  <div class="summary-row"><span>Ventas activas / anuladas</span><span id="cierre-cant-ventas">0 / 0</span></div>
-                  <div class="summary-row"><span>Total vendido en el turno</span><b class="num" id="cierre-total-vendido">$ 0</b></div>
-                  <hr style="border:0; border-top:1px solid var(--border); margin:.35rem 0">
-                  <div class="summary-row"><span>Monto inicial (base efectivo)</span><span class="num" id="cierre-base">$ 0</span></div>
-                  <div class="summary-row"><span>+ Ventas en efectivo</span><span class="num" id="cierre-efectivo-ventas">$ 0</span></div>
-                  <div class="summary-row"><span>+ Entradas manuales de efectivo</span><span class="num" id="cierre-entradas-extra">$ 0</span></div>
-                  <div class="summary-row"><span>− Salidas / devoluciones en efectivo</span><span class="num text-expense" id="cierre-salidas-extra">− $ 0</span></div>
-                  <div class="summary-row"><span>Pagos por transferencia (no efectivo)</span><span class="num" id="cierre-transferencia">$ 0</span></div>
-                  <div class="summary-row"><span>Pagos con tarjeta (no efectivo)</span><span class="num" id="cierre-tarjeta">$ 0</span></div>
-                  <div class="summary-row total"><span>Efectivo físico esperado en caja</span><span class="num" id="cierre-esperado">$ 0</span></div>
+                  <div class="summary-row"><span>Base inicial (efectivo)</span><b class="num" id="cierre-base">$ 0</b></div>
+                  <div class="summary-row"><span>Efectivo del turno (ventas y movimientos en efectivo)</span><b class="num" id="cierre-efectivo-ventas">$ 0</b></div>
+                  <div class="summary-row"><span>Transferencias / Nequi / Daviplata (en banco)</span><b class="num" id="cierre-transferencia">$ 0</b></div>
+                  <div style="margin-top:.5rem; padding:.85rem 1rem; background:var(--bg-subtle); border:1px solid var(--border-strong); border-radius:var(--radius-sm); display:flex; justify-content:space-between; align-items:center; gap:1rem">
+                    <span style="font-weight:700">Efectivo esperado en caja</span>
+                    <b class="num" id="cierre-esperado" style="font-size:1.35rem; font-weight:800">$ 0</b>
+                  </div>
                 </div>
                 <div class="form-grid">
                   <div class="field">
-                    <label class="label" for="efectivo-contado">Efectivo contado (COP)</label>
-                    <input class="input num" id="efectivo-contado" type="number" min="0" step="1" placeholder="0" required>
+                    <label class="label" for="efectivo-contado">Efectivo contado (COP) *</label>
+                    <input class="input num" id="efectivo-contado" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 200,000" required>
                   </div>
                   <div class="field">
-                    <label class="label">Diferencia (Contado − Esperado)</label>
-                    <div class="input num" id="cierre-diferencia" style="background:var(--navy-50); font-weight:700">$ 0</div>
+                    <label class="label">Diferencia</label>
+                    <div class="input" id="cierre-diferencia" style="background:var(--bg-subtle); font-weight:700; display:flex; align-items:center">Digite el efectivo contado</div>
                   </div>
                   <div class="field full">
-                    <label class="label" for="obs-cierre">Observaciones del cierre (obligatoria si hay diferencia)</label>
-                    <textarea class="textarea" id="obs-cierre" rows="2" placeholder="Explique cualquier sobrante o faltante de caja"></textarea>
+                    <label class="label" for="obs-cierre">Nota u observación (solo si hay diferencia)</label>
+                    <input class="input" id="obs-cierre" type="text" placeholder="Ej: Faltante por cambio o gasto menor">
                   </div>
                 </div>
                 <p id="cierre-error" class="error-text hidden" style="margin:.6rem 0 0"></p>
@@ -536,7 +474,7 @@
                 </div>
                 <div class="field">
                   <label class="label" for="cli-pos-tel">Teléfono (opcional)</label>
-                  <input class="input" id="cli-pos-tel" placeholder="Ej: 3001234567">
+                  <input class="input" id="cli-pos-tel" type="tel" inputmode="numeric" maxlength="10" placeholder="Ej: 3001234567 (7 a 10 dígitos)">
                 </div>
                 <p id="cli-pos-error" class="error-text full hidden" style="margin:0"></p>
               </div>
@@ -563,7 +501,7 @@
                 </div>
                 <div class="field">
                   <label class="label" for="mov-caja-monto">Monto (COP)</label>
-                  <input class="input num" id="mov-caja-monto" type="number" min="1" step="1" required placeholder="0">
+                  <input class="input num" id="mov-caja-monto" type="text" inputmode="numeric" data-money-input="1" required placeholder="0">
                 </div>
                 <div class="field full">
                   <label class="label" for="mov-caja-concepto">Concepto / justificación</label>
@@ -648,7 +586,7 @@
                 </div>
                 <div class="field">
                   <label class="label" for="temp-precio">Precio unitario (COP) *</label>
-                  <input class="input num" id="temp-precio" type="number" min="0" step="1" placeholder="Ej: 35000" required>
+                  <input class="input num" id="temp-precio" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 35000" required>
                 </div>
                 <div class="field">
                   <label class="label" for="temp-unidad">Unidad de medida (opcional)</label>
@@ -704,7 +642,7 @@
                 </div>
                 <div class="field">
                   <label class="label" for="pos-prod-precio">Precio de venta (COP) *</label>
-                  <input class="input num" id="pos-prod-precio" type="number" min="0" step="1" required placeholder="0">
+                  <input class="input num" id="pos-prod-precio" type="text" inputmode="numeric" data-money-input="1" required placeholder="0">
                 </div>
                 <div class="field">
                   <label class="label" for="pos-prod-compra">Costo de compra (COP)</label>
@@ -776,9 +714,58 @@
                   <tbody id="tbody-historial-cliente"></tbody>
                 </table>
               </div>
+              <h4 style="margin:1rem 0 .45rem">Productos asociados al cliente (en curso e historial)</h4>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead><tr><th>Origen / Venta</th><th>Producto / Concepto</th><th class="num">Cant.</th><th class="num">Unitario</th><th class="num">Subtotal</th></tr></thead>
+                  <tbody id="tbody-productos-cliente"></tbody>
+                </table>
+              </div>
             </div>
             <div class="modal-footer">
               <a class="btn btn-outline" href="#">Cerrar</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal: Menú grande de catálogo completo (escalable a 500+ productos) -->
+        <div class="modal-overlay" id="modal-catalogo-completo" role="dialog" aria-modal="true" aria-labelledby="titulo-catalogo-completo">
+          <div class="modal modal-catalogo-lg">
+            <div class="modal-header">
+              <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap">
+                <h3 id="titulo-catalogo-completo">Catálogo completo de productos</h3>
+                <span class="badge" id="modal-cat-count">Mostrando 0 productos</span>
+              </div>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <div class="cat-modal-searchbar">
+              <input class="input" type="search" id="buscar-catalogo-modal" placeholder="Buscar en todo el catálogo por nombre, código o categoría...">
+              <button type="button" class="btn btn-outline" id="btn-limpiar-buscar-catalogo">Limpiar búsqueda</button>
+            </div>
+            <div class="cat-modal-body">
+              <div class="cat-modal-grid-wrap">
+                <div class="product-grid" id="modal-product-grid"></div>
+              </div>
+              <aside class="cat-modal-sidebar" aria-label="Resumen de selección en vivo">
+                <div class="cat-modal-sidebar-head">
+                  <span class="label" style="display:block; margin-bottom:.25rem">Cliente actual</span>
+                  <div id="modal-cat-cliente-nombre" style="font-size:.94rem; font-weight:600">Ningún cliente seleccionado</div>
+                  <button type="button" class="btn btn-outline btn-xs hidden" id="btn-modal-cat-elegir-cliente" style="margin-top:.45rem">Seleccionar o registrar cliente</button>
+                </div>
+                <ul class="cat-modal-cart-list" id="modal-cat-cart-list"></ul>
+                <p class="cart-empty" id="modal-cat-cart-empty" style="padding:1.25rem 1rem">Todavía no hay productos seleccionados.</p>
+                <div class="cat-modal-footer">
+                  <div class="summary-row" style="margin-bottom:.35rem">
+                    <span>Productos en venta</span>
+                    <b class="num" id="modal-cat-items-count">0</b>
+                  </div>
+                  <div class="summary-row" style="align-items:center; margin-bottom:.75rem">
+                    <span style="font-weight:700">Dinero acumulado</span>
+                    <b class="num" id="modal-cat-total" style="font-size:1.45rem; font-weight:800">$ 0</b>
+                  </div>
+                  <button type="button" class="btn btn-primary btn-block" id="btn-cerrar-catalogo-ir-cobro" style="min-height:50px; font-size:1.02rem">Listo · Ir a cobrar</button>
+                </div>
+              </aside>
             </div>
           </div>
         </div>
@@ -803,7 +790,7 @@
                 <div class="form-grid">
                   <div class="field">
                     <label class="label" for="abono-importe">Importe del abono (COP)</label>
-                    <input class="input num" id="abono-importe" type="number" min="1" step="1" required placeholder="0">
+                    <input class="input num" id="abono-importe" type="text" inputmode="numeric" data-money-input="1" required placeholder="0">
                   </div>
                   <div class="field">
                     <label class="label" for="abono-metodo">Medio de pago</label>
@@ -812,8 +799,6 @@
                       <option value="Transferencia">Transferencia bancaria</option>
                       <option value="Nequi">Nequi</option>
                       <option value="Daviplata">Daviplata</option>
-                      <option value="Tarjeta débito">Tarjeta débito</option>
-                      <option value="Tarjeta crédito">Tarjeta crédito</option>
                     </select>
                   </div>
                   <div class="field full" id="field-abono-referencia">

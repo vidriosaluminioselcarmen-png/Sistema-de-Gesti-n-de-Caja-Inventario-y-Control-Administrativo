@@ -32,6 +32,9 @@ import {
   actualizarProducto,
   cambiarEstadoProducto,
   registrarMovimientoBodega,
+  inferirModalidadProducto,
+  calcularAreaLaminas,
+  calcularResumenInventario,
   roundQty,
   roundCOP
 } from "../js/services/inventario-service.js";
@@ -2895,6 +2898,152 @@ export async function runAll25Tests() {
     const ventaHistorica = getDocById(COLLECTIONS.VENTAS, venta.id);
     assert(ventaHistorica.items[0].esTemporal === true, "Venta histórica debe conservar esTemporal");
     assert(ventaHistorica.items[0].precioUnitario === 25000, "Venta histórica no debe alterar su precio original");
+  });
+
+  // 83. Inventario: modalidades (u, m², m), entrada por láminas y control acumulado sin retazos
+  await step(83, "Inventario: modalidades (u, m², m), entrada por láminas (10x2x3=60 m²) y descuento acumulado", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 50000 }, adminUser);
+
+    const vidrio = await crearProducto(
+      { nombre: "Vidrio Claro 6mm", codigo: "INV-M2-1", categoria: "Vidrios", modalidad: "m2", unidad: "m²", precio: 80000, stock: 0, stockMinimo: 10 },
+      adminUser
+    );
+    const perfil = await crearProducto(
+      { nombre: "Perfil Marco Blanco", codigo: "INV-M-1", categoria: "Perfiles", modalidad: "m", unidad: "m", precio: 15000, stock: 50, stockMinimo: 10 },
+      adminUser
+    );
+
+    assert(inferirModalidadProducto(vidrio) === "m2", "Debe asignar modalidad m2");
+    assert(inferirModalidadProducto(perfil) === "m", "Debe asignar modalidad m");
+    assert(calcularAreaLaminas({ ancho: 2, alto: 3, laminas: 10 }) === 60, "Área 10x2x3 debe ser 60 m²");
+
+    // Entrada por láminas (10 láminas de 2 x 3 m = 60 m²)
+    await registrarMovimientoBodega(
+      { productoId: vidrio.id, tipo: "Entrada", ancho: 2, alto: 3, laminas: 10, proveedor: "Vitral SA", precioCompra: 45000, motivo: "Compra láminas" },
+      adminUser
+    );
+    assert(getDocById(COLLECTIONS.PRODUCTOS, vidrio.id).stock === 60, "Stock vidrio debe quedar en 60 m²");
+    assert(getDocById(COLLECTIONS.PRODUCTOS, vidrio.id).precioCompra === 45000, "Debe actualizar precioCompra");
+
+    // Venta de 1x2 m = 2 m² de vidrio y 3 m de perfil -> 58 m² y 47 m acumulados
+    await registrarVenta(
+      {
+        cajaId: caja.id,
+        items: [
+          { productoId: vidrio.id, cantidad: 2, dimensiones: { ancho: 1, largo: 2, unidadDimension: "m", piezas: 1 } },
+          { productoId: perfil.id, cantidad: 3 }
+        ],
+        pagos: [{ metodo: "Efectivo", importe: 205000 }],
+        idempotencyKey: "t83-inv"
+      },
+      adminUser
+    );
+    assert(getDocById(COLLECTIONS.PRODUCTOS, vidrio.id).stock === 58, "Vidrio debe quedar en 58 m² acumulados");
+    assert(getDocById(COLLECTIONS.PRODUCTOS, perfil.id).stock === 47, "Perfil debe quedar en 47 m acumulados");
+  });
+
+  // 84. Inventario: bloqueo de cambio de modalidad con movimientos y rechazo de salida excesiva
+  await step(84, "Inventario: bloqueo de cambio de modalidad con movimientos y rechazo de salida > stock", async () => {
+    resetDatabaseForTests();
+    const bisagra = await crearProducto(
+      { nombre: "Bisagra Hidráulica", codigo: "INV-U-84", categoria: "Accesorios", modalidad: "unidades", unidad: "u", precio: 45000, stock: 10, stockMinimo: 2 },
+      adminUser
+    );
+    await assertThrows(
+      () => actualizarProducto(bisagra.id, { modalidad: "m2", unidad: "m²" }, adminUser),
+      "modalidad"
+    );
+    await assertThrows(
+      () => registrarMovimientoBodega({ productoId: bisagra.id, tipo: "Salida", cantidad: 15, motivo: "Exceso" }, adminUser),
+      "supera las existencias"
+    );
+    assert(getDocById(COLLECTIONS.PRODUCTOS, bisagra.id).stock === 10, "Stock no debe alterarse tras rechazo");
+  });
+
+  // 85. Inventario: reversión tras anulación de venta y protección contra doble descuento
+  await step(85, "Inventario: reversión exacta tras anulación y prevención de doble descuento", async () => {
+    resetDatabaseForTests();
+    const caja = await abrirCaja({ montoInicial: 50000 }, adminUser);
+    const prod = await crearProducto(
+      { nombre: "Cerradura Aluminio", codigo: "INV-U-85", categoria: "Accesorios", modalidad: "unidades", unidad: "u", precio: 35000, stock: 12, stockMinimo: 3 },
+      adminUser
+    );
+
+    const v = await registrarVenta(
+      {
+        cajaId: caja.id,
+        items: [{ productoId: prod.id, cantidad: 4 }],
+        pagos: [{ metodo: "Efectivo", importe: 140000 }],
+        idempotencyKey: "t85-venta"
+      },
+      adminUser
+    );
+    assert(getDocById(COLLECTIONS.PRODUCTOS, prod.id).stock === 8, "Stock tras venta debe ser 8");
+
+    // Reintento con misma idempotencyKey no descuenta dos veces
+    await assertThrows(
+      () =>
+        registrarVenta(
+          {
+            cajaId: caja.id,
+            items: [{ productoId: prod.id, cantidad: 4 }],
+            pagos: [{ metodo: "Efectivo", importe: 140000 }],
+            idempotencyKey: "t85-venta"
+          },
+          adminUser
+        ),
+      "ya fue"
+    );
+    assert(getDocById(COLLECTIONS.PRODUCTOS, prod.id).stock === 8, "Reintento no debe descontar stock");
+
+    await anularVenta({ ventaId: v.id, motivo: "Cancelación cliente", reintegrarInventario: true }, adminUser);
+    assert(getDocById(COLLECTIONS.PRODUCTOS, prod.id).stock === 12, "Anulación debe revertir stock a 12");
+  });
+
+  // 86. Panel de inventario: resumen vacío sin datos (sin indicadores inventados)
+  await step(86, "Panel de inventario: estado vacío real cuando no existen productos ni movimientos", async () => {
+    resetDatabaseEmpty();
+    const r = calcularResumenInventario([], [], {});
+    assert(r.conteo.total === 0 && r.conteo.disponibles === 0 && r.conteo.agotados === 0, "Conteos deben ser 0");
+    assert(r.sinProductos === true && r.sinMovimientos === true, "Debe marcar ausencia de datos");
+    assert(r.porCategoria.length === 0, "Sin categorías");
+    assert(r.entradasSalidasPorDia.length === 0, "Sin entradas/salidas");
+    assert(r.evolucionExistencias.length === 0, "Sin evolución");
+  });
+
+  // 87. Panel de inventario: conteos por estado, filtros por categoría/fecha y consistencia con existencias
+  await step(87, "Panel de inventario: conteos por estado, filtros por categoría y fechas, y coherencia con existencias", async () => {
+    resetDatabaseEmpty();
+    const pOk = await crearProducto({ nombre: "Bisagra OK", codigo: "PI-1", categoria: "Accesorios", unidad: "u", precio: 1000, stock: 20, stockMinimo: 5 }, adminUser);
+    const pLow = await crearProducto({ nombre: "Tornillo Bajo", codigo: "PI-2", categoria: "Accesorios", unidad: "u", precio: 100, stock: 3, stockMinimo: 5 }, adminUser);
+    await crearProducto({ nombre: "Vidrio Agotado", codigo: "PI-3", categoria: "Vidrios", unidad: "m²", precio: 50000, stock: 0, stockMinimo: 2 }, adminUser);
+    const pInact = await crearProducto({ nombre: "Perfil Inactivo", codigo: "PI-4", categoria: "Perfiles", unidad: "m", precio: 9000, stock: 10, stockMinimo: 1 }, adminUser);
+    await cambiarEstadoProducto(pInact.id, false, adminUser);
+    await registrarMovimientoBodega({ productoId: pOk.id, tipo: "Salida", cantidad: 2, motivo: "Daño" }, adminUser);
+
+    const prods = getCollection(COLLECTIONS.PRODUCTOS);
+    const movs = getCollection(COLLECTIONS.MOV_INVENTARIO);
+    const r = calcularResumenInventario(prods, movs, {});
+    assert(r.conteo.total === 3, `Total activos debe ser 3, obtenido ${r.conteo.total}`);
+    assert(r.conteo.disponibles === 1, "1 disponible");
+    assert(r.conteo.stockBajo === 1, "1 stock bajo");
+    assert(r.conteo.agotados === 1, "1 agotado");
+    assert(r.conteo.inactivos === 1, "1 inactivo");
+    assert(r.totalSalidas === 1, "Debe contar 1 salida");
+
+    const serieU = r.evolucionExistencias.find((s) => s.unidad === "u");
+    assert(serieU, "Debe existir serie en unidades");
+    const ultimo = serieU.puntos[serieU.puntos.length - 1].existencias;
+    const stockActualU = getDocById(COLLECTIONS.PRODUCTOS, pOk.id).stock + getDocById(COLLECTIONS.PRODUCTOS, pLow.id).stock;
+    assert(ultimo === stockActualU, `Último punto (${ultimo}) debe coincidir con existencias actuales en u (${stockActualU})`);
+
+    const rCat = calcularResumenInventario(prods, movs, { categoria: "Vidrios" });
+    assert(rCat.conteo.total === 1 && rCat.conteo.agotados === 1, "Filtro por categoría Vidrios");
+
+    const rFuturo = calcularResumenInventario(prods, movs, { desde: "2999-01-01" });
+    assert(rFuturo.sinMovimientos === true && rFuturo.entradasSalidasPorDia.length === 0, "Filtro por fecha futura no debe tener movimientos");
+    assert(rFuturo.conteo.total === 3, "El filtro de fechas no altera las existencias actuales");
   });
 
   return results.sort((a, b) => a.num - b.num);

@@ -27,6 +27,39 @@ export const UNIDADES_MEDIDA = {
 export const UNIDADES_PERMITIDAS = Object.values(UNIDADES_MEDIDA);
 const UNIDADES_DECIMALES = new Set(["m", "metro", "m²", "kg", "L"]);
 
+export const MODALIDADES_INVENTARIO = {
+  UNIDADES: "unidades",
+  METROS_CUADRADOS: "m2",
+  METROS_LINEALES: "m"
+};
+
+export function inferirModalidadProducto(prod = {}) {
+  const mod = String(prod.modalidad || "").trim().toLowerCase();
+  if (mod === "m2" || mod === "m²") return MODALIDADES_INVENTARIO.METROS_CUADRADOS;
+  if (mod === "m") return MODALIDADES_INVENTARIO.METROS_LINEALES;
+  if (mod === "unidades" || mod === "u") return MODALIDADES_INVENTARIO.UNIDADES;
+  const u = String(prod.unidad || "").trim();
+  if (u === "m²") return MODALIDADES_INVENTARIO.METROS_CUADRADOS;
+  if (u === "m" || u === "metro") return MODALIDADES_INVENTARIO.METROS_LINEALES;
+  return MODALIDADES_INVENTARIO.UNIDADES;
+}
+
+export function etiquetaModalidad(modalidad) {
+  if (modalidad === MODALIDADES_INVENTARIO.METROS_CUADRADOS) return "Metros cuadrados (m²)";
+  if (modalidad === MODALIDADES_INVENTARIO.METROS_LINEALES) return "Metros lineales (m)";
+  return "Unidades";
+}
+
+export function calcularAreaLaminas({ ancho, alto, laminas = 1 }) {
+  const a = Number(ancho);
+  const h = Number(alto);
+  const n = Number(laminas);
+  if (!Number.isFinite(a) || a <= 0) throw new Error("El ancho debe ser mayor que cero.");
+  if (!Number.isFinite(h) || h <= 0) throw new Error("El alto debe ser mayor que cero.");
+  if (!Number.isFinite(n) || n <= 0) throw new Error("La cantidad de láminas debe ser mayor que cero.");
+  return roundQty(a * h * n);
+}
+
 function resolverPermiteDecimal(unidad, permiteDecimalExplicit) {
   if (UNIDADES_DECIMALES.has(unidad)) return true;
   if (unidad === "u") return false;
@@ -208,6 +241,128 @@ export function obtenerAlertasInventario(productos = listarProductos({ incluirIn
   };
 }
 
+// Resumen único del inventario para tarjetas y gráficos (sin cálculos duplicados).
+// Usa exclusivamente los productos y movimientos reales recibidos; si no hay datos, devuelve listas vacías.
+export function calcularResumenInventario(
+  productos = [],
+  movimientos = [],
+  { desde = "", hasta = "", categoria = "Todos" } = {}
+) {
+  const prodsFiltrados = productos.filter(
+    (p) => !categoria || categoria === "Todos" || p.categoria === categoria
+  );
+  const idsFiltrados = new Set(prodsFiltrados.map((p) => p.id));
+
+  const conteo = { total: 0, disponibles: 0, stockBajo: 0, agotados: 0, inactivos: 0, inconsistentes: 0 };
+  const porCategoriaMap = new Map();
+
+  for (const p of prodsFiltrados) {
+    const est = getEstadoStock(p);
+    if (est.codigo === "inactivo") {
+      conteo.inactivos += 1;
+      continue;
+    }
+    conteo.total += 1;
+    if (est.codigo === "disponible") conteo.disponibles += 1;
+    else if (est.codigo === "bajo") conteo.stockBajo += 1;
+    else if (est.codigo === "agotado") conteo.agotados += 1;
+    else if (est.codigo === "inconsistente") conteo.inconsistentes += 1;
+
+    const cat = p.categoria || "Sin categoría";
+    const prev = porCategoriaMap.get(cat) || { categoria: cat, productos: 0, disponibles: 0, stockBajo: 0, agotados: 0 };
+    prev.productos += 1;
+    if (est.codigo === "disponible") prev.disponibles += 1;
+    else if (est.codigo === "bajo") prev.stockBajo += 1;
+    else if (est.codigo === "agotado") prev.agotados += 1;
+    porCategoriaMap.set(cat, prev);
+  }
+
+  const desdeKey = desde ? String(desde).slice(0, 10) : "";
+  const hastaKey = hasta ? String(hasta).slice(0, 10) : "";
+  const movsFiltrados = movimientos.filter((m) => {
+    if (!idsFiltrados.has(m.productoId)) return false;
+    const dia = String(m.fecha || "").slice(0, 10);
+    if (!dia) return false;
+    if (desdeKey && dia < desdeKey) return false;
+    if (hastaKey && dia > hastaKey) return false;
+    return true;
+  });
+
+  // Entradas y salidas: se cuentan movimientos (no se suman cantidades de unidades distintas: u, m², m).
+  const porDiaMap = new Map();
+  let totalEntradas = 0;
+  let totalSalidas = 0;
+  for (const m of movsFiltrados) {
+    const dia = String(m.fecha).slice(0, 10);
+    const reg = porDiaMap.get(dia) || { dia, entradas: 0, salidas: 0 };
+    if (m.tipo === "Entrada") {
+      reg.entradas += 1;
+      totalEntradas += 1;
+    } else if (m.tipo === "Salida") {
+      reg.salidas += 1;
+      totalSalidas += 1;
+    }
+    porDiaMap.set(dia, reg);
+  }
+  const entradasSalidasPorDia = [...porDiaMap.values()].sort((a, b) => a.dia.localeCompare(b.dia));
+
+  // Evolución de existencias por unidad de medida (no se mezclan unidades).
+  // Se reconstruye con stockNuevo real de todos los movimientos del producto y solo se grafican
+  // los días dentro del rango. El último punto coincide con las existencias actuales.
+  const activosFiltrados = prodsFiltrados.filter((p) => p.activo !== false);
+  const idsActivos = new Set(activosFiltrados.map((p) => p.id));
+  const movsActivosOrdenados = movimientos
+    .filter((m) => idsActivos.has(m.productoId) && m.fecha && m.stockNuevo !== undefined && m.stockNuevo !== null)
+    .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  const conMovimientos = new Set(movsActivosOrdenados.map((m) => m.productoId));
+  const unidadDe = new Map(activosFiltrados.map((p) => [p.id, p.unidad || "sin unidad"]));
+
+  const estadoPorProducto = new Map();
+  for (const p of activosFiltrados) {
+    if (!conMovimientos.has(p.id)) estadoPorProducto.set(p.id, Number(p.stock) || 0);
+  }
+
+  const seriesMap = new Map();
+  const sumarUnidad = (unidad) => {
+    let suma = 0;
+    for (const [pid, val] of estadoPorProducto) {
+      if (unidadDe.get(pid) === unidad) suma += val;
+    }
+    return roundQty(suma);
+  };
+  for (const m of movsActivosOrdenados) {
+    estadoPorProducto.set(m.productoId, Number(m.stockNuevo) || 0);
+    const dia = String(m.fecha).slice(0, 10);
+    if (desdeKey && dia < desdeKey) continue;
+    if (hastaKey && dia > hastaKey) continue;
+    const unidad = unidadDe.get(m.productoId);
+    if (!seriesMap.has(unidad)) seriesMap.set(unidad, new Map());
+    seriesMap.get(unidad).set(dia, sumarUnidad(unidad));
+  }
+  const evolucionExistencias = [...seriesMap.entries()].map(([unidad, puntos]) => ({
+    unidad,
+    puntos: [...puntos.entries()].map(([dia, existencias]) => ({ dia, existencias }))
+  }));
+
+  return {
+    conteo,
+    distribucionEstados: [
+      { codigo: "disponible", etiqueta: "Disponible", valor: conteo.disponibles },
+      { codigo: "bajo", etiqueta: "Stock bajo", valor: conteo.stockBajo },
+      { codigo: "agotado", etiqueta: "Agotado", valor: conteo.agotados },
+      { codigo: "inactivo", etiqueta: "Inactivo", valor: conteo.inactivos }
+    ],
+    porCategoria: [...porCategoriaMap.values()].sort((a, b) => b.productos - a.productos),
+    entradasSalidasPorDia,
+    evolucionExistencias,
+    totalMovimientos: movsFiltrados.length,
+    totalEntradas,
+    totalSalidas,
+    sinProductos: prodsFiltrados.length === 0,
+    sinMovimientos: movsFiltrados.length === 0
+  };
+}
+
 export function listarProductos({ incluirInactivos = false } = {}) {
   const todos = getCollection(COLLECTIONS.PRODUCTOS);
   return incluirInactivos ? todos : todos.filter((p) => p.activo !== false);
@@ -298,15 +453,19 @@ export async function crearProducto(datos, user = getCurrentUser()) {
       throw new Error(`Ya existe un producto con el código ${codigo}.`);
     }
     const ahora = new Date().toISOString();
+    const modalidad = datos.modalidad
+      ? inferirModalidadProducto({ modalidad: datos.modalidad, unidad })
+      : inferirModalidadProducto({ unidad });
     const nuevo = tx.insert(COLLECTIONS.PRODUCTOS, {
       codigo: codigo || `PR-${Date.now().toString().slice(-4)}`,
       nombre,
       descripcion,
       categoria,
+      modalidad,
       unidad,
       permiteDecimal,
-      permiteDimensiones: unidad === "m²",
-      esPersonalizado: unidad === "m²",
+      permiteDimensiones: modalidad === MODALIDADES_INVENTARIO.METROS_CUADRADOS || unidad === "m²",
+      esPersonalizado: modalidad === MODALIDADES_INVENTARIO.METROS_CUADRADRADOS || unidad === "m²",
       precioCompra,
       precio,
       stock,
@@ -389,10 +548,33 @@ export async function actualizarProducto(id, cambios, user = getCurrentUser()) {
       throw new Error(`Ya existe otro producto con el código ${codigo}.`);
     }
 
+    const modalidadActual = inferirModalidadProducto(actual);
+    const modalidadNueva = cambios.modalidad !== undefined
+      ? inferirModalidadProducto({ modalidad: cambios.modalidad, unidad })
+      : cambios.unidad !== undefined
+        ? inferirModalidadProducto({ unidad })
+        : modalidadActual;
+
+    if (modalidadNueva !== modalidadActual) {
+      const tieneMovs = tx.getAll(COLLECTIONS.MOV_INVENTARIO).some((m) => m.productoId === id);
+      if (tieneMovs) {
+        throw new Error(
+          "No se puede cambiar la modalidad de un producto que ya tiene movimientos registrados sin un procedimiento de conversión."
+        );
+      }
+    }
+
     const ahora = new Date().toISOString();
     const actualizado = tx.update(COLLECTIONS.PRODUCTOS, id, {
       codigo,
       nombre,
+      descripcion,
+      categoria,
+      modalidad: modalidadNueva,
+      unidad,
+      permiteDecimal,
+      permiteDimensiones: modalidadNueva === MODALIDADES_INVENTARIO.METROS_CUADRADOS || unidad === "m²",
+      esPersonalizado: modalidadNueva === MODALIDADES_INVENTARIO.METROS_CUADRADRADOS || unidad === "m²",
       descripcion,
       categoria,
       unidad,
@@ -424,6 +606,7 @@ export async function actualizarProducto(id, cambios, user = getCurrentUser()) {
 }
 
 export async function cambiarEstadoProducto(id, activo, user = getCurrentUser()) {
+  assertPermission("inventario.gestionar", user);
   return actualizarProducto(id, { activo: Boolean(activo) }, user);
 }
 
@@ -435,6 +618,12 @@ export async function registrarMovimientoBodega(
     tipo,
     origen = null,
     cantidad,
+    ancho = null,
+    alto = null,
+    laminas = 1,
+    proveedor = "",
+    precioCompra = null,
+    fecha = null,
     motivo,
     registrarGastoCompra = false,
     costoTotalCompra = null,
@@ -461,7 +650,11 @@ export async function registrarMovimientoBodega(
       const prod = tx.get(COLLECTIONS.PRODUCTOS, productoId);
     if (!prod) throw new Error("Producto no encontrado en inventario.");
 
-    const cantValida = validarCantidadPorUnidad(prod, cantidad);
+    const cantidadCalculada =
+      (cantidad === undefined || cantidad === null || cantidad === "") && ancho && alto
+        ? calcularAreaLaminas({ ancho, alto, laminas })
+        : cantidad;
+    const cantValida = validarCantidadPorUnidad(prod, cantidadCalculada);
     const stockActual = roundQty(prod.stock);
     const stockNuevo = roundQty(
       tipo === "Entrada" ? stockActual + cantValida : stockActual - cantValida
@@ -473,11 +666,15 @@ export async function registrarMovimientoBodega(
       );
     }
 
-    const ahora = new Date().toISOString();
-    tx.update(COLLECTIONS.PRODUCTOS, productoId, {
+    const ahora = fecha ? new Date(fecha).toISOString() : new Date().toISOString();
+    const updateProd = {
       stock: stockNuevo,
-      actualizadoEn: ahora
-    });
+      actualizadoEn: new Date().toISOString()
+    };
+    if (tipo === "Entrada" && precioCompra !== null && precioCompra !== "" && Number(precioCompra) >= 0) {
+      updateProd.precioCompra = roundCOP(precioCompra);
+    }
+    tx.update(COLLECTIONS.PRODUCTOS, productoId, updateProd);
 
     const movInv = tx.insert(COLLECTIONS.MOV_INVENTARIO, {
       productoId: prod.id,
@@ -489,6 +686,7 @@ export async function registrarMovimientoBodega(
       cantidad: cantValida,
       stockAnterior: stockActual,
       stockNuevo,
+      proveedor: String(proveedor || "").trim(),
       motivo: motivoLimpio,
       usuario: user.name || user.email,
       fecha: ahora

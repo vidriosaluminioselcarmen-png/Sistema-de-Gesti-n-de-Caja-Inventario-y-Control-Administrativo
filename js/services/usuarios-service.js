@@ -19,6 +19,11 @@ import {
 import { isFirebaseConfigured, getFirebaseClients } from "../firebase-config.js";
 import { traducirErrorFirebase } from "./firebase-service.js";
 
+export const ROLES_UI = [
+  ROLES.EMPLEADO,
+  ROLES.ADMIN
+];
+
 export const ROLES_DISPONIBLES = [
   ROLES.ADMIN,
   ROLES.CAJERO,
@@ -45,6 +50,77 @@ export function watchAuditoria(callback) {
   });
 }
 
+async function buscarPerfilUsuario(correo, uid = null) {
+  const lista = listarUsuarios();
+  let perfil = lista.find(
+    (u) => (uid && u.uid === uid) || String(u.email || "").toLowerCase() === correo
+  );
+  if (perfil) return perfil;
+
+  if (!isInMemoryTestMode() && isFirebaseConfigured()) {
+    try {
+      const fb = await getFirebaseClients();
+      if (fb?.db && fb?.firestoreMod) {
+        const { collection, query, where, getDocs } = fb.firestoreMod;
+        const q = query(collection(fb.db, COLLECTIONS.USUARIOS), where("email", "==", correo));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const docSnap = snap.docs[0];
+          perfil = { id: docSnap.id, ...docSnap.data() };
+        }
+      }
+    } catch {
+      // Si Firestore aún no permite lectura o está offline, continuar con fallback local
+    }
+  }
+  return perfil || null;
+}
+
+const LOCAL_AUTH_PREFIX = "elcarmen_local_pin_";
+
+async function hashLocalClave(correo, clave) {
+  const texto = `${String(correo || "").trim().toLowerCase()}::${String(clave || "")}`;
+  if (typeof crypto !== "undefined" && crypto.subtle && typeof TextEncoder !== "undefined") {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto));
+    return Array.from(new Uint8Array(buf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+  return btoa(unescape(encodeURIComponent(texto)));
+}
+
+async function guardarClaveLocal(correo, clave) {
+  const c = String(clave || "");
+  if (!c) return;
+  if (c.length < 4) throw new Error("La clave o PIN de acceso debe tener al menos 4 caracteres.");
+  try {
+    const hash = await hashLocalClave(correo, c);
+    localStorage.setItem(`${LOCAL_AUTH_PREFIX}${String(correo).trim().toLowerCase()}`, hash);
+  } catch {
+    // Ignorar si localStorage no está disponible
+  }
+}
+
+async function verificarClaveLocal(correo, clave) {
+  try {
+    const saved = localStorage.getItem(`${LOCAL_AUTH_PREFIX}${String(correo).trim().toLowerCase()}`);
+    if (!saved) return true;
+    const hash = await hashLocalClave(correo, clave);
+    return hash === saved;
+  } catch {
+    return true;
+  }
+}
+
+function resolverRolUsuario(perfil, correo) {
+  if (perfil) {
+    return perfil.rol === ROLES.ADMIN ? ROLES.ADMIN : ROLES.EMPLEADO;
+  }
+  const esPropietario =
+    correo === "vidrios.aluminioselcarmen@gmail.com" || correo === "admin@elcarmen.com";
+  return esPropietario ? ROLES.ADMIN : ROLES.EMPLEADO;
+}
+
 // Inicia sesión validando Firebase Auth (si está configurado) y el perfil activo en la colección usuarios
 export async function autenticarUsuario({ email, password }) {
   const correo = String(email || "").trim().toLowerCase();
@@ -58,10 +134,7 @@ export async function autenticarUsuario({ email, password }) {
       try {
         const cred = await fb.authMod.signInWithEmailAndPassword(fb.auth, correo, clave);
         const fbUser = cred.user;
-        const lista = listarUsuarios();
-        const perfil = lista.find(
-          (u) => u.uid === fbUser.uid || String(u.email || "").toLowerCase() === correo
-        );
+        const perfil = await buscarPerfilUsuario(correo, fbUser.uid);
         if (perfil && perfil.activo === false) {
           await fb.authMod.signOut(fb.auth);
           throw new Error("Tu cuenta está desactivada. Contacta al Administrador.");
@@ -70,7 +143,7 @@ export async function autenticarUsuario({ email, password }) {
           uid: fbUser.uid,
           email: correo,
           name: perfil?.nombre || fbUser.displayName || correo.split("@")[0],
-          role: perfil?.rol || (correo.startsWith("admin") ? ROLES.ADMIN : ROLES.CAJERO),
+          role: resolverRolUsuario(perfil, correo),
           activo: true
         };
         setCurrentUser(sesion);
@@ -89,41 +162,47 @@ export async function autenticarUsuario({ email, password }) {
     }
   }
 
-  // Modo de desarrollo local previo a conectar Firebase Auth
-  const lista = listarUsuarios();
-  const existente = lista.find((u) => String(u.email || "").toLowerCase() === correo);
+  // Modo local o usuario creado desde el módulo Usuarios
+  const existente = await buscarPerfilUsuario(correo);
   if (existente) {
     if (existente.activo === false) {
       throw new Error("Esta cuenta de usuario se encuentra inactiva y no tiene acceso al sistema.");
+    }
+    const claveOk = await verificarClaveLocal(correo, clave);
+    if (!claveOk) {
+      throw new Error("Contraseña o PIN incorrecto.");
     }
     const sesion = {
       uid: existente.uid || existente.id,
       email: existente.email,
       name: existente.nombre,
-      role: existente.rol,
+      role: resolverRolUsuario(existente, correo),
       activo: true
     };
     setCurrentUser(sesion);
     return sesion;
   }
 
-  // Si el correo no está en la lista de usuarios registrados, asignar rol según prefijo o Administrador para la cuenta principal del negocio
-  const rolPorPrefijo =
-    correo.startsWith("caja") || correo.startsWith("cajero")
-      ? ROLES.CAJERO
-      : correo.startsWith("bodega") || correo.startsWith("inventario")
-        ? ROLES.INVENTARIO
-        : correo.startsWith("contabilidad")
-          ? ROLES.CONTABILIDAD
-          : correo.startsWith("empleado") || correo.startsWith("usuario")
-            ? ROLES.EMPLEADO
-            : ROLES.ADMIN;
-  const rawName = correo.split("@")[0] || "Usuario";
+  // Solo las cuentas propietarias iniciales pueden acceder sin registro previo en la colección usuarios
+  const esPropietario =
+    correo === "vidrios.aluminioselcarmen@gmail.com" || correo === "admin@elcarmen.com";
+  if (!esPropietario) {
+    throw new Error(
+      "Este correo no está registrado o no tiene autorización para ingresar. Contacta al Administrador."
+    );
+  }
+
+  const claveOk = await verificarClaveLocal(correo, clave);
+  if (!claveOk) {
+    throw new Error("Contraseña o PIN incorrecto.");
+  }
+
+  const rawName = correo.split("@")[0] || "Administrador";
   const sesion = {
     uid: `usr-${rawName}`,
     email: correo,
     name: rawName.charAt(0).toUpperCase() + rawName.slice(1),
-    role: rolPorPrefijo,
+    role: ROLES.ADMIN,
     activo: true
   };
   setCurrentUser(sesion);
@@ -143,7 +222,7 @@ export async function cerrarSesionUsuario() {
 }
 
 // Registra un usuario autorizado en la colección `usuarios` (sin guardar contraseñas en Firestore)
-export async function crearUsuario({ nombre, email, rol }, user = getCurrentUser()) {
+export async function crearUsuario({ nombre, email, rol, clave = "" }, user = getCurrentUser()) {
   assertPermission("usuarios.gestionar", user);
 
   const nom = String(nombre || "").trim();
@@ -152,6 +231,7 @@ export async function crearUsuario({ nombre, email, rol }, user = getCurrentUser
 
   if (!nom) throw new Error("El nombre del usuario es obligatorio.");
   if (!correo || !correo.includes("@")) throw new Error("Ingresa un correo electrónico válido.");
+  if (clave) await guardarClaveLocal(correo, clave);
 
   return runAtomicTransaction(async (tx) => {
     const usuarios = tx.getAll(COLLECTIONS.USUARIOS);
@@ -186,13 +266,14 @@ export async function crearUsuario({ nombre, email, rol }, user = getCurrentUser
 }
 
 // Actualiza nombre, rol o estado activo/inactivo de un usuario (requiere rol Administrador)
-export async function actualizarUsuario({ id, nombre, rol, activo }, user = getCurrentUser()) {
+export async function actualizarUsuario({ id, nombre, rol, activo, clave = "" }, user = getCurrentUser()) {
   assertPermission("usuarios.gestionar", user);
   if (!id) throw new Error("Identificador de usuario requerido.");
 
   return runAtomicTransaction(async (tx) => {
     const actual = tx.get(COLLECTIONS.USUARIOS, id);
     if (!actual) throw new Error("Usuario no encontrado.");
+    if (clave) await guardarClaveLocal(actual.email, clave);
 
     const nuevoRol = rol !== undefined ? rol : actual.rol;
     if (!ROLES_DISPONIBLES.includes(nuevoRol)) {

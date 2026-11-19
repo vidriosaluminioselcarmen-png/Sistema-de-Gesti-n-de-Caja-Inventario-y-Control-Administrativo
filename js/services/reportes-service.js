@@ -243,8 +243,8 @@ export function generarReportesConsolidados(
   const mapaMetodos = new Map([
     ["Efectivo", { metodo: "Efectivo", operaciones: 0, total: 0 }],
     ["Transferencia", { metodo: "Transferencia", operaciones: 0, total: 0 }],
-    ["Tarjeta débito", { metodo: "Tarjeta débito", operaciones: 0, total: 0 }],
-    ["Tarjeta crédito", { metodo: "Tarjeta crédito", operaciones: 0, total: 0 }]
+    ["Nequi", { metodo: "Nequi", operaciones: 0, total: 0 }],
+    ["Daviplata", { metodo: "Daviplata", operaciones: 0, total: 0 }]
   ]);
 
   let sumaTotalPagos = 0;
@@ -256,7 +256,7 @@ export function generarReportesConsolidados(
         : [{ metodo: v.metodoPago || "Efectivo", importeNeto: v.total }];
     for (const p of listaPagos) {
       const m = p.metodo || "Efectivo";
-      if (m === "Saldo a favor") continue;
+      if (!mapaMetodos.has(m) && m !== "Saldo a favor") continue;
       if (metodoPago !== "Todos" && m !== metodoPago) continue;
       const neto = roundCOP(
         p.importeNeto !== undefined

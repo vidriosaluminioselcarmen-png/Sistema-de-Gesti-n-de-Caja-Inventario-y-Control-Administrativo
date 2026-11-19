@@ -1,5 +1,6 @@
 // Enrutador SPA: intercepta clics de navegación, actualiza history.pushState
 // e inyecta dinámicamente las vistas de /html/<modulo>.html dentro de #app-root.
+import { canAccessRoute, getCurrentUser, applySidebarVisibility } from "./auth.js";
 
 export const ROUTES = {
   dashboard: {
@@ -41,7 +42,7 @@ export const ROUTES = {
   }
 };
 
-export const DEFAULT_ROUTE = "dashboard";
+export const DEFAULT_ROUTE = "caja";
 
 const viewCache = new Map();
 const viewHandlers = new Map();
@@ -127,6 +128,7 @@ function updateShellUI(routeKey) {
     const key = link.dataset.route || resolveRouteKey(link.getAttribute("href"));
     link.classList.toggle("active", key === routeKey);
   });
+  applySidebarVisibility(getCurrentUser());
 
   // Cerrar drawer móvil si estaba abierto
   const navToggle = document.getElementById("nav-toggle");
@@ -135,7 +137,10 @@ function updateShellUI(routeKey) {
 
 // Navega a una vista e inyecta su plantilla en #app-root sin recargar la página
 export async function navigateTo(routeKey, { replace = false, updateHistory = true } = {}) {
-  const targetKey = ROUTES[routeKey] ? routeKey : DEFAULT_ROUTE;
+  let targetKey = ROUTES[routeKey] ? routeKey : DEFAULT_ROUTE;
+  if (!canAccessRoute(targetKey, getCurrentUser())) {
+    targetKey = DEFAULT_ROUTE;
+  }
   const appRoot = document.getElementById("app-root");
   if (!appRoot) return;
 

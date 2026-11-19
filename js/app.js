@@ -8,14 +8,15 @@ import {
   navigateTo,
   resolveRouteKey,
   getRouteFromLocation,
+  getCurrentRoute,
   registerView,
   DEFAULT_ROUTE
 } from "./router.js";
-import { getCurrentUser, setCurrentUser, hasPermission } from "./auth.js";
+import { ROLES, getCurrentUser, setCurrentUser, canAccessRoute, getRoleLabel, applySidebarVisibility } from "./auth.js";
 import { getFirebaseStatus, isFirebaseConfigured } from "./firebase-config.js";
 import { verificarConexionRealFirebase } from "./services/firebase-service.js";
 import { ensureSeedData } from "./services/store.js";
-import { autenticarUsuario, cerrarSesionUsuario } from "./services/usuarios-service.js";
+import { autenticarUsuario, cerrarSesionUsuario, watchUsuarios } from "./services/usuarios-service.js";
 import { initTheme } from "./theme.js";
 import { mountCajaView } from "./views/caja-view.js";
 import {
@@ -85,17 +86,12 @@ export function showLoginView() {
   window.history.replaceState({}, "", window.location.pathname);
 }
 
-export async function showDashboardView(user, initialRoute) {
-  if (loginView && dashboardView) {
-    loginView.classList.add("hidden");
-    dashboardView.classList.remove("hidden");
-  }
-
+function applyUserShellPermissions(user) {
   const nameEl = document.getElementById("user-name");
   const roleEl = document.getElementById("user-role");
   const avatarEl = document.getElementById("user-avatar");
   if (user && nameEl) nameEl.textContent = user.name;
-  if (user && roleEl) roleEl.textContent = `Rol: ${user.role}`;
+  if (user && roleEl) roleEl.textContent = `Rol: ${getRoleLabel(user.role)}`;
   if (user && avatarEl) {
     avatarEl.textContent = String(user.name || "US")
       .split(" ")
@@ -105,15 +101,21 @@ export async function showDashboardView(user, initialRoute) {
       .toUpperCase();
   }
 
-  // Ocultar módulos exclusivos de Administrador si el usuario no tiene permiso
-  document.querySelectorAll("[data-role='admin']").forEach((el) => {
-    el.classList.toggle("hidden", !hasPermission("usuarios.gestionar", user));
-  });
+  // Ocultar del menú lateral todo módulo distinto a Dashboard y Caja y Ventas para Empleado general
+  applySidebarVisibility(user);
+}
 
+export async function showDashboardView(user, initialRoute) {
+  if (loginView && dashboardView) {
+    loginView.classList.add("hidden");
+    dashboardView.classList.remove("hidden");
+  }
+
+  applyUserShellPermissions(user);
   renderFirebaseConnectionBadge();
 
   let target = initialRoute || getRouteFromLocation() || DEFAULT_ROUTE;
-  if (target === "usuarios" && !hasPermission("usuarios.gestionar", user)) {
+  if (!canAccessRoute(target, user)) {
     target = DEFAULT_ROUTE;
   }
   await navigateTo(target, { replace: true });
@@ -188,7 +190,7 @@ function setupEventDelegation() {
     if (routeKey) {
       e.preventDefault();
       const user = getCurrentUser();
-      if (routeKey === "usuarios" && !hasPermission("usuarios.gestionar", user)) {
+      if (!canAccessRoute(routeKey, user)) {
         return;
       }
       closeAllModals();
@@ -206,15 +208,43 @@ function setupEventDelegation() {
   });
 }
 
+function subscribeCurrentUserRoleSync() {
+  watchUsuarios((lista) => {
+    if (!hasActiveSession()) return;
+    const actual = getCurrentUser();
+    const correo = String(actual?.email || "").toLowerCase();
+    const perfil = lista.find(
+      (u) => (actual?.uid && u.uid === actual.uid) || String(u.email || "").toLowerCase() === correo
+    );
+    if (!perfil) return;
+    if (perfil.activo === false) {
+      cerrarSesionUsuario().catch(() => {});
+      showLoginView();
+      return;
+    }
+    const rolVigente = perfil.rol === ROLES.ADMIN ? ROLES.ADMIN : ROLES.EMPLEADO;
+    const nombreVigente = perfil.nombre || actual.name;
+    if (actual.role !== rolVigente || actual.name !== nombreVigente) {
+      const actualizado = { ...actual, name: nombreVigente, role: rolVigente, activo: true };
+      setCurrentUser(actualizado);
+      applyUserShellPermissions(actualizado);
+      const rutaActual = getCurrentRoute() || getRouteFromLocation();
+      if (!canAccessRoute(rutaActual, actualizado)) {
+        navigateTo(DEFAULT_ROUTE, { replace: true });
+      }
+    }
+  });
+}
+
 function initApp() {
   initTheme();
   ensureSeedData();
   setupEventDelegation();
   renderFirebaseConnectionBadge();
+  subscribeCurrentUserRoleSync();
 
   if (loginView && dashboardView) {
-    const hasRouteHash = window.location.hash.startsWith("#/");
-    if (hasActiveSession() || hasRouteHash) {
+    if (hasActiveSession()) {
       const user = getCurrentUser();
       setCurrentUser(user);
       showDashboardView(user, getRouteFromLocation());
@@ -224,9 +254,15 @@ function initApp() {
     return;
   }
 
-  // Si se abre directamente un archivo html/<modulo>.html
+  // Bloquear acceso directo a /html/*.html sin sesión autenticada
+  if (!hasActiveSession()) {
+    window.location.replace("../index.html");
+    return;
+  }
+
   const user = getCurrentUser();
   setCurrentUser(user);
+  applyUserShellPermissions(user);
   navigateTo(getRouteFromLocation(), { replace: true, updateHistory: false });
 }
 

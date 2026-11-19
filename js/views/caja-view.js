@@ -67,6 +67,30 @@ function formatDateTime(iso) {
 export function mountCajaView(root) {
   const $ = (sel) => root.querySelector(sel);
 
+  function parseMontoInput(val) {
+    if (typeof val === "number") return Number.isFinite(val) ? roundCOP(val) : 0;
+    const digits = String(val ?? "").replace(/[^\d]/g, "");
+    return digits ? roundCOP(Number(digits)) : 0;
+  }
+
+  function formatMontoInput(val) {
+    const digits = String(val ?? "").replace(/[^\d]/g, "");
+    if (!digits) return "";
+    return Number(digits).toLocaleString("en-US");
+  }
+
+  // Formateo en tiempo real con comas de miles para todos los campos monetarios
+  root.addEventListener(
+    "input",
+    (e) => {
+      const inp = e.target.closest('[data-money-input="1"]');
+      if (!inp) return;
+      const formatted = formatMontoInput(inp.value);
+      if (inp.value !== formatted) inp.value = formatted;
+    },
+    true
+  );
+
   let productos = [];
   let clientes = [];
   let movimientosBilletera = [];
@@ -89,11 +113,25 @@ export function mountCajaView(root) {
     if (feedbackEl) feedbackEl.classList.add("hidden");
   }
 
+  function tieneClienteSeleccionado() {
+    const val = String($("#pos-cliente")?.value || "").trim();
+    return Boolean(val && val !== "cli-consumidor");
+  }
+
+  function exigirClienteAntesDeAgregar() {
+    if (tieneClienteSeleccionado()) return true;
+    showFeedback("Primero debes seleccionar o registrar un cliente antes de agregar productos a la venta.", "danger");
+    $("#box-buscar-cliente")?.classList.remove("hidden");
+    $("#pos-cliente-buscar")?.focus();
+    return false;
+  }
+
   // -------------------------------------------------------------------------
   // 1. RENDERIZADO DEL ESTADO DE CAJA (ABIERTA / CERRADA)
   // -------------------------------------------------------------------------
   function renderEstadoCaja() {
     const user = getCurrentUser();
+    const statusBar = $("#cash-status-bar");
     const badgeEl = $("#caja-badge-estado");
     const metaEl = $("#caja-meta-info");
     const actionsEl = $("#caja-status-actions");
@@ -101,13 +139,8 @@ export function mountCajaView(root) {
     const posWorkspace = $("#pos-workspace");
 
     if (!cajaAbierta) {
-      if (badgeEl) {
-        badgeEl.textContent = "Caja cerrada";
-        badgeEl.className = "badge badge-warning";
-      }
-      if (metaEl) {
-        metaEl.innerHTML = `<span>Debes abrir una caja antes de registrar ventas en este turno.</span>`;
-      }
+      if (statusBar) statusBar.classList.add("hidden");
+      if (posWorkspace) posWorkspace.classList.add("hidden");
       if (actionsEl) actionsEl.classList.add("hidden");
       if (panelApertura) {
         panelApertura.classList.remove("hidden");
@@ -116,10 +149,12 @@ export function mountCajaView(root) {
         if (usrInput) usrInput.value = user.name || user.email;
         if (fechaInput) fechaInput.value = formatDateTime(new Date().toISOString());
       }
-      if (posWorkspace) posWorkspace.style.opacity = "0.55";
       updateCobrarButtonState();
       return;
     }
+
+    if (statusBar) statusBar.classList.remove("hidden");
+    if (posWorkspace) posWorkspace.classList.remove("hidden");
 
     const arqueo = calcularArqueoCaja(cajaAbierta, ventas);
     if (badgeEl) {
@@ -136,7 +171,6 @@ export function mountCajaView(root) {
     }
     if (actionsEl) actionsEl.classList.remove("hidden");
     if (panelApertura) panelApertura.classList.add("hidden");
-    if (posWorkspace) posWorkspace.style.opacity = "1";
 
     renderResumenModalCierre(arqueo);
     updateCobrarButtonState();
@@ -148,19 +182,23 @@ export function mountCajaView(root) {
       const el = $(sel);
       if (el) el.textContent = val;
     };
-    setTxt("#cierre-responsable", arqueo.usuarioApertura);
-    setTxt("#cierre-fecha-apertura", formatDateTime(arqueo.fechaApertura));
-    setTxt("#cierre-cant-ventas", `${arqueo.numeroVentas} completadas / ${arqueo.numeroAnuladas} anuladas`);
-    setTxt("#cierre-total-vendido", formatCOP(arqueo.totalVendido));
-    setTxt("#cierre-base", formatCOP(arqueo.montoInicial));
-    setTxt("#cierre-efectivo-ventas", formatCOP(arqueo.entradasEfectivoVentas));
-    setTxt("#cierre-entradas-extra", formatCOP(arqueo.entradasEfectivoManual));
-    setTxt("#cierre-salidas-extra", `− ${formatCOP(arqueo.totalSalidasEfectivo)}`);
-    setTxt("#cierre-transferencia", formatCOP(arqueo.pagosPorMetodo.Transferencia || 0));
-    setTxt(
-      "#cierre-tarjeta",
-      formatCOP((arqueo.pagosPorMetodo["Tarjeta débito"] || 0) + (arqueo.pagosPorMetodo["Tarjeta crédito"] || 0))
+    const efectivoTurno = roundCOP(
+      (arqueo.entradasEfectivoVentas || 0) +
+        (arqueo.entradasEfectivoAbonos || 0) +
+        (arqueo.entradasEfectivoManual || 0) -
+        (arqueo.totalSalidasEfectivo || 0)
     );
+    const digitalBanco = roundCOP(
+      (arqueo.pagosPorMetodo?.Transferencia || 0) +
+        (arqueo.pagosPorMetodo?.Nequi || 0) +
+        (arqueo.pagosPorMetodo?.Daviplata || 0)
+    );
+    setTxt("#cierre-base", formatCOP(arqueo.montoInicial));
+    setTxt(
+      "#cierre-efectivo-ventas",
+      `${efectivoTurno >= 0 ? "+ " : "− "}${formatCOP(Math.abs(efectivoTurno))}`
+    );
+    setTxt("#cierre-transferencia", formatCOP(digitalBanco));
     setTxt("#cierre-esperado", formatCOP(arqueo.efectivoEsperado));
     actualizarDiferenciaCierre();
   }
@@ -173,18 +211,70 @@ export function mountCajaView(root) {
     if (!contadoEl || !difEl || !arqueo) return;
 
     const raw = contadoEl.value.trim();
-    const contado = raw === "" ? arqueo.efectivoEsperado : roundCOP(raw);
+    if (raw === "") {
+      difEl.textContent = "Digite el efectivo contado";
+      difEl.className = "input text-muted";
+      return;
+    }
+    const contado = parseMontoInput(raw);
     const dif = roundCOP(contado - arqueo.efectivoEsperado);
-    difEl.textContent = dif > 0 ? `+ ${formatCOP(dif)} (Sobrante)` : dif < 0 ? `${formatCOP(dif)} (Faltante)` : "$ 0 (Cuadre exacto)";
-    difEl.className = `input num ${dif === 0 ? "text-income" : "text-expense"}`;
+    if (dif === 0) {
+      difEl.textContent = "$ 0 (Cuadre exacto)";
+      difEl.className = "input num text-income";
+    } else if (dif < 0) {
+      difEl.textContent = `Faltante: − ${formatCOP(Math.abs(dif))}`;
+      difEl.className = "input num text-expense";
+    } else {
+      difEl.textContent = `Sobrante: + ${formatCOP(dif)}`;
+      difEl.className = "input num text-income";
+    }
   }
 
   // -------------------------------------------------------------------------
   // 2. CATÁLOGO Y BÚSQUEDA DE PRODUCTOS (Sección 4)
   // -------------------------------------------------------------------------
+  function renderTarjetaProductoHTML(p) {
+    const estado = getEstadoStock(p);
+    const agotado = estado.codigo === "agotado";
+    const enCarrito = getCantidadEnCarrito(p.id);
+    const seleccionada = enCarrito > 0;
+    const siglas = escapeHtml(
+      p.codigo
+        ? p.codigo.split("-")[0]
+        : p.nombre
+            .split(" ")
+            .slice(0, 2)
+            .map((w) => w[0])
+            .join("")
+            .toUpperCase()
+    );
+    const botonAgregar = agotado
+      ? `<button type="button" class="btn btn-outline btn-block product-add-btn" disabled>Agotado</button>`
+      : `<button type="button" class="btn btn-primary btn-block product-add-btn" data-add-prod="${escapeHtml(p.id)}">+ Agregar${seleccionada ? ` (En venta: ${enCarrito}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""})` : ""}</button>`;
+    return `
+      <article class="product-card${seleccionada ? " is-selected" : ""}">
+        <div class="product-thumb" style="display:flex; justify-content:space-between; align-items:center; padding:0 .65rem">
+          <span>${siglas}</span>
+          <span class="badge ${estado.claseBadge}" style="font-size:.68rem">${estado.etiqueta}</span>
+        </div>
+        <span class="product-name">${escapeHtml(p.nombre)}</span>
+        <span class="product-meta">Cód: <b>${escapeHtml(p.codigo)}</b> · ${escapeHtml(p.categoria)}</span>
+        <span class="product-meta">Disponible: <b>${p.stock}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""}</b></span>
+        <span class="product-price num">${formatCOP(p.precio)}${p.unidad ? ` <small style="font-weight:500; font-size:.75rem; color:var(--text-muted)">/ ${escapeHtml(p.unidad)}</small>` : ""}</span>
+        ${botonAgregar}
+      </article>
+    `;
+  }
+
   function renderCatalogo() {
     const gridEl = $("#product-grid");
     if (!gridEl) return;
+
+    const totalCountEl = $("#catalogo-total-count");
+    const infCountEl = $("#catalogo-inferior-count");
+    const boxVerMas = $("#box-ver-mas-catalogo");
+    if (totalCountEl) totalCountEl.textContent = String(productos.length);
+    if (infCountEl) infCountEl.textContent = String(productos.length);
 
     const busqueda = $("#buscar-producto")?.value || "";
     const filtrados = filtrarCatalogo(productos, {
@@ -193,6 +283,7 @@ export function mountCajaView(root) {
     });
 
     if (filtrados.length === 0) {
+      if (boxVerMas) boxVerMas.classList.add("hidden");
       gridEl.innerHTML = `
         <div class="card" style="grid-column: 1 / -1">
           <div class="empty" style="padding:1.75rem">
@@ -204,34 +295,13 @@ export function mountCajaView(root) {
       return;
     }
 
-    gridEl.innerHTML = filtrados
-      .map((p) => {
-        const estado = getEstadoStock(p);
-        const agotado = estado.codigo === "agotado";
-        const siglas = escapeHtml(
-          p.codigo
-            ? p.codigo.split("-")[0]
-            : p.nombre
-                .split(" ")
-                .slice(0, 2)
-                .map((w) => w[0])
-                .join("")
-                .toUpperCase()
-        );
-        return `
-          <button type="button" class="product-card" data-add-prod="${escapeHtml(p.id)}" ${agotado ? "disabled" : ""}>
-            <div class="product-thumb" style="display:flex; justify-content:space-between; align-items:center; padding:0 .65rem">
-              <span>${siglas}</span>
-              <span class="badge ${estado.claseBadge}" style="font-size:.68rem">${estado.etiqueta}</span>
-            </div>
-            <span class="product-name">${escapeHtml(p.nombre)}</span>
-            <span class="product-meta">Cód: <b>${escapeHtml(p.codigo)}</b> · ${escapeHtml(p.categoria)}</span>
-            <span class="product-meta">Disponible: <b>${p.stock}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""}</b></span>
-            <span class="product-price num">${formatCOP(p.precio)}${p.unidad ? ` <small style="font-weight:500; font-size:.75rem; color:var(--text-muted)">/ ${escapeHtml(p.unidad)}</small>` : ""}</span>
-          </button>
-        `;
-      })
-      .join("");
+    const hayBusqueda = Boolean(busqueda.trim());
+    const visibles = !hayBusqueda && filtrados.length > 12 ? filtrados.slice(0, 12) : filtrados;
+    if (boxVerMas) {
+      boxVerMas.classList.toggle("hidden", hayBusqueda || filtrados.length <= 12);
+    }
+
+    gridEl.innerHTML = visibles.map(renderTarjetaProductoHTML).join("");
 
     // Poblar también el selector del modal de corte a medida (m²)
     const medSelect = $("#med-producto");
@@ -265,6 +335,7 @@ export function mountCajaView(root) {
       showFeedback("Debes abrir una caja antes de registrar ventas.", "danger");
       return false;
     }
+    if (!exigirClienteAntesDeAgregar()) return false;
 
     const prod = productos.find((p) => p.id === productoId);
     if (!prod) {
@@ -397,6 +468,7 @@ export function mountCajaView(root) {
 
   function agregarConceptoTemporalAlCarrito({ nombre, cantidad, precioUnitario, unidad, observacion }) {
     hideFeedback();
+    if (!exigirClienteAntesDeAgregar()) return false;
     const cant = roundQty(cantidad);
     const precio = roundCOP(precioUnitario);
     const sub = roundCOP(precio * cant);
@@ -497,7 +569,7 @@ export function mountCajaView(root) {
     const saldoAplicadoInput = Math.min(
       saldoDisp,
       roundCOP(totalVenta),
-      Math.max(0, roundCOP($("#pago-saldo-favor")?.value || 0))
+      Math.max(0, parseMontoInput($("#pago-saldo-favor")?.value))
     );
 
     const metodo = $("#metodo-pago")?.value || "Efectivo";
@@ -523,16 +595,16 @@ export function mountCajaView(root) {
 
     if (metodo === "Efectivo") {
       const raw = $("#recibido")?.value;
-      const recibido = raw === "" || raw === undefined ? 0 : roundCOP(raw);
+      const recibido = raw === "" || raw === undefined ? 0 : parseMontoInput(raw);
       if (recibido > 0 || saldoAplicadoInput === 0) {
         lista.push({ metodo: "Efectivo", importe: recibido });
       }
       return lista;
     }
     if (metodo === "Mixto") {
-      const ef = roundCOP($("#mixto-efectivo")?.value || 0);
+      const ef = parseMontoInput($("#mixto-efectivo")?.value);
       const otroMetodo = $("#mixto-otro-metodo")?.value || "Transferencia";
-      const otroImp = roundCOP($("#mixto-otro-importe")?.value || 0);
+      const otroImp = parseMontoInput($("#mixto-otro-importe")?.value);
       const ref = $("#mixto-referencia")?.value || "";
       if (ef > 0) lista.push({ metodo: "Efectivo", importe: ef });
       if (otroImp > 0) lista.push({ metodo: otroMetodo, importe: otroImp, referencia: ref });
@@ -540,7 +612,7 @@ export function mountCajaView(root) {
     }
     const importeMetodo =
       modalidad === "parcial"
-        ? roundCOP($("#recibido")?.value || 0)
+        ? parseMontoInput($("#recibido")?.value)
         : restantePorCobrar;
     if (importeMetodo > 0 || saldoAplicadoInput === 0) {
       lista.push({
@@ -556,9 +628,13 @@ export function mountCajaView(root) {
     const listEl = $("#cart-items");
     const emptyEl = $("#cart-empty");
     if (!listEl || !emptyEl) return;
+    const user = getCurrentUser();
 
     if (cart.length === 0) {
       listEl.innerHTML = "";
+      emptyEl.textContent = tieneClienteSeleccionado()
+        ? "Todavía no hay productos en esta venta. Pulse + Agregar en un producto del catálogo."
+        : "1. Seleccione o registre un cliente arriba. 2. Luego agregue los productos con el botón + Agregar.";
       emptyEl.classList.remove("hidden");
     } else {
       emptyEl.classList.add("hidden");
@@ -571,7 +647,7 @@ export function mountCajaView(root) {
           const subtotal = roundCOP(item.subtotal ?? precioMaterial + costosAdic);
           const step = esMedida ? "1" : item.permiteDecimal ? "0.01" : "1";
           const inputVal = esMedida ? item.dimensiones.piezas : item.cantidad;
-          const puedeEditarPrecio = esTemporal && hasPermission("ventas.modificar_precio", getCurrentUser());
+          const puedeEditarPrecio = esTemporal && hasPermission("ventas.modificar_precio", user);
 
           let dimText = "";
           if (esMedida) {
@@ -631,9 +707,9 @@ export function mountCajaView(root) {
               <button
                 type="button"
                 data-line-del="${escapeHtml(item.lineId)}"
-                title="Eliminar producto"
-                aria-label="Eliminar producto"
-                style="justify-self:end; border:0; background:none; color:var(--danger); font-weight:700; cursor:pointer; padding:.2rem .4rem"
+                title="Quitar producto"
+                aria-label="Quitar producto"
+                style="justify-self:end; min-width:38px; min-height:38px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-surface); color:var(--danger); font-weight:700; font-size:1.1rem; cursor:pointer; padding:.2rem .5rem"
               >×</button>
             </li>
           `;
@@ -643,6 +719,105 @@ export function mountCajaView(root) {
 
     recalcularResumenPago();
     guardarBorradorPOS();
+    renderCatalogo();
+    if ($("#modal-catalogo-completo")?.classList.contains("is-open")) {
+      renderCatalogoModal();
+    }
+    renderResumenLateralCatalogo();
+  }
+
+  function renderCatalogoModal() {
+    const gridEl = $("#modal-product-grid");
+    const countEl = $("#modal-cat-count");
+    if (!gridEl) return;
+
+    const q = ($("#buscar-catalogo-modal")?.value || "").trim().toLowerCase();
+    const filtrados = q
+      ? productos.filter(
+          (p) =>
+            String(p.nombre || "").toLowerCase().includes(q) ||
+            String(p.codigo || "").toLowerCase().includes(q) ||
+            String(p.categoria || "").toLowerCase().includes(q) ||
+            String(p.referencia || "").toLowerCase().includes(q) ||
+            String(p.codigoBarras || "").toLowerCase().includes(q)
+        )
+      : productos;
+
+    if (countEl) countEl.textContent = `Mostrando ${filtrados.length} productos`;
+
+    if (filtrados.length === 0) {
+      gridEl.innerHTML = `
+        <div class="card" style="grid-column: 1 / -1">
+          <div class="empty" style="padding:1.75rem">
+            <h3>Sin coincidencias</h3>
+            <p>No se encontraron productos para esta búsqueda.</p>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    gridEl.innerHTML = filtrados.map(renderTarjetaProductoHTML).join("");
+  }
+
+  function renderResumenLateralCatalogo() {
+    const cliLabel = $("#modal-cat-cliente-nombre");
+    const btnElegirCli = $("#btn-modal-cat-elegir-cliente");
+    const listEl = $("#modal-cat-cart-list");
+    const emptyEl = $("#modal-cat-cart-empty");
+    const countEl = $("#modal-cat-items-count");
+    const totalEl = $("#modal-cat-total");
+    if (!listEl || !totalEl) return;
+
+    const cliId = $("#pos-cliente")?.value || "";
+    const cliObj = cliId ? clientes.find((c) => c.id === cliId) : null;
+    if (cliLabel) {
+      cliLabel.textContent = cliObj
+        ? `${cliObj.nombre} (${cliObj.documento})`
+        : "Ningún cliente seleccionado";
+    }
+    if (btnElegirCli) {
+      btnElegirCli.classList.toggle("hidden", Boolean(cliObj));
+    }
+
+    if (cart.length === 0) {
+      listEl.innerHTML = "";
+      if (emptyEl) emptyEl.classList.remove("hidden");
+    } else {
+      if (emptyEl) emptyEl.classList.add("hidden");
+      listEl.innerHTML = cart
+        .map((item) => {
+          const esMedida = Boolean(item.dimensiones);
+          const subtotal = roundCOP(item.subtotal ?? item.precioUnitario * item.cantidad);
+          const cantLabel = esMedida ? `${item.dimensiones.piezas} pza` : `${item.cantidad}`;
+          return `
+            <li class="cat-modal-cart-item">
+              <div>
+                <div style="font-weight:650; font-size:.9rem">${escapeHtml(item.nombre)}</div>
+                <div class="text-muted" style="font-size:.8rem">${cantLabel}${item.unidad ? ` ${escapeHtml(item.unidad)}` : ""} · ${formatCOP(item.precioUnitario)}</div>
+              </div>
+              <div style="text-align:right">
+                <div class="num" style="font-weight:700; font-size:.92rem">${formatCOP(subtotal)}</div>
+                <div style="display:inline-flex; gap:.25rem; align-items:center; margin-top:.2rem">
+                  <button type="button" class="btn btn-outline btn-xs" data-qty-dec="${escapeHtml(item.lineId)}" aria-label="Disminuir">−</button>
+                  <button type="button" class="btn btn-outline btn-xs" data-qty-inc="${escapeHtml(item.lineId)}" aria-label="Aumentar">+</button>
+                  <button type="button" class="btn btn-outline btn-xs" style="color:var(--danger)" data-line-del="${escapeHtml(item.lineId)}" aria-label="Quitar">×</button>
+                </div>
+              </div>
+            </li>
+          `;
+        })
+        .join("");
+    }
+
+    let total = 0;
+    try {
+      total = cart.length ? calcularTotalesVenta(cart, obtenerDescuentoFormulario()).total : 0;
+    } catch {
+      total = 0;
+    }
+    if (countEl) countEl.textContent = String(cart.length);
+    totalEl.textContent = formatCOP(total);
   }
 
   const POS_DRAFT_KEY = "el_carmen_pos_draft_v1";
@@ -687,11 +862,27 @@ export function mountCajaView(root) {
   }
 
   function obtenerDescuentoFormulario() {
-    const raw = Math.max(0, Number($("#cart-descuento-input")?.value || 0));
+    const raw = Math.max(0, parseMontoInput($("#cart-descuento-input")?.value));
     const tipo = $("#cart-descuento-tipo")?.value || "COP";
     return tipo === "%"
       ? { descuento: 0, descuentoPorcentaje: Math.min(100, raw) }
       : { descuento: roundCOP(raw), descuentoPorcentaje: 0 };
+  }
+
+  function syncModalidadButtons(valor) {
+    const val = valor === "parcial" ? "parcial" : "completo";
+    if ($("#modalidad-cobro")) $("#modalidad-cobro").value = val;
+    root.querySelectorAll("[data-modalidad-btn]").forEach((btn) => {
+      const activo = btn.dataset.modalidadBtn === val;
+      btn.classList.toggle("btn-primary", activo);
+      btn.classList.toggle("btn-outline", !activo);
+      btn.setAttribute("aria-pressed", String(activo));
+    });
+  }
+
+  function setModalidadCobro(valor) {
+    syncModalidadButtons(valor);
+    recalcularResumenPago();
   }
 
   function recalcularResumenPago() {
@@ -737,18 +928,18 @@ export function mountCajaView(root) {
     if (totEl) totEl.textContent = formatCOP(calculo.total);
 
     // Visibilidad según modalidad de cobro y método de pago seleccionado
-    const cliId = $("#pos-cliente")?.value || "cli-consumidor";
+    const cliId = $("#pos-cliente")?.value || "";
     const cliObj = clientes.find((c) => c.id === cliId);
-    const puedeCredito = hasPermission("ventas.credito", user) && cliId !== "cli-consumidor" && !cliObj?.esConsumidorFinal;
+    const puedeCredito = Boolean(cliId) && hasPermission("ventas.credito", user) && cliId !== "cli-consumidor" && !cliObj?.esConsumidorFinal;
     const modSel = $("#modalidad-cobro");
+    const btnParcial = root.querySelector('[data-modalidad-btn="parcial"]');
+    if (btnParcial) btnParcial.disabled = !puedeCredito;
     const hintEl = $("#cobro-credito-hint");
     if (modSel) {
-      const optParcial = modSel.querySelector('option[value="parcial"]');
-      const optCredito = modSel.querySelector('option[value="credito"]');
-      if (optParcial) optParcial.disabled = !puedeCredito;
-      if (optCredito) optCredito.disabled = !puedeCredito;
       if (!puedeCredito && modSel.value !== "completo") {
-        modSel.value = "completo";
+        syncModalidadButtons("completo");
+      } else {
+        syncModalidadButtons(modSel.value);
       }
     }
     if (hintEl) {
@@ -787,13 +978,13 @@ export function mountCajaView(root) {
     if (inputSaldoFavor) {
       if (!(saldoFavorDisp > 0) || esCreditoTotal) {
         inputSaldoFavor.value = "0";
-      } else if (metodo === METODO_SALDO_FAVOR && roundCOP(inputSaldoFavor.value || 0) === 0) {
-        inputSaldoFavor.value = String(Math.min(saldoFavorDisp, roundCOP(calculo.total)));
+      } else if (metodo === METODO_SALDO_FAVOR && parseMontoInput(inputSaldoFavor.value) === 0) {
+        inputSaldoFavor.value = formatMontoInput(Math.min(saldoFavorDisp, roundCOP(calculo.total)));
       }
       const aplicado = Math.min(
         saldoFavorDisp,
         roundCOP(calculo.total),
-        Math.max(0, roundCOP(inputSaldoFavor.value || 0))
+        Math.max(0, parseMontoInput(inputSaldoFavor.value))
       );
       if ($("#pos-billetera-disponible")) $("#pos-billetera-disponible").textContent = formatCOP(saldoFavorDisp);
       if ($("#pos-billetera-otros")) $("#pos-billetera-otros").textContent = formatCOP(Math.max(0, roundCOP(calculo.total) - aplicado));
@@ -845,7 +1036,7 @@ export function mountCajaView(root) {
       }
     }
 
-    if (!cajaAbierta || cart.length === 0 || !(total > 0) || isProcessingSale) {
+    if (!cajaAbierta || !tieneClienteSeleccionado() || cart.length === 0 || !(total > 0) || isProcessingSale) {
       btnCobrar.disabled = true;
       if (labelCambio) labelCambio.textContent = "Cambio";
       if (cambioEl) {
@@ -921,25 +1112,48 @@ export function mountCajaView(root) {
   function renderSelectorClientes(seleccionarId = null) {
     const hiddenEl = $("#pos-cliente");
     if (!hiddenEl) return;
-    const prev = seleccionarId || hiddenEl.value || "cli-consumidor";
+    const prev = seleccionarId !== null ? seleccionarId : hiddenEl.value;
     const cli =
-      clientes.find((c) => c.id === prev) ||
-      clientes.find((c) => c.id === "cli-consumidor") ||
-      { id: "cli-consumidor", nombre: "Consumidor Final", documento: "222222222222", esConsumidorFinal: true };
-    hiddenEl.value = cli.id;
+      prev && prev !== "cli-consumidor"
+        ? clientes.find((c) => c.id === prev && !c.esConsumidorFinal)
+        : null;
 
+    const avisoEl = $("#pos-cliente-aviso");
+    const selCard = $("#pos-cliente-seleccionado");
+    const boxBuscar = $("#box-buscar-cliente");
+    const btnCambiar = $("#btn-cambiar-cliente");
     const nomEl = $("#pos-cli-nombre");
     const docEl = $("#pos-cli-doc");
     const saldoBadge = $("#pos-cli-saldo-badge");
     const btnHist = $("#btn-ver-historial-cliente");
     const btnLimpiar = $("#btn-limpiar-cliente");
-    const esFinal = cli.id === "cli-consumidor" || cli.esConsumidorFinal;
 
+    if (!cli) {
+      hiddenEl.value = "";
+      if (avisoEl) avisoEl.classList.remove("hidden");
+      if (selCard) selCard.classList.add("hidden");
+      if (boxBuscar) boxBuscar.classList.remove("hidden");
+      if (btnCambiar) btnCambiar.classList.add("hidden");
+      if (btnHist) btnHist.classList.add("hidden");
+      if (btnLimpiar) btnLimpiar.classList.add("hidden");
+      if (saldoBadge) saldoBadge.classList.add("hidden");
+      if ($("#pago-saldo-favor")) $("#pago-saldo-favor").value = "0";
+      recalcularResumenPago();
+      return;
+    }
+
+    hiddenEl.value = cli.id;
+    if (avisoEl) avisoEl.classList.add("hidden");
+    if (selCard) selCard.classList.remove("hidden");
+    if (boxBuscar) boxBuscar.classList.add("hidden");
+    if (btnCambiar) btnCambiar.classList.remove("hidden");
     if (nomEl) nomEl.textContent = cli.nombre;
-    if (docEl) docEl.textContent = `· ${cli.documento}${cli.telefono ? ` · ${cli.telefono}` : ""}`;
+    if (docEl) {
+      docEl.textContent = `· ${cli.documento}${cli.telefono ? ` · ${cli.telefono}` : ""}`;
+    }
 
-    const hist = esFinal ? { saldoPendienteTotal: 0 } : obtenerHistorialCliente(cli.id, { ventas });
-    const saldoFavor = esFinal ? 0 : roundCOP(cli.saldoAFavorDisponible || 0);
+    const hist = obtenerHistorialCliente(cli.id, { ventas });
+    const saldoFavor = roundCOP(cli.saldoAFavorDisponible || 0);
     if (saldoBadge) {
       const mostrarBadge = hist.saldoPendienteTotal > 0 || saldoFavor > 0;
       saldoBadge.classList.toggle("hidden", !mostrarBadge);
@@ -948,11 +1162,11 @@ export function mountCajaView(root) {
       if (saldoFavor > 0) partes.push(`Saldo a favor: ${formatCOP(saldoFavor)}`);
       saldoBadge.textContent = partes.join(" · ");
     }
-    if ($("#pago-saldo-favor") && (esFinal || saldoFavor === 0)) {
+    if ($("#pago-saldo-favor") && saldoFavor === 0) {
       $("#pago-saldo-favor").value = "0";
     }
-    if (btnHist) btnHist.classList.toggle("hidden", esFinal);
-    if (btnLimpiar) btnLimpiar.classList.toggle("hidden", esFinal);
+    if (btnHist) btnHist.classList.remove("hidden");
+    if (btnLimpiar) btnLimpiar.classList.remove("hidden");
 
     recalcularResumenPago();
   }
@@ -966,7 +1180,9 @@ export function mountCajaView(root) {
       box.innerHTML = "";
       return;
     }
-    const matches = buscarClientes(q, clientes).slice(0, 10);
+    const matches = buscarClientes(q, clientes)
+      .filter((c) => !c.esConsumidorFinal && c.id !== "cli-consumidor")
+      .slice(0, 10);
     if (matches.length === 0) {
       box.innerHTML = `<div style="padding:.5rem .75rem; font-size:.82rem" class="text-muted">Sin coincidencias. Usa "+ Nuevo cliente" para registrarlo.</div>`;
     } else {
@@ -1040,6 +1256,42 @@ export function mountCajaView(root) {
     if (title) {
       title.textContent = `Cuentas pendientes de ${cli.nombre} (${cli.documento}) · Saldo total: ${formatCOP(hist.saldoPendienteTotal)}`;
     }
+    const tbodyProds = $("#tbody-productos-cliente");
+    if (tbodyProds) {
+      const filasProds = [];
+      const cliActualId = $("#pos-cliente")?.value || "cli-consumidor";
+      if (cliActualId === cli.id && cart.length > 0) {
+        for (const item of cart) {
+          filasProds.push(`
+            <tr>
+              <td><span class="badge badge-warning">Venta en curso</span></td>
+              <td><b>${escapeHtml(item.nombre)}</b>${item.esTemporal ? ` <span class="badge-temp">SOLO ESTA VENTA</span>` : ""}</td>
+              <td class="num">${item.cantidad}${item.unidad ? ` ${escapeHtml(item.unidad)}` : ""}</td>
+              <td class="num">${formatCOP(item.precioUnitario)}</td>
+              <td class="num"><b>${formatCOP(item.subtotal)}</b></td>
+            </tr>
+          `);
+        }
+      }
+      for (const v of hist.ventas) {
+        if (v.estado === "Anulada") continue;
+        for (const item of v.items || []) {
+          filasProds.push(`
+            <tr>
+              <td><b>${escapeHtml(v.numero)}</b><br><small class="text-muted">${formatDateTime(v.fecha)}</small></td>
+              <td>${escapeHtml(item.nombre)}${item.esTemporal ? ` <span class="badge-temp">SOLO ESTA VENTA</span>` : ""}</td>
+              <td class="num">${item.cantidad}${item.unidad ? ` ${escapeHtml(item.unidad)}` : ""}</td>
+              <td class="num">${formatCOP(item.precioUnitario)}</td>
+              <td class="num"><b>${formatCOP(item.subtotal)}</b></td>
+            </tr>
+          `);
+        }
+      }
+      tbodyProds.innerHTML = filasProds.length
+        ? filasProds.join("")
+        : `<tr><td colspan="5" class="text-muted" style="text-align:center; padding:1rem">Este cliente aún no tiene productos registrados.</td></tr>`;
+    }
+
     const puedeAbonar = hasPermission("ventas.abonar", getCurrentUser());
 
     tbody.innerHTML = pendientes
@@ -1139,6 +1391,42 @@ export function mountCajaView(root) {
       `;
     }
 
+    const tbodyProds = $("#tbody-productos-cliente");
+    if (tbodyProds) {
+      const filasProds = [];
+      const cliActualId = $("#pos-cliente")?.value || "cli-consumidor";
+      if (cliActualId === cli.id && cart.length > 0) {
+        for (const item of cart) {
+          filasProds.push(`
+            <tr>
+              <td><span class="badge badge-warning">Venta en curso</span></td>
+              <td><b>${escapeHtml(item.nombre)}</b>${item.esTemporal ? ` <span class="badge-temp">SOLO ESTA VENTA</span>` : ""}</td>
+              <td class="num">${item.cantidad}${item.unidad ? ` ${escapeHtml(item.unidad)}` : ""}</td>
+              <td class="num">${formatCOP(item.precioUnitario)}</td>
+              <td class="num"><b>${formatCOP(item.subtotal)}</b></td>
+            </tr>
+          `);
+        }
+      }
+      for (const v of hist.ventas) {
+        if (v.estado === "Anulada") continue;
+        for (const item of v.items || []) {
+          filasProds.push(`
+            <tr>
+              <td><b>${escapeHtml(v.numero)}</b><br><small class="text-muted">${formatDateTime(v.fecha)}</small></td>
+              <td>${escapeHtml(item.nombre)}${item.esTemporal ? ` <span class="badge-temp">SOLO ESTA VENTA</span>` : ""}</td>
+              <td class="num">${item.cantidad}${item.unidad ? ` ${escapeHtml(item.unidad)}` : ""}</td>
+              <td class="num">${formatCOP(item.precioUnitario)}</td>
+              <td class="num"><b>${formatCOP(item.subtotal)}</b></td>
+            </tr>
+          `);
+        }
+      }
+      tbodyProds.innerHTML = filasProds.length
+        ? filasProds.join("")
+        : `<tr><td colspan="5" class="text-muted" style="text-align:center; padding:1rem">Este cliente aún no tiene productos registrados.</td></tr>`;
+    }
+
     if (hist.ventas.length === 0) {
       tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:1.25rem" class="text-muted">No hay ventas registradas para este cliente en el rango seleccionado.</td></tr>`;
       return;
@@ -1215,7 +1503,7 @@ export function mountCajaView(root) {
     if (countEl) countEl.textContent = `${filtradas.length} ventas`;
 
     if (filtradas.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:1.5rem" class="text-muted">No hay ventas que coincidan con los filtros seleccionados.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:1.5rem" class="text-muted">No hay ventas que coincidan con la búsqueda.</td></tr>`;
       return;
     }
 
@@ -1242,28 +1530,27 @@ export function mountCajaView(root) {
             : "";
         return `
           <tr>
-            <td><b>${escapeHtml(v.numero)}</b></td>
-            <td>${formatDateTime(v.fecha)}</td>
+            <td style="white-space:nowrap"><b>${escapeHtml(v.numero)}</b></td>
+            <td style="white-space:nowrap">${formatDateTime(v.fecha)}</td>
             <td>${escapeHtml(v.cliente?.nombre || "Consumidor Final")}</td>
-            <td>${escapeHtml(v.vendedor)}</td>
             <td><span class="badge">${escapeHtml(v.metodoPago)}</span>${billeteraHtml}</td>
             <td class="num"><b>${formatCOP(v.total)}</b>${saldoHtml}</td>
             <td><span class="badge ${badgeCls}">${escapeHtml(v.estado)}</span></td>
             <td class="text-right" style="white-space:nowrap">
-              <button type="button" class="btn btn-outline" style="padding:.25rem .6rem; font-size:.78rem" data-ver-comprobante="${escapeHtml(v.id)}">Comprobante</button>
+              <button type="button" class="btn btn-outline btn-xs" data-ver-comprobante="${escapeHtml(v.id)}">Comprobante</button>
               ${
                 v.estado !== "Anulada" && saldo > 0 && puedeAbonar
-                  ? `<button type="button" class="btn btn-primary" style="padding:.25rem .6rem; font-size:.78rem" data-abrir-abono="${escapeHtml(v.id)}">Abonar</button>`
+                  ? `<button type="button" class="btn btn-primary btn-xs" data-abrir-abono="${escapeHtml(v.id)}">Abonar</button>`
                   : ""
               }
               ${
                 v.estado === "Completada" && puedeDevolver
-                  ? `<button type="button" class="btn btn-outline" style="padding:.25rem .6rem; font-size:.78rem" data-abrir-devolucion="${escapeHtml(v.id)}">Devolver</button>`
+                  ? `<button type="button" class="btn btn-outline btn-xs" data-abrir-devolucion="${escapeHtml(v.id)}">Devolver</button>`
                   : ""
               }
               ${
                 v.estado === "Completada" && puedeAnular
-                  ? `<button type="button" class="btn btn-outline" style="padding:.25rem .6rem; font-size:.78rem; color:var(--danger); border-color:var(--danger)" data-abrir-anular="${escapeHtml(v.id)}">Anular</button>`
+                  ? `<button type="button" class="btn btn-outline btn-xs" style="color:var(--danger); border-color:var(--danger)" data-abrir-anular="${escapeHtml(v.id)}">Anular</button>`
                   : ""
               }
             </td>
@@ -1491,7 +1778,16 @@ export function mountCajaView(root) {
 
   $("#btn-vaciar")?.addEventListener("click", () => {
     cart = [];
+    syncModalidadButtons("completo");
+    renderSelectorClientes("");
     renderCarrito();
+  });
+
+  root.querySelectorAll("[data-modalidad-btn]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      setModalidadCobro(btn.dataset.modalidadBtn);
+    });
   });
 
   ["#cart-descuento-input", "#cart-descuento-tipo", "#modalidad-cobro", "#metodo-pago", "#recibido", "#referencia-pago", "#mixto-efectivo", "#mixto-otro-metodo", "#mixto-otro-importe", "#mixto-referencia"].forEach((sel) => {
@@ -1499,7 +1795,20 @@ export function mountCajaView(root) {
     $(sel)?.addEventListener("change", recalcularResumenPago);
   });
 
-  // Buscador dinámico de clientes en el POS
+  // Buscador dinámico de clientes en el POS (oculto hasta pulsar "Cambiar cliente")
+  $("#btn-cambiar-cliente")?.addEventListener("click", () => {
+    const box = $("#box-buscar-cliente");
+    if (!box) return;
+    box.classList.remove("hidden");
+    $("#pos-cliente-buscar")?.focus();
+  });
+
+  $("#btn-cerrar-buscar-cliente")?.addEventListener("click", () => {
+    $("#box-buscar-cliente")?.classList.add("hidden");
+    $("#pos-cliente-resultados")?.classList.add("hidden");
+    if ($("#pos-cliente-buscar")) $("#pos-cliente-buscar").value = "";
+  });
+
   $("#pos-cliente-buscar")?.addEventListener("input", (e) => {
     clearTimeout(clientSearchTimer);
     const val = e.target.value;
@@ -1514,15 +1823,23 @@ export function mountCajaView(root) {
     renderSelectorClientes(btn.dataset.selectCliente);
     if ($("#pos-cliente-buscar")) $("#pos-cliente-buscar").value = "";
     $("#pos-cliente-resultados")?.classList.add("hidden");
+    $("#box-buscar-cliente")?.classList.add("hidden");
   });
 
   $("#btn-limpiar-cliente")?.addEventListener("click", () => {
-    renderSelectorClientes("cli-consumidor");
+    renderSelectorClientes("");
+    renderCarrito();
   });
 
   $("#btn-ver-historial-cliente")?.addEventListener("click", () => {
-    const cliId = $("#pos-cliente")?.value;
-    if (cliId && cliId !== "cli-consumidor") abrirModalHistorialCliente(cliId);
+    const cliId = $("#pos-cliente")?.value || "cli-consumidor";
+    abrirModalHistorialCliente(cliId);
+  });
+
+  // Filtro solo numérico (7 a 10 dígitos) en campo teléfono de nuevo cliente
+  $("#cli-pos-tel")?.addEventListener("input", (e) => {
+    const clean = String(e.target.value || "").replace(/\D+/g, "").slice(0, 10);
+    if (e.target.value !== clean) e.target.value = clean;
   });
 
   // Flujo de Venta de Vidrios por Medidas Personalizadas (m²)
@@ -1555,6 +1872,7 @@ export function mountCajaView(root) {
   }
 
   $("#btn-medida-vidrio")?.addEventListener("click", () => {
+    if (!exigirClienteAntesDeAgregar()) return;
     abrirModalMedidas();
   });
 
@@ -1695,7 +2013,7 @@ export function mountCajaView(root) {
     const errEl = $("#apertura-error");
     if (errEl) errEl.classList.add("hidden");
     try {
-      const monto = $("#apertura-monto")?.value;
+      const monto = parseMontoInput($("#apertura-monto")?.value);
       const obs = $("#apertura-obs")?.value || "";
       await abrirCaja({ montoInicial: monto, observaciones: obs }, getCurrentUser());
       $("#form-apertura-caja").reset();
@@ -1733,8 +2051,8 @@ export function mountCajaView(root) {
           pagos,
           descuento: descOpts.descuento,
           descuentoPorcentaje: descOpts.descuentoPorcentaje,
-          clienteId: $("#pos-cliente")?.value || "cli-consumidor",
-          ordenReferencia: $("#pos-orden-ref")?.value || "",
+          clienteId: $("#pos-cliente")?.value || "",
+          ordenReferencia: document.getElementById("pos-orden-ref")?.value || "",
           esVentaCredito,
           idempotencyKey
         },
@@ -1743,12 +2061,14 @@ export function mountCajaView(root) {
 
       // Limpiar carrito solo tras éxito de la transacción
       cart = [];
+      renderSelectorClientes("");
       if ($("#recibido")) $("#recibido").value = "";
       if ($("#referencia-pago")) $("#referencia-pago").value = "";
-      if ($("#pos-orden-ref")) $("#pos-orden-ref").value = "";
+      const ordenRefEl = document.getElementById("pos-orden-ref");
+      if (ordenRefEl) ordenRefEl.value = "";
       if ($("#pago-saldo-favor")) $("#pago-saldo-favor").value = "0";
       if ($("#cart-descuento-input")) $("#cart-descuento-input").value = "0";
-      if ($("#modalidad-cobro")) $("#modalidad-cobro").value = "completo";
+      syncModalidadButtons("completo");
       renderCarrito();
 
       showFeedback(`La venta ${ventaConfirmada.numero} se registró correctamente.`, "info");
@@ -1803,7 +2123,7 @@ export function mountCajaView(root) {
         {
           cajaId: cajaAbierta?.id,
           tipo: $("#mov-caja-tipo")?.value,
-          monto: $("#mov-caja-monto")?.value,
+          monto: parseMontoInput($("#mov-caja-monto")?.value),
           concepto: $("#mov-caja-concepto")?.value
         },
         getCurrentUser()
@@ -1827,10 +2147,14 @@ export function mountCajaView(root) {
     const errEl = $("#cierre-error");
     if (errEl) errEl.classList.add("hidden");
     try {
+      const rawContado = $("#efectivo-contado")?.value?.trim() || "";
+      if (rawContado === "") {
+        throw new Error("Por favor digite el efectivo contado antes de confirmar el cierre.");
+      }
       const cerrada = await cerrarCaja(
         {
           cajaId: cajaAbierta?.id,
-          efectivoContado: $("#efectivo-contado")?.value,
+          efectivoContado: parseMontoInput(rawContado),
           observaciones: $("#obs-cierre")?.value
         },
         getCurrentUser()
@@ -2084,13 +2408,102 @@ export function mountCajaView(root) {
     const descOpts = obtenerDescuentoFormulario();
     const total = cart.length ? calcularTotalesVenta(cart, descOpts).total : 0;
     if ($("#pago-saldo-favor")) {
-      $("#pago-saldo-favor").value = String(Math.min(disp, roundCOP(total)));
+      $("#pago-saldo-favor").value = formatMontoInput(Math.min(disp, roundCOP(total)));
     }
     renderCarrito();
   });
 
   $("#btn-imprimir-comprobante")?.addEventListener("click", () => {
     window.print();
+  });
+
+  $("#btn-ver-historial-caja")?.addEventListener("click", () => {
+    renderHistorialVentas();
+    $("#modal-historial-caja")?.classList.add("is-open");
+  });
+
+  function abrirModalCatalogoCompleto() {
+    renderCatalogoModal();
+    renderResumenLateralCatalogo();
+    $("#modal-catalogo-completo")?.classList.add("is-open");
+    setTimeout(() => $("#buscar-catalogo-modal")?.focus(), 40);
+  }
+
+  $("#btn-ver-todo-catalogo")?.addEventListener("click", abrirModalCatalogoCompleto);
+  $("#btn-ver-catalogo-inferior")?.addEventListener("click", abrirModalCatalogoCompleto);
+
+  $("#buscar-catalogo-modal")?.addEventListener("input", renderCatalogoModal);
+  $("#btn-limpiar-buscar-catalogo")?.addEventListener("click", () => {
+    if ($("#buscar-catalogo-modal")) $("#buscar-catalogo-modal").value = "";
+    renderCatalogoModal();
+    $("#buscar-catalogo-modal")?.focus();
+  });
+
+  $("#modal-product-grid")?.addEventListener("click", (e) => {
+    const btnAdd = e.target.closest("[data-add-prod]");
+    if (!btnAdd || btnAdd.disabled) return;
+    const prodId = btnAdd.dataset.addProd;
+    const prod = productos.find((p) => p.id === prodId);
+    if (!prod) return;
+    if (!exigirClienteAntesDeAgregar()) {
+      $("#modal-catalogo-completo")?.classList.remove("is-open");
+      return;
+    }
+    if (prod.unidad === "m²") {
+      $("#modal-catalogo-completo")?.classList.remove("is-open");
+      abrirModalMedidas(prod.id);
+      return;
+    }
+    agregarProductoAlCarrito(prod.id, 1);
+  });
+
+  $("#modal-cat-cart-list")?.addEventListener("click", (e) => {
+    const dec = e.target.closest("[data-qty-dec]");
+    if (dec) {
+      const item = cart.find((i) => i.lineId === dec.dataset.qtyDec);
+      if (!item) return;
+      const actual = item.dimensiones ? item.dimensiones.piezas : item.cantidad;
+      const next = roundQty(actual - 1);
+      if (next <= 0) eliminarLineaCarrito(item.lineId);
+      else actualizarCantidadLinea(item.lineId, next);
+      return;
+    }
+    const inc = e.target.closest("[data-qty-inc]");
+    if (inc) {
+      const item = cart.find((i) => i.lineId === inc.dataset.qtyInc);
+      if (!item) return;
+      const actual = item.dimensiones ? item.dimensiones.piezas : item.cantidad;
+      actualizarCantidadLinea(item.lineId, roundQty(actual + 1));
+      return;
+    }
+    const del = e.target.closest("[data-line-del]");
+    if (del) {
+      eliminarLineaCarrito(del.dataset.lineDel);
+    }
+  });
+
+  $("#btn-modal-cat-elegir-cliente")?.addEventListener("click", () => {
+    $("#modal-catalogo-completo")?.classList.remove("is-open");
+    $("#box-buscar-cliente")?.classList.remove("hidden");
+    $("#pos-cliente-buscar")?.focus();
+  });
+
+  $("#btn-cerrar-catalogo-ir-cobro")?.addEventListener("click", () => {
+    $("#modal-catalogo-completo")?.classList.remove("is-open");
+  });
+
+  $("#modal-catalogo-completo")?.addEventListener("click", (e) => {
+    if (e.target.closest(".modal-close")) {
+      e.preventDefault();
+      $("#modal-catalogo-completo")?.classList.remove("is-open");
+    }
+  });
+
+  $("#modal-historial-caja")?.addEventListener("click", (e) => {
+    if (e.target.closest(".modal-close") || e.target.closest('a[href="#"]')) {
+      e.preventDefault();
+      $("#modal-historial-caja")?.classList.remove("is-open");
+    }
   });
 
   $("#btn-compartir-comprobante")?.addEventListener("click", async () => {
@@ -2177,7 +2590,7 @@ export function mountCajaView(root) {
     const v = ventas.find((x) => x.id === $("#abono-venta-id")?.value);
     if (!v) return;
     const saldo = calcularSaldoPendienteVenta(v);
-    const imp = roundCOP($("#abono-importe")?.value || 0);
+    const imp = parseMontoInput($("#abono-importe")?.value);
     const restante = Math.max(0, roundCOP(saldo - imp));
     if ($("#abono-nuevo-saldo")) $("#abono-nuevo-saldo").textContent = formatCOP(restante);
   });
@@ -2194,7 +2607,7 @@ export function mountCajaView(root) {
 
     try {
       const ventaId = $("#abono-venta-id")?.value;
-      const importe = Number($("#abono-importe")?.value);
+      const importe = parseMontoInput($("#abono-importe")?.value);
       const metodoPago = $("#abono-metodo")?.value || "Efectivo";
       const referencia = $("#abono-referencia")?.value || "";
       const res = await registrarAbonoVenta(
@@ -2250,6 +2663,7 @@ export function mountCajaView(root) {
   }
 
   $("#btn-agregar-producto-concepto")?.addEventListener("click", () => {
+    if (!exigirClienteAntesDeAgregar()) return;
     $("#form-item-temporal")?.reset();
     $("#form-item-permanente")?.reset();
     $("#temp-error")?.classList.add("hidden");
@@ -2278,7 +2692,7 @@ export function mountCajaView(root) {
     try {
       const nombre = String($("#temp-nombre")?.value || "").trim();
       const cantidad = Number($("#temp-cantidad")?.value);
-      const precioUnitario = Number($("#temp-precio")?.value);
+      const precioUnitario = parseMontoInput($("#temp-precio")?.value);
       const unidad = String($("#temp-unidad")?.value || "").trim();
       const observacion = String($("#temp-observacion")?.value || "").trim();
 
@@ -2318,7 +2732,7 @@ export function mountCajaView(root) {
       const stockVal = $("#pos-prod-stock")?.value;
       const stock = stockVal === "" || stockVal === undefined ? 0 : Number(stockVal);
       const compraVal = $("#pos-prod-compra")?.value;
-      const precioCompra = compraVal === "" || compraVal === undefined ? 0 : Number(compraVal);
+      const precioCompra = compraVal === "" || compraVal === undefined ? 0 : parseMontoInput(compraVal);
 
       const creado = await crearProducto(
         {
@@ -2328,7 +2742,7 @@ export function mountCajaView(root) {
           unidad,
           permiteDecimal,
           precioCompra,
-          precio: Number($("#pos-prod-precio")?.value),
+          precio: parseMontoInput($("#pos-prod-precio")?.value),
           stock,
           stockMinimo: 0,
           descripcion: $("#pos-prod-descripcion")?.value

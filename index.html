@@ -56,15 +56,15 @@
     <nav class="nav" aria-label="Principal">
       <p class="nav-title">Módulos</p>
       <ul class="nav-list">
-        <li><a class="nav-link active" href="html/dashboard.html" data-route="dashboard" title="Dashboard">
+        <li><a class="nav-link" href="html/dashboard.html" data-route="dashboard" title="Dashboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span class="nav-text">Dashboard</span></a></li>
-        <li><a class="nav-link" href="html/caja.html" data-route="caja" title="Caja y Ventas">
+        <li><a class="nav-link active" href="html/caja.html" data-route="caja" title="Caja y Ventas">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="nav-text">Caja y Ventas</span></a></li>
-        <li><a class="nav-link" href="html/inventario.html" data-route="inventario" title="Inventario">
+        <li data-role="admin"><a class="nav-link" href="html/inventario.html" data-route="inventario" title="Inventario">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg><span class="nav-text">Inventario</span></a></li>
-        <li><a class="nav-link" href="html/contabilidad.html" data-route="contabilidad" title="Contabilidad">
+        <li data-role="admin"><a class="nav-link" href="html/contabilidad.html" data-route="contabilidad" title="Contabilidad">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span class="nav-text">Contabilidad</span></a></li>
-        <li><a class="nav-link" href="html/reportes.html" data-route="reportes" title="Consultas y Reportes">
+        <li data-role="admin"><a class="nav-link" href="html/reportes.html" data-route="reportes" title="Consultas y Reportes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span class="nav-text">Reportes</span></a></li>
         <li data-role="admin"><a class="nav-link" href="html/usuarios.html" data-route="usuarios" title="Usuarios">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span class="nav-text">Usuarios</span></a></li>
@@ -101,208 +101,86 @@
     </header>
 
     <main id="app-root">
-      <!-- VISTA: Dashboard Operativo (estado en vivo y acciones rápidas del día · Sección 5) -->
-      <div class="view" data-view="dashboard">
+<div class="view" data-view="dashboard">
 
-        <!-- Cabecera limpia con acciones operativas inmediatas -->
         <div class="page-header">
           <div>
-            <h2>Operación de hoy</h2>
-            <p class="text-muted" id="dash-subtitulo-fecha" style="margin:.15rem 0 0; font-size:.86rem">Monitoreo en tiempo real de Caja y Ventas, Inventario y Contabilidad</p>
+            <h2>Resumen del negocio</h2>
+            <p class="text-muted" id="dash-subtitulo-fecha" style="margin:.15rem 0 0; font-size:.94rem">Hoy</p>
           </div>
-          <div class="page-actions">
-            <a class="btn btn-primary" href="html/caja.html">+ Nueva venta</a>
-            <a class="btn btn-outline" href="html/inventario.html">+ Producto</a>
-            <a class="btn btn-outline" href="html/contabilidad.html">+ Ingreso / Gasto</a>
+          <div class="dash-period-group" role="group" aria-label="Período del resumen">
+            <button type="button" class="btn btn-primary btn-sm dash-period-btn active" data-dash-periodo="hoy" aria-pressed="true">Hoy</button>
+            <button type="button" class="btn btn-outline btn-sm dash-period-btn" data-dash-periodo="semana" aria-pressed="false">Esta semana</button>
+            <button type="button" class="btn btn-outline btn-sm dash-period-btn" data-dash-periodo="mes" aria-pressed="false">Este mes</button>
           </div>
         </div>
 
-        <div id="dash-error-alert" class="alert alert-danger hidden" role="status" style="margin-bottom:1rem"></div>
+        <!-- SECCIÓN A: Resumen general (3 tarjetas KPI) -->
+        <div class="dash-kpis">
+          <article class="card stat dash-kpi-card">
+            <div class="stat-label">Ventas del período</div>
+            <p class="stat-value num" id="dash-kpi-ventas">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-ventas-sub">0 ventas registradas</div>
+          </article>
+          <article class="card stat income dash-kpi-card">
+            <div class="stat-label">Dinero efectivamente recibido</div>
+            <p class="stat-value num text-success" id="dash-kpi-recibido">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-recibido-sub">Efectivo: $ 0 · Bancos: $ 0</div>
+          </article>
+          <article class="card stat dash-kpi-card" style="border-left-color:var(--warning)">
+            <div class="stat-label">Cuentas por cobrar</div>
+            <p class="stat-value num" style="color:var(--warning)" id="dash-kpi-por-cobrar">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-por-cobrar-sub">Sin saldos pendientes</div>
+          </article>
+        </div>
 
-        <!-- 3 tarjetas objetivas (1 por módulo: Caja y Ventas · Inventario · Contabilidad Básica) -->
-        <div class="dash-pillars">
-
-          <!-- 1. CAJA Y VENTAS -->
-          <section class="card pillar-card" aria-labelledby="pilar-caja">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-caja">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>
-                </span>
-                <span>Caja y Ventas</span>
-              </div>
-              <span class="badge badge-warning" id="dash-caja-estado">Caja cerrada</span>
+        <!-- SECCIÓN B y C: Gráfica principal y Alertas importantes -->
+        <div class="dash-main-grid">
+          <section class="card" id="dash-card-grafica">
+            <div class="card-header">
+              <h3>Evolución de ventas</h3>
+              <span class="badge badge-neutral" id="dash-grafica-badge">Hoy</span>
             </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Ventas efectivas (turno / hoy)</span>
-                  <div class="big num" id="dash-ventas-turno">$ 0</div>
-                </div>
-                <span class="badge" id="dash-ventas-count">0 ventas</span>
-              </div>
-
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-ef-label">Efectivo (0 %)</span><b class="num" id="dash-met-ef-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-ef-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-tr-label">Transferencia (0 %)</span><b class="num" id="dash-met-tr-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-tr-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-tj-label">Tarjeta (0 %)</span><b class="num" id="dash-met-tj-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-tj-bar" style="width:0%"></div></div>
-              </div>
-
-              <div class="summary" style="margin:0; padding-top:.55rem; border-top:1px solid var(--border)">
-                <div class="summary-row"><span>Base inicial</span><b class="num" id="dash-caja-base">$ 0</b></div>
-                <div class="summary-row"><span>Efectivo esperado en caja</span><b class="num" id="dash-caja-esperado">$ 0</b></div>
-              </div>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted" id="dash-caja-cajero">Sin turno activo</span>
-              <a href="html/caja.html">Abrir Punto de Venta →</a>
+            <div class="card-body" id="dash-chart-wrap">
+              <svg id="dash-chart-ventas" class="dash-chart-svg" viewBox="0 0 640 240" role="img" aria-label="Evolución de ventas del período"></svg>
             </div>
           </section>
 
-          <!-- 2. INVENTARIO -->
-          <section class="card pillar-card" aria-labelledby="pilar-inventario">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-inventario">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>
-                </span>
-                <span>Inventario</span>
-              </div>
-              <span class="badge badge-warning" id="dash-inv-badge">0 por reponer</span>
+          <section class="card" id="dash-card-alertas">
+            <div class="card-header">
+              <h3>Alertas importantes</h3>
+              <span class="badge badge-neutral" id="dash-alertas-badge">0 alertas</span>
             </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Alertas de reposición</span>
-                  <div class="big" id="dash-alertas-stock">0 críticos</div>
-                </div>
-                <span class="badge" id="dash-total-productos">0 productos</span>
+            <div class="card-body">
+              <div class="dash-alerts-list" id="dash-alertas-list">
+                <div class="dash-alert-ok">✓ Todo está en orden. No hay alertas pendientes en este momento.</div>
               </div>
-
-              <p class="label" style="margin:0">Estado de existencias críticas</p>
-              <ul class="mini-list" id="dash-lista-alertas">
-                <li><span class="text-muted">No hay productos registrados.</span></li>
-              </ul>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted" id="dash-inv-resumen-pie">0 agotados · 0 en stock bajo</span>
-              <a href="html/inventario.html">Gestionar stock →</a>
-            </div>
-          </section>
-
-          <!-- 3. CONTABILIDAD BÁSICA -->
-          <section class="card pillar-card" aria-labelledby="pilar-contabilidad">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-contabilidad">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                </span>
-                <span>Contabilidad Básica</span>
-              </div>
-              <span class="badge badge-success" id="dash-cont-badge">Sin movimientos</span>
-            </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Resultado del período</span>
-                  <div class="big num" id="dash-balance-hoy">$ 0</div>
-                </div>
-                <span class="badge" id="dash-cont-count">0 mov.</span>
-              </div>
-
-              <div class="meter">
-                <div class="meter-head"><span>Ingresos registrados</span><b class="num text-income" id="dash-ingresos-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill success" id="dash-ingresos-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span>Gastos registrados</span><b class="num text-expense" id="dash-gastos-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill danger" id="dash-gastos-bar" style="width:0%"></div></div>
-              </div>
-
-              <div class="summary" style="margin:0; padding-top:.55rem; border-top:1px solid var(--border)">
-                <div class="summary-row"><span>Último ingreso</span><span id="dash-ultimo-ingreso">Sin registros</span></div>
-                <div class="summary-row"><span>Último gasto</span><span id="dash-ultimo-gasto">Sin registros</span></div>
-              </div>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted">Control financiero real</span>
-              <a href="html/contabilidad.html">Registrar movimiento →</a>
             </div>
           </section>
         </div>
 
-        <!-- Actividad en vivo del turno -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
-            <div class="card-header">
-              <h3>Últimas ventas registradas</h3>
-              <a class="btn btn-outline" href="html/caja.html">Ir a Caja</a>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Hora</th><th>Detalle</th><th>Pago</th><th class="num">Total</th></tr></thead>
-                <tbody id="dash-ultimas-ventas">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <h3>Actividad reciente (Bodega y Contabilidad)</h3>
-              <a class="btn btn-outline" href="html/reportes.html">Ver reportes históricos</a>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Hora</th><th>Módulo</th><th>Operación</th><th class="num">Impacto</th></tr></thead>
-                <tbody id="dash-actividad-reciente">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay movimientos registrados.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        <!-- Productos más vendidos y Ventas por día -->
-        <div class="grid grid-2">
-          <section class="card">
-            <div class="card-header">
-              <h3>Productos más vendidos</h3>
-              <span class="badge" id="dash-top-prod-badge">Período actual</span>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Producto</th><th>Categoría</th><th class="num">Cant. vendida</th><th class="num">Importe</th></tr></thead>
-                <tbody id="dash-mas-vendidos">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas para calcular productos más vendidos.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <h3>Ventas por día</h3>
-              <span class="badge">Excluye anuladas</span>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Fecha</th><th class="num">Operaciones</th><th class="num">Total vendido</th></tr></thead>
-                <tbody id="dash-ventas-por-dia">
-                  <tr><td colspan="3" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas en el período.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+        <!-- SECCIÓN D: Actividad reciente (Últimas 5 operaciones) -->
+        <section class="card" id="dash-card-actividad">
+          <div class="card-header">
+            <h3>Actividad reciente</h3>
+            <span class="badge badge-neutral">Últimas 5 operaciones</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Fecha y hora</th>
+                  <th>Tipo de operación</th>
+                  <th>Descripción breve</th>
+                  <th class="text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody id="dash-actividad-body">
+                <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">Aún no hay operaciones registradas.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
       </div>
     </main>
@@ -315,208 +193,86 @@
 
   <!-- Plantillas SPA preempacadas (respaldo instantaneo si no se usa fetch) -->
   <template id="tpl-dashboard">
-      <!-- VISTA: Dashboard Operativo (estado en vivo y acciones rápidas del día · Sección 5) -->
-      <div class="view" data-view="dashboard">
+<div class="view" data-view="dashboard">
 
-        <!-- Cabecera limpia con acciones operativas inmediatas -->
         <div class="page-header">
           <div>
-            <h2>Operación de hoy</h2>
-            <p class="text-muted" id="dash-subtitulo-fecha" style="margin:.15rem 0 0; font-size:.86rem">Monitoreo en tiempo real de Caja y Ventas, Inventario y Contabilidad</p>
+            <h2>Resumen del negocio</h2>
+            <p class="text-muted" id="dash-subtitulo-fecha" style="margin:.15rem 0 0; font-size:.94rem">Hoy</p>
           </div>
-          <div class="page-actions">
-            <a class="btn btn-primary" href="html/caja.html">+ Nueva venta</a>
-            <a class="btn btn-outline" href="html/inventario.html">+ Producto</a>
-            <a class="btn btn-outline" href="html/contabilidad.html">+ Ingreso / Gasto</a>
+          <div class="dash-period-group" role="group" aria-label="Período del resumen">
+            <button type="button" class="btn btn-primary btn-sm dash-period-btn active" data-dash-periodo="hoy" aria-pressed="true">Hoy</button>
+            <button type="button" class="btn btn-outline btn-sm dash-period-btn" data-dash-periodo="semana" aria-pressed="false">Esta semana</button>
+            <button type="button" class="btn btn-outline btn-sm dash-period-btn" data-dash-periodo="mes" aria-pressed="false">Este mes</button>
           </div>
         </div>
 
-        <div id="dash-error-alert" class="alert alert-danger hidden" role="status" style="margin-bottom:1rem"></div>
+        <!-- SECCIÓN A: Resumen general (3 tarjetas KPI) -->
+        <div class="dash-kpis">
+          <article class="card stat dash-kpi-card">
+            <div class="stat-label">Ventas del período</div>
+            <p class="stat-value num" id="dash-kpi-ventas">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-ventas-sub">0 ventas registradas</div>
+          </article>
+          <article class="card stat income dash-kpi-card">
+            <div class="stat-label">Dinero efectivamente recibido</div>
+            <p class="stat-value num text-success" id="dash-kpi-recibido">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-recibido-sub">Efectivo: $ 0 · Bancos: $ 0</div>
+          </article>
+          <article class="card stat dash-kpi-card" style="border-left-color:var(--warning)">
+            <div class="stat-label">Cuentas por cobrar</div>
+            <p class="stat-value num" style="color:var(--warning)" id="dash-kpi-por-cobrar">$ 0</p>
+            <div class="stat-sub" id="dash-kpi-por-cobrar-sub">Sin saldos pendientes</div>
+          </article>
+        </div>
 
-        <!-- 3 tarjetas objetivas (1 por módulo: Caja y Ventas · Inventario · Contabilidad Básica) -->
-        <div class="dash-pillars">
-
-          <!-- 1. CAJA Y VENTAS -->
-          <section class="card pillar-card" aria-labelledby="pilar-caja">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-caja">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>
-                </span>
-                <span>Caja y Ventas</span>
-              </div>
-              <span class="badge badge-warning" id="dash-caja-estado">Caja cerrada</span>
+        <!-- SECCIÓN B y C: Gráfica principal y Alertas importantes -->
+        <div class="dash-main-grid">
+          <section class="card" id="dash-card-grafica">
+            <div class="card-header">
+              <h3>Evolución de ventas</h3>
+              <span class="badge badge-neutral" id="dash-grafica-badge">Hoy</span>
             </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Ventas efectivas (turno / hoy)</span>
-                  <div class="big num" id="dash-ventas-turno">$ 0</div>
-                </div>
-                <span class="badge" id="dash-ventas-count">0 ventas</span>
-              </div>
-
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-ef-label">Efectivo (0 %)</span><b class="num" id="dash-met-ef-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-ef-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-tr-label">Transferencia (0 %)</span><b class="num" id="dash-met-tr-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-tr-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span id="dash-met-tj-label">Tarjeta (0 %)</span><b class="num" id="dash-met-tj-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill" id="dash-met-tj-bar" style="width:0%"></div></div>
-              </div>
-
-              <div class="summary" style="margin:0; padding-top:.55rem; border-top:1px solid var(--border)">
-                <div class="summary-row"><span>Base inicial</span><b class="num" id="dash-caja-base">$ 0</b></div>
-                <div class="summary-row"><span>Efectivo esperado en caja</span><b class="num" id="dash-caja-esperado">$ 0</b></div>
-              </div>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted" id="dash-caja-cajero">Sin turno activo</span>
-              <a href="html/caja.html">Abrir Punto de Venta →</a>
+            <div class="card-body" id="dash-chart-wrap">
+              <svg id="dash-chart-ventas" class="dash-chart-svg" viewBox="0 0 640 240" role="img" aria-label="Evolución de ventas del período"></svg>
             </div>
           </section>
 
-          <!-- 2. INVENTARIO -->
-          <section class="card pillar-card" aria-labelledby="pilar-inventario">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-inventario">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>
-                </span>
-                <span>Inventario</span>
-              </div>
-              <span class="badge badge-warning" id="dash-inv-badge">0 por reponer</span>
+          <section class="card" id="dash-card-alertas">
+            <div class="card-header">
+              <h3>Alertas importantes</h3>
+              <span class="badge badge-neutral" id="dash-alertas-badge">0 alertas</span>
             </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Alertas de reposición</span>
-                  <div class="big" id="dash-alertas-stock">0 críticos</div>
-                </div>
-                <span class="badge" id="dash-total-productos">0 productos</span>
+            <div class="card-body">
+              <div class="dash-alerts-list" id="dash-alertas-list">
+                <div class="dash-alert-ok">✓ Todo está en orden. No hay alertas pendientes en este momento.</div>
               </div>
-
-              <p class="label" style="margin:0">Estado de existencias críticas</p>
-              <ul class="mini-list" id="dash-lista-alertas">
-                <li><span class="text-muted">No hay productos registrados.</span></li>
-              </ul>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted" id="dash-inv-resumen-pie">0 agotados · 0 en stock bajo</span>
-              <a href="html/inventario.html">Gestionar stock →</a>
-            </div>
-          </section>
-
-          <!-- 3. CONTABILIDAD BÁSICA -->
-          <section class="card pillar-card" aria-labelledby="pilar-contabilidad">
-            <div class="pillar-head">
-              <div class="pillar-title" id="pilar-contabilidad">
-                <span class="pillar-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                </span>
-                <span>Contabilidad Básica</span>
-              </div>
-              <span class="badge badge-success" id="dash-cont-badge">Sin movimientos</span>
-            </div>
-            <div class="pillar-body">
-              <div class="pillar-main">
-                <div>
-                  <span class="caption">Resultado del período</span>
-                  <div class="big num" id="dash-balance-hoy">$ 0</div>
-                </div>
-                <span class="badge" id="dash-cont-count">0 mov.</span>
-              </div>
-
-              <div class="meter">
-                <div class="meter-head"><span>Ingresos registrados</span><b class="num text-income" id="dash-ingresos-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill success" id="dash-ingresos-bar" style="width:0%"></div></div>
-              </div>
-              <div class="meter">
-                <div class="meter-head"><span>Gastos registrados</span><b class="num text-expense" id="dash-gastos-val">$ 0</b></div>
-                <div class="meter-bar"><div class="meter-fill danger" id="dash-gastos-bar" style="width:0%"></div></div>
-              </div>
-
-              <div class="summary" style="margin:0; padding-top:.55rem; border-top:1px solid var(--border)">
-                <div class="summary-row"><span>Último ingreso</span><span id="dash-ultimo-ingreso">Sin registros</span></div>
-                <div class="summary-row"><span>Último gasto</span><span id="dash-ultimo-gasto">Sin registros</span></div>
-              </div>
-            </div>
-            <div class="pillar-foot">
-              <span class="text-muted">Control financiero real</span>
-              <a href="html/contabilidad.html">Registrar movimiento →</a>
             </div>
           </section>
         </div>
 
-        <!-- Actividad en vivo del turno -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
-            <div class="card-header">
-              <h3>Últimas ventas registradas</h3>
-              <a class="btn btn-outline" href="html/caja.html">Ir a Caja</a>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Hora</th><th>Detalle</th><th>Pago</th><th class="num">Total</th></tr></thead>
-                <tbody id="dash-ultimas-ventas">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <h3>Actividad reciente (Bodega y Contabilidad)</h3>
-              <a class="btn btn-outline" href="html/reportes.html">Ver reportes históricos</a>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Hora</th><th>Módulo</th><th>Operación</th><th class="num">Impacto</th></tr></thead>
-                <tbody id="dash-actividad-reciente">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay movimientos registrados.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        <!-- Productos más vendidos y Ventas por día -->
-        <div class="grid grid-2">
-          <section class="card">
-            <div class="card-header">
-              <h3>Productos más vendidos</h3>
-              <span class="badge" id="dash-top-prod-badge">Período actual</span>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Producto</th><th>Categoría</th><th class="num">Cant. vendida</th><th class="num">Importe</th></tr></thead>
-                <tbody id="dash-mas-vendidos">
-                  <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas para calcular productos más vendidos.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <h3>Ventas por día</h3>
-              <span class="badge">Excluye anuladas</span>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead><tr><th>Fecha</th><th class="num">Operaciones</th><th class="num">Total vendido</th></tr></thead>
-                <tbody id="dash-ventas-por-dia">
-                  <tr><td colspan="3" class="text-muted" style="text-align:center; padding:1.25rem">No hay ventas registradas en el período.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+        <!-- SECCIÓN D: Actividad reciente (Últimas 5 operaciones) -->
+        <section class="card" id="dash-card-actividad">
+          <div class="card-header">
+            <h3>Actividad reciente</h3>
+            <span class="badge badge-neutral">Últimas 5 operaciones</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Fecha y hora</th>
+                  <th>Tipo de operación</th>
+                  <th>Descripción breve</th>
+                  <th class="text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody id="dash-actividad-body">
+                <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.25rem">Aún no hay operaciones registradas.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
       </div>
   </template>
@@ -537,13 +293,14 @@
             <span>Efectivo esperado: <b class="num" id="caja-efectivo-esperado">$ 0</b></span>
           </div>
           <div class="page-actions" id="caja-status-actions">
+            <button type="button" class="btn btn-outline" id="btn-ver-historial-caja">Ver ventas del turno</button>
             <a class="btn btn-outline" href="#modal-mov-caja" id="btn-abrir-mov-caja">Movimiento efectivo</a>
             <a class="btn btn-outline" href="#modal-cierre" id="btn-abrir-cierre">Cerrar caja</a>
           </div>
         </section>
 
         <!-- Panel de Apertura de Caja (se muestra cuando NO hay una caja abierta) -->
-        <section class="card hidden" id="panel-apertura-caja" style="margin-bottom:1.25rem; border-left:4px solid var(--navy-800)">
+        <section class="card hidden" id="panel-apertura-caja">
           <div class="card-header">
             <h3>Apertura de caja — Iniciar turno</h3>
             <span class="badge badge-warning">Caja cerrada</span>
@@ -561,18 +318,18 @@
                 <label class="label" for="apertura-fecha">Fecha y hora de apertura</label>
                 <input class="input" id="apertura-fecha" type="text" readonly>
               </div>
-              <div class="field">
+              <div class="field full">
                 <label class="label" for="apertura-monto">Monto inicial de efectivo (COP)</label>
-                <input class="input num" id="apertura-monto" name="montoInicial" type="number" min="0" step="1" placeholder="Ej: 200000" required>
+                <input class="input num" id="apertura-monto" name="montoInicial" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 200,000" required>
               </div>
-              <div class="field">
+              <div class="field full">
                 <label class="label" for="apertura-obs">Observaciones (opcional)</label>
                 <input class="input" id="apertura-obs" name="observaciones" type="text" placeholder="Ej: Base en billetes sencillos">
               </div>
             </div>
             <p id="apertura-error" class="error-text hidden" style="margin:.75rem 0 0"></p>
-            <div style="margin-top:1rem">
-              <button type="submit" class="btn btn-primary" id="btn-confirmar-apertura">Abrir caja e iniciar punto de venta</button>
+            <div style="margin-top:1.25rem">
+              <button type="submit" class="btn btn-primary btn-block" id="btn-confirmar-apertura">Abrir caja e iniciar punto de venta</button>
             </div>
           </form>
         </section>
@@ -586,16 +343,10 @@
               <button type="button" class="btn btn-outline" id="btn-medida-vidrio" title="Calcular corte de vidrio o espejo por ancho y alto">Corte a medida (m²)</button>
               <button type="button" class="btn btn-primary" id="btn-agregar-producto-concepto" title="Crear un producto permanente o agregar un concepto solo a esta venta">+ Agregar producto o concepto</button>
             </div>
-            <div class="chips" id="pos-categorias" role="tablist" aria-label="Categorías de productos">
-              <button type="button" class="chip active" data-categoria="Todos">Todos</button>
-              <button type="button" class="chip" data-categoria="Vidrios">Vidrios</button>
-              <button type="button" class="chip" data-categoria="Perfiles">Perfiles</button>
-              <button type="button" class="chip" data-categoria="Accesorios">Accesorios</button>
-              <button type="button" class="chip" data-categoria="Insumos">Insumos</button>
-            </div>
 
             <!-- Cuadrícula de productos obtenida en tiempo real desde el módulo de Inventario -->
             <div class="product-grid" id="product-grid"></div>
+            <div id="box-ver-mas-catalogo" class="hidden" style="margin-top:1rem"><button type="button" class="btn btn-outline btn-block" id="btn-ver-catalogo-inferior">Ver catálogo completo (<span id="catalogo-inferior-count">0</span> productos)</button></div>
           </section>
 
           <!-- Columna 2: carrito de compra (Punto de Venta) -->
@@ -608,27 +359,35 @@
             <!-- Selección de cliente y referencia de pedido/cotización -->
             <div style="padding:.85rem 1.25rem; border-bottom:1px solid var(--border); background:var(--navy-50)">
               <div class="field" style="margin-bottom:.5rem; position:relative">
-                <div style="display:flex; justify-content:space-between; align-items:center">
-                  <label class="label" for="pos-cliente-buscar">Cliente</label>
-                  <a href="#modal-cliente-pos" style="font-size:.78rem; font-weight:600">+ Nuevo cliente</a>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem; margin-bottom:.35rem">
+                  <label class="label" style="margin:0">Cliente</label>
+                  <div style="display:flex; gap:.4rem; align-items:center; flex-wrap:wrap">
+                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-cambiar-cliente">Cambiar cliente</button>
+                    <a class="btn btn-outline btn-xs" href="#modal-cliente-pos">+ Nuevo cliente</a>
+                  </div>
                 </div>
-                <input type="hidden" id="pos-cliente" value="cli-consumidor">
-                <input class="input" type="search" id="pos-cliente-buscar" placeholder="Buscar por nombre, cédula, NIT o teléfono..." autocomplete="off" style="padding:.4rem .65rem; font-size:.84rem">
-                <div id="pos-cliente-resultados" class="hidden" style="max-height:170px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--white); margin-top:.3rem"></div>
-                <div id="pos-cliente-seleccionado" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem; margin-top:.4rem; padding:.4rem .6rem; background:var(--white); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:.82rem">
+                <input type="hidden" id="pos-cliente" value="">
+                <div id="pos-cliente-aviso" class="alert alert-info" style="padding:.5rem .7rem; font-size:.86rem; margin-bottom:.45rem">
+                  <b>Ningún cliente seleccionado</b> — Busque o registre un cliente para comenzar.
+                </div>
+                <div id="pos-cliente-seleccionado" class="hidden" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem; padding:.5rem .7rem; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:var(--radius-sm); font-size:.9rem">
                   <div>
-                    <strong id="pos-cli-nombre">Consumidor Final</strong>
-                    <span class="text-muted" id="pos-cli-doc">· 222222222222</span>
+                    <strong id="pos-cli-nombre">—</strong>
+                    <span class="text-muted" id="pos-cli-doc"></span>
                     <span class="badge badge-warning hidden" id="pos-cli-saldo-badge" style="margin-left:.35rem">Saldo: $ 0</span>
                   </div>
-                  <div style="display:flex; gap:.3rem">
-                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-ver-historial-cliente">Historial</button>
-                    <button type="button" class="btn btn-ghost btn-xs hidden" id="btn-limpiar-cliente" title="Volver a Consumidor Final">Quitar</button>
+                  <div style="display:flex; gap:.35rem; flex-wrap:wrap">
+                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-ver-historial-cliente">Ver productos / Historial</button>
+                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-limpiar-cliente" title="Quitar cliente seleccionado">Quitar</button>
                   </div>
                 </div>
-              </div>
-              <div class="field">
-                <input class="input" id="pos-orden-ref" type="text" placeholder="Ref. pedido / cotización / instalación (opcional)" style="padding:.4rem .65rem; font-size:.82rem">
+                <div id="box-buscar-cliente" style="margin-top:.45rem">
+                  <div style="display:flex; gap:.4rem">
+                    <input class="input" type="search" id="pos-cliente-buscar" placeholder="Buscar por nombre, cédula o teléfono..." autocomplete="off" style="flex:1">
+                    <button type="button" class="btn btn-outline btn-xs" id="btn-cerrar-buscar-cliente">Cancelar</button>
+                  </div>
+                  <div id="pos-cliente-resultados" class="hidden" style="max-height:170px; overflow:auto; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-surface); margin-top:.3rem"></div>
+                </div>
               </div>
             </div>
 
@@ -639,12 +398,12 @@
             <div class="cart-footer">
               <!-- Modalidad de cobro (Completo / Parcial / Crédito) -->
               <div class="field" style="margin-bottom:.65rem">
-                <label class="label" for="modalidad-cobro">Modalidad de cobro</label>
-                <select class="select" id="modalidad-cobro">
-                  <option value="completo">Pago completo</option>
-                  <option value="parcial">Pago parcial / abono inicial (dejar saldo)</option>
-                  <option value="credito">Crédito total (sin abono inicial)</option>
-                </select>
+                <span class="label">Modalidad de cobro</span>
+                <input type="hidden" id="modalidad-cobro" value="completo">
+                <div class="modalidad-toggle" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem">
+                  <button type="button" class="btn btn-primary" data-modalidad-btn="completo" aria-pressed="true">Pago completo</button>
+                  <button type="button" class="btn btn-outline" data-modalidad-btn="parcial" aria-pressed="false">Abono inicial</button>
+                </div>
                 <small class="text-muted hidden" id="cobro-credito-hint" style="display:block; margin-top:.25rem"></small>
               </div>
 
@@ -652,15 +411,13 @@
               <div class="form-grid cart-pay-grid" style="margin-bottom:.65rem">
                 <div class="field">
                   <label class="label" for="cart-descuento-input">Descuento (COP)</label>
-                  <input class="input num" id="cart-descuento-input" type="number" min="0" step="1" value="0">
+                  <input class="input num" id="cart-descuento-input" type="text" inputmode="numeric" data-money-input="1" value="0">
                 </div>
                 <div class="field" id="field-metodo-pago">
                   <label class="label" for="metodo-pago">Método de pago</label>
                   <select class="select" id="metodo-pago">
                     <option value="Efectivo">Efectivo</option>
                     <option value="Transferencia">Transferencia (Nequi / Daviplata / Banco)</option>
-                    <option value="Tarjeta débito">Tarjeta débito</option>
-                    <option value="Tarjeta crédito">Tarjeta crédito</option>
                     <option value="Saldo a favor" id="opt-metodo-saldo-favor" disabled>Saldo a favor (Billetera cliente)</option>
                     <option value="Mixto">Pago dividido (Mixto)</option>
                   </select>
@@ -675,7 +432,7 @@
                 </div>
                 <div class="field" style="margin-bottom:.35rem">
                   <label class="label" for="pago-saldo-favor">Aplicar saldo a favor en esta venta (COP)</label>
-                  <input class="input num" id="pago-saldo-favor" type="number" min="0" step="1" value="0">
+                  <input class="input num" id="pago-saldo-favor" type="text" inputmode="numeric" data-money-input="1" value="0">
                 </div>
                 <div class="flex justify-between" style="font-size:.78rem; color:#166534; gap:.5rem; flex-wrap:wrap">
                   <span>Otros medios de pago: <strong id="pos-billetera-otros" class="num">$ 0</strong></span>
@@ -686,7 +443,7 @@
               <!-- Campo para pago en Efectivo -->
               <div id="box-pago-efectivo" class="field" style="margin-bottom:.75rem">
                 <label class="label" for="recibido">Valor recibido en efectivo (COP)</label>
-                <input class="input num" id="recibido" type="number" min="0" step="1" placeholder="0">
+                <input class="input num" id="recibido" type="text" inputmode="numeric" data-money-input="1" placeholder="0">
               </div>
 
               <!-- Campo para pagos electrónicos (Transferencia / Tarjetas) -->
@@ -700,21 +457,21 @@
                 <div class="form-grid cart-pay-grid" style="margin-bottom:.5rem">
                   <div class="field">
                     <label class="label" for="mixto-efectivo">Efectivo (COP)</label>
-                    <input class="input num" id="mixto-efectivo" type="number" min="0" step="1" value="0">
+                    <input class="input num" id="mixto-efectivo" type="text" inputmode="numeric" data-money-input="1" value="0">
                   </div>
                   <div class="field">
                     <label class="label" for="mixto-otro-metodo">2° Método</label>
                     <select class="select" id="mixto-otro-metodo">
-                      <option value="Transferencia">Transferencia</option>
-                      <option value="Tarjeta débito">Tarjeta débito</option>
-                      <option value="Tarjeta crédito">Tarjeta crédito</option>
+                      <option value="Transferencia">Transferencia bancaria</option>
+                      <option value="Nequi">Nequi</option>
+                      <option value="Daviplata">Daviplata</option>
                     </select>
                   </div>
                 </div>
                 <div class="form-grid cart-pay-grid" style="margin-bottom:0">
                   <div class="field">
                     <label class="label" for="mixto-otro-importe">Importe 2° método</label>
-                    <input class="input num" id="mixto-otro-importe" type="number" min="0" step="1" value="0">
+                    <input class="input num" id="mixto-otro-importe" type="text" inputmode="numeric" data-money-input="1" value="0">
                   </div>
                   <div class="field">
                     <label class="label" for="mixto-referencia">Referencia</label>
@@ -743,30 +500,19 @@
           </aside>
         </div>
 
-        <!-- Historial y consulta de ventas realizadas (Sección 13) -->
-        <section class="card" style="margin-top:1.5rem" aria-labelledby="titulo-historial-ventas">
-          <div class="card-header">
-            <h3 id="titulo-historial-ventas">Historial y consulta de ventas</h3>
-            <span class="badge" id="historial-ventas-count">0 ventas</span>
-          </div>
-          <div class="card-body">
-            <div class="toolbar" style="margin-bottom:1rem">
-              <input class="input" type="search" id="hist-buscar" placeholder="Buscar por N° venta (V-0001), cliente o vendedor">
-              <input class="input" type="date" id="hist-desde" title="Desde fecha" style="max-width:165px">
-              <input class="input" type="date" id="hist-hasta" title="Hasta fecha" style="max-width:165px">
-              <select class="select" id="hist-metodo" style="max-width:185px">
-                <option value="Todos">Todos los métodos</option>
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Tarjeta débito">Tarjeta débito</option>
-                <option value="Tarjeta crédito">Tarjeta crédito</option>
-              </select>
-              <select class="select" id="hist-estado" style="max-width:165px">
-                <option value="Todos">Todos los estados</option>
-                <option value="Completada">Completada</option>
-                <option value="Devuelta">Devuelta</option>
-                <option value="Anulada">Anulada</option>
-              </select>
+        <!-- Modal: Historial y consulta de ventas del turno (fuera de la pantalla principal de cobro) -->
+        <div class="modal-overlay" id="modal-historial-caja" role="dialog" aria-modal="true" aria-labelledby="titulo-historial-ventas">
+          <div class="modal" style="max-width:1080px; width:96%">
+            <div class="modal-header">
+              <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap">
+                <h3 id="titulo-historial-ventas">Ventas del turno y reimpresión</h3>
+                <span class="badge" id="historial-ventas-count">0 ventas</span>
+              </div>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <div class="modal-body">
+                        <div class="toolbar" style="margin-bottom:1rem">
+              <input class="input" type="search" id="hist-buscar" placeholder="Buscar venta por número (ej. 3 o V-0003), nombre del cliente o método de pago...">
             </div>
 
             <div class="table-wrap">
@@ -776,7 +522,6 @@
                     <th>N° Venta</th>
                     <th>Fecha y hora</th>
                     <th>Cliente</th>
-                    <th>Vendedor</th>
                     <th>Método de pago</th>
                     <th class="num">Total</th>
                     <th>Estado</th>
@@ -786,91 +531,41 @@
                 <tbody id="tbody-historial-ventas"></tbody>
               </table>
             </div>
+          
+            </div>
+            <div class="modal-footer">
+              <a class="btn btn-outline" href="#">Cerrar</a>
+            </div>
           </div>
-        </section>
+        </div>
 
-        <!-- Cuentas por cobrar y cartera de clientes (Fase 3) -->
-        <section class="card" style="margin-top:1.5rem" aria-labelledby="titulo-cartera-clientes">
-          <div class="card-header">
-            <h3 id="titulo-cartera-clientes">Cuentas por cobrar (Cartera de clientes)</h3>
-            <span class="badge badge-warning" id="cartera-total-badge">$ 0 por cobrar</span>
-          </div>
-          <div class="card-body">
-            <div class="toolbar" style="margin-bottom:1rem">
-              <input class="input" type="search" id="cartera-buscar" placeholder="Buscar cliente en cartera por nombre o documento...">
-            </div>
-            <div class="table-wrap">
-              <table class="table" id="tabla-cartera-clientes">
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Documento</th>
-                    <th class="num">Total pendiente</th>
-                    <th class="num">Operaciones pendientes</th>
-                    <th>Último movimiento</th>
-                    <th class="text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="tbody-cartera-clientes"></tbody>
-              </table>
-            </div>
-            <div id="cartera-detalle-panel" class="hidden" style="margin-top:1rem; padding:1rem; background:var(--navy-50); border:1px solid var(--border); border-radius:var(--radius-sm)">
-              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; margin-bottom:.75rem">
-                <h4 style="margin:0" id="cartera-detalle-titulo">Detalle de cartera</h4>
-                <button type="button" class="btn btn-ghost btn-xs" id="btn-cerrar-detalle-cartera">Cerrar detalle</button>
-              </div>
-              <div class="table-wrap">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>N° Venta</th>
-                      <th>Fecha</th>
-                      <th class="num">Total</th>
-                      <th class="num">Abonado</th>
-                      <th class="num">Saldo pendiente</th>
-                      <th>Estado</th>
-                      <th class="text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbody-cartera-detalle"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Modal 1: Cierre de caja con arqueo detallado (Sección 12) -->
+        <!-- Modal 1: Cerrar caja -->
         <div class="modal-overlay" id="modal-cierre" role="dialog" aria-modal="true" aria-labelledby="titulo-cierre">
           <div class="modal">
-            <div class="modal-header"><h3 id="titulo-cierre">Arqueo y cierre de caja</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+            <div class="modal-header"><h3 id="titulo-cierre">Cerrar caja</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
             <form id="form-cierre">
               <div class="modal-body">
                 <div class="summary" id="cierre-resumen-box">
-                  <div class="summary-row"><span>Responsable apertura</span><b id="cierre-responsable">Administrador</b></div>
-                  <div class="summary-row"><span>Fecha y hora apertura</span><span id="cierre-fecha-apertura">—</span></div>
-                  <div class="summary-row"><span>Ventas activas / anuladas</span><span id="cierre-cant-ventas">0 / 0</span></div>
-                  <div class="summary-row"><span>Total vendido en el turno</span><b class="num" id="cierre-total-vendido">$ 0</b></div>
-                  <hr style="border:0; border-top:1px solid var(--border); margin:.35rem 0">
-                  <div class="summary-row"><span>Monto inicial (base efectivo)</span><span class="num" id="cierre-base">$ 0</span></div>
-                  <div class="summary-row"><span>+ Ventas en efectivo</span><span class="num" id="cierre-efectivo-ventas">$ 0</span></div>
-                  <div class="summary-row"><span>+ Entradas manuales de efectivo</span><span class="num" id="cierre-entradas-extra">$ 0</span></div>
-                  <div class="summary-row"><span>− Salidas / devoluciones en efectivo</span><span class="num text-expense" id="cierre-salidas-extra">− $ 0</span></div>
-                  <div class="summary-row"><span>Pagos por transferencia (no efectivo)</span><span class="num" id="cierre-transferencia">$ 0</span></div>
-                  <div class="summary-row"><span>Pagos con tarjeta (no efectivo)</span><span class="num" id="cierre-tarjeta">$ 0</span></div>
-                  <div class="summary-row total"><span>Efectivo físico esperado en caja</span><span class="num" id="cierre-esperado">$ 0</span></div>
+                  <div class="summary-row"><span>Base inicial (efectivo)</span><b class="num" id="cierre-base">$ 0</b></div>
+                  <div class="summary-row"><span>Efectivo del turno (ventas y movimientos en efectivo)</span><b class="num" id="cierre-efectivo-ventas">$ 0</b></div>
+                  <div class="summary-row"><span>Transferencias / Nequi / Daviplata (en banco)</span><b class="num" id="cierre-transferencia">$ 0</b></div>
+                  <div style="margin-top:.5rem; padding:.85rem 1rem; background:var(--bg-subtle); border:1px solid var(--border-strong); border-radius:var(--radius-sm); display:flex; justify-content:space-between; align-items:center; gap:1rem">
+                    <span style="font-weight:700">Efectivo esperado en caja</span>
+                    <b class="num" id="cierre-esperado" style="font-size:1.35rem; font-weight:800">$ 0</b>
+                  </div>
                 </div>
                 <div class="form-grid">
                   <div class="field">
-                    <label class="label" for="efectivo-contado">Efectivo contado (COP)</label>
-                    <input class="input num" id="efectivo-contado" type="number" min="0" step="1" placeholder="0" required>
+                    <label class="label" for="efectivo-contado">Efectivo contado (COP) *</label>
+                    <input class="input num" id="efectivo-contado" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 200,000" required>
                   </div>
                   <div class="field">
-                    <label class="label">Diferencia (Contado − Esperado)</label>
-                    <div class="input num" id="cierre-diferencia" style="background:var(--navy-50); font-weight:700">$ 0</div>
+                    <label class="label">Diferencia</label>
+                    <div class="input" id="cierre-diferencia" style="background:var(--bg-subtle); font-weight:700; display:flex; align-items:center">Digite el efectivo contado</div>
                   </div>
                   <div class="field full">
-                    <label class="label" for="obs-cierre">Observaciones del cierre (obligatoria si hay diferencia)</label>
-                    <textarea class="textarea" id="obs-cierre" rows="2" placeholder="Explique cualquier sobrante o faltante de caja"></textarea>
+                    <label class="label" for="obs-cierre">Nota u observación (solo si hay diferencia)</label>
+                    <input class="input" id="obs-cierre" type="text" placeholder="Ej: Faltante por cambio o gasto menor">
                   </div>
                 </div>
                 <p id="cierre-error" class="error-text hidden" style="margin:.6rem 0 0"></p>
@@ -975,7 +670,7 @@
                 </div>
                 <div class="field">
                   <label class="label" for="cli-pos-tel">Teléfono (opcional)</label>
-                  <input class="input" id="cli-pos-tel" placeholder="Ej: 3001234567">
+                  <input class="input" id="cli-pos-tel" type="tel" inputmode="numeric" maxlength="10" placeholder="Ej: 3001234567 (7 a 10 dígitos)">
                 </div>
                 <p id="cli-pos-error" class="error-text full hidden" style="margin:0"></p>
               </div>
@@ -1002,7 +697,7 @@
                 </div>
                 <div class="field">
                   <label class="label" for="mov-caja-monto">Monto (COP)</label>
-                  <input class="input num" id="mov-caja-monto" type="number" min="1" step="1" required placeholder="0">
+                  <input class="input num" id="mov-caja-monto" type="text" inputmode="numeric" data-money-input="1" required placeholder="0">
                 </div>
                 <div class="field full">
                   <label class="label" for="mov-caja-concepto">Concepto / justificación</label>
@@ -1087,7 +782,7 @@
                 </div>
                 <div class="field">
                   <label class="label" for="temp-precio">Precio unitario (COP) *</label>
-                  <input class="input num" id="temp-precio" type="number" min="0" step="1" placeholder="Ej: 35000" required>
+                  <input class="input num" id="temp-precio" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 35000" required>
                 </div>
                 <div class="field">
                   <label class="label" for="temp-unidad">Unidad de medida (opcional)</label>
@@ -1136,7 +831,7 @@
                 </div>
                 <div class="field">
                   <label class="label" for="pos-prod-precio">Precio de venta (COP) *</label>
-                  <input class="input num" id="pos-prod-precio" type="number" min="0" step="1" required placeholder="0">
+                  <input class="input num" id="pos-prod-precio" type="text" inputmode="numeric" data-money-input="1" required placeholder="0">
                 </div>
                 <div class="field">
                   <label class="label" for="pos-prod-compra">Costo de compra (COP)</label>
@@ -1208,9 +903,58 @@
                   <tbody id="tbody-historial-cliente"></tbody>
                 </table>
               </div>
+              <h4 style="margin:1rem 0 .45rem">Productos asociados al cliente (en curso e historial)</h4>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead><tr><th>Origen / Venta</th><th>Producto / Concepto</th><th class="num">Cant.</th><th class="num">Unitario</th><th class="num">Subtotal</th></tr></thead>
+                  <tbody id="tbody-productos-cliente"></tbody>
+                </table>
+              </div>
             </div>
             <div class="modal-footer">
               <a class="btn btn-outline" href="#">Cerrar</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal: Menú grande de catálogo completo (escalable a 500+ productos) -->
+        <div class="modal-overlay" id="modal-catalogo-completo" role="dialog" aria-modal="true" aria-labelledby="titulo-catalogo-completo">
+          <div class="modal modal-catalogo-lg">
+            <div class="modal-header">
+              <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap">
+                <h3 id="titulo-catalogo-completo">Catálogo completo de productos</h3>
+                <span class="badge" id="modal-cat-count">Mostrando 0 productos</span>
+              </div>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <div class="cat-modal-searchbar">
+              <input class="input" type="search" id="buscar-catalogo-modal" placeholder="Buscar en todo el catálogo por nombre, código o categoría...">
+              <button type="button" class="btn btn-outline" id="btn-limpiar-buscar-catalogo">Limpiar búsqueda</button>
+            </div>
+            <div class="cat-modal-body">
+              <div class="cat-modal-grid-wrap">
+                <div class="product-grid" id="modal-product-grid"></div>
+              </div>
+              <aside class="cat-modal-sidebar" aria-label="Resumen de selección en vivo">
+                <div class="cat-modal-sidebar-head">
+                  <span class="label" style="display:block; margin-bottom:.25rem">Cliente actual</span>
+                  <div id="modal-cat-cliente-nombre" style="font-size:.94rem; font-weight:600">Ningún cliente seleccionado</div>
+                  <button type="button" class="btn btn-outline btn-xs hidden" id="btn-modal-cat-elegir-cliente" style="margin-top:.45rem">Seleccionar o registrar cliente</button>
+                </div>
+                <ul class="cat-modal-cart-list" id="modal-cat-cart-list"></ul>
+                <p class="cart-empty" id="modal-cat-cart-empty" style="padding:1.25rem 1rem">Todavía no hay productos seleccionados.</p>
+                <div class="cat-modal-footer">
+                  <div class="summary-row" style="margin-bottom:.35rem">
+                    <span>Productos en venta</span>
+                    <b class="num" id="modal-cat-items-count">0</b>
+                  </div>
+                  <div class="summary-row" style="align-items:center; margin-bottom:.75rem">
+                    <span style="font-weight:700">Dinero acumulado</span>
+                    <b class="num" id="modal-cat-total" style="font-size:1.45rem; font-weight:800">$ 0</b>
+                  </div>
+                  <button type="button" class="btn btn-primary btn-block" id="btn-cerrar-catalogo-ir-cobro" style="min-height:50px; font-size:1.02rem">Listo · Ir a cobrar</button>
+                </div>
+              </aside>
             </div>
           </div>
         </div>
@@ -1235,15 +979,13 @@
                 <div class="form-grid">
                   <div class="field">
                     <label class="label" for="abono-importe">Importe del abono (COP)</label>
-                    <input class="input num" id="abono-importe" type="number" min="1" step="1" required placeholder="0">
+                    <input class="input num" id="abono-importe" type="text" inputmode="numeric" data-money-input="1" required placeholder="0">
                   </div>
                   <div class="field">
                     <label class="label" for="abono-metodo">Medio de pago</label>
                     <select class="select" id="abono-metodo">
                       <option value="Efectivo">Efectivo</option>
                       <option value="Transferencia">Transferencia (Nequi / Daviplata / Banco)</option>
-                      <option value="Tarjeta débito">Tarjeta débito</option>
-                      <option value="Tarjeta crédito">Tarjeta crédito</option>
                     </select>
                   </div>
                   <div class="field full" id="field-abono-referencia">
@@ -1337,34 +1079,92 @@
   </template>
   <template id="tpl-inventario">
       <!-- VISTA: Inventario (Sección 7 · Gestión real de productos, costos, existencias y Kardex) -->
-      <div class="view" data-view="inventario">
+            <div class="view" data-view="inventario">
 
         <div class="page-header">
           <div>
-            <h2>Catálogo y control de existencias</h2>
-            <p class="text-muted" style="margin:.15rem 0 0; font-size:.86rem">Productos por unidad (u), metro lineal (m) y metro cuadrado (m²), con trazabilidad de movimientos</p>
+            <h2>Inventario</h2>
+            <p class="text-muted" style="margin:.15rem 0 0; font-size:.92rem">Consulte existencias, cree productos y registre entradas o salidas</p>
           </div>
           <div class="page-actions">
             <button type="button" class="btn btn-primary" id="btn-nuevo-producto">+ Nuevo Producto</button>
+            <button type="button" class="btn btn-outline" id="btn-abrir-entrada">+ Registrar Entrada (Compra)</button>
+            <button type="button" class="btn btn-outline" id="btn-abrir-salida">− Registrar Salida / Baja</button>
           </div>
         </div>
 
         <div id="inv-feedback" class="alert alert-info hidden" role="status" style="margin-bottom:1rem"></div>
 
-        <div class="toolbar">
-          <input class="input" type="search" id="buscar-inventario" placeholder="Buscar por nombre, código o descripción">
-          <select class="select" id="inv-filtro-categoria" style="width:auto" aria-label="Filtrar por categoría">
+        <!-- 4 tarjetas informativas con botón explícito para filtrar la tabla -->
+        <div class="inv-kpis">
+          <article class="inv-kpi kpi-info is-active">
+            <div class="inv-kpi-info">
+              <span class="inv-kpi-label">Total productos</span>
+              <span class="inv-kpi-value num" id="inv-kpi-total">0</span>
+              <span class="inv-kpi-hint">Catálogo completo</span>
+            </div>
+            <div class="inv-kpi-actions">
+              <button type="button" class="btn btn-primary btn-sm inv-kpi-btn active" data-inv-kpi="todos" aria-pressed="true">Viendo ✓</button>
+            </div>
+          </article>
+          <article class="inv-kpi kpi-ok">
+            <div class="inv-kpi-info">
+              <span class="inv-kpi-label">Disponibles</span>
+              <span class="inv-kpi-value num" id="inv-kpi-disponibles">0</span>
+              <span class="inv-kpi-hint">Existencias suficientes</span>
+            </div>
+            <div class="inv-kpi-actions">
+              <button type="button" class="btn btn-outline btn-sm inv-kpi-btn" data-inv-kpi="disponible" aria-pressed="false">Ver</button>
+            </div>
+          </article>
+          <article class="inv-kpi kpi-low">
+            <div class="inv-kpi-info">
+              <span class="inv-kpi-label">Stock bajo</span>
+              <span class="inv-kpi-value num" id="inv-kpi-bajo">0</span>
+              <span class="inv-kpi-hint">Por reponer</span>
+            </div>
+            <div class="inv-kpi-actions">
+              <button type="button" class="btn btn-outline btn-sm inv-kpi-btn" data-inv-kpi="bajo" aria-pressed="false">Ver</button>
+            </div>
+          </article>
+          <article class="inv-kpi kpi-out">
+            <div class="inv-kpi-info">
+              <span class="inv-kpi-label">Agotados</span>
+              <span class="inv-kpi-value num" id="inv-kpi-agotados">0</span>
+              <span class="inv-kpi-hint">Sin existencias</span>
+            </div>
+            <div class="inv-kpi-actions">
+              <button type="button" class="btn btn-outline btn-sm inv-kpi-btn" data-inv-kpi="agotado" aria-pressed="false">Ver</button>
+            </div>
+          </article>
+        </div>
+
+        <div id="inv-filtro-estado-activo" class="alert alert-info hidden" role="status" style="margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap">
+          <span id="inv-filtro-estado-texto"></span>
+          <button type="button" class="btn btn-outline btn-sm" id="inv-quitar-filtro-estado">Quitar filtro</button>
+        </div>
+
+        <div class="toolbar" id="inv-sec-productos">
+          <input class="input" type="search" id="buscar-inventario" placeholder="Buscar producto por nombre, código o descripción...">
+          <select class="select" id="inv-filtro-categoria" aria-label="Filtrar por categoría">
             <option value="Todos">Todas las categorías</option>
             <option value="Vidrios">Vidrios</option>
             <option value="Perfiles">Perfiles</option>
             <option value="Accesorios">Accesorios</option>
             <option value="Insumos">Insumos</option>
           </select>
+          <select class="select" id="inv-filtro-modalidad" aria-label="Filtrar por modalidad">
+            <option value="Todas">Todas las modalidades</option>
+            <option value="unidades">Unidades (u)</option>
+            <option value="m2">Metros cuadrados (m²)</option>
+            <option value="m">Metros lineales (m)</option>
+          </select>
           <label class="check"><input type="checkbox" id="solo-bajo"> Solo stock bajo o agotado</label>
           <label class="check"><input type="checkbox" id="mostrar-inactivos"> Mostrar inactivos</label>
+          <button type="button" class="btn btn-primary" id="btn-ver-todo-inventario">Ver todos (<span id="inv-ver-todo-count">0</span>)</button>
         </div>
 
-        <!-- Catálogo completo -->
+        <!-- Catálogo completo (protagonista único del módulo) -->
         <section class="card">
           <div class="table-wrap">
             <table class="table" id="tabla-productos">
@@ -1373,6 +1173,7 @@
                   <th>Código</th>
                   <th>Producto</th>
                   <th>Categoría</th>
+                  <th>Modalidad / Unidad</th>
                   <th class="num">Costo compra</th>
                   <th class="num">Precio venta</th>
                   <th class="num">Stock</th>
@@ -1382,120 +1183,212 @@
                 </tr>
               </thead>
               <tbody>
-                <tr><td colspan="9" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
+                <tr><td colspan="10" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
               </tbody>
             </table>
           </div>
+          <div id="inv-tabla-footer" class="hidden" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.75rem; padding:1rem 1.25rem; border-top:1px solid var(--border-color); background:var(--bg-subtle)">
+            <span id="inv-tabla-footer-texto" class="text-muted">Mostrando 12 de 0 productos</span>
+            <button type="button" class="btn btn-outline" id="btn-ver-inventario-inferior">Ver inventario completo (<span id="inv-inferior-count">0</span> productos)</button>
+          </div>
         </section>
 
-        <!-- Formularios: entradas y salidas justificadas de mercancía -->
-        <div class="grid grid-2" style="margin-top:1.25rem">
-          <form class="card" id="form-entrada">
-            <div class="card-header"><h3>Registrar entrada</h3><span class="badge badge-success">+ Stock</span></div>
-            <div class="card-body form-grid">
-              <div class="field full">
-                <label class="label" for="ent-producto">Producto *</label>
-                <select class="select" id="ent-producto" required></select>
+        <!-- Modal: Menú grande de inventario completo (escalable a 500+ productos) -->
+        <div class="modal-overlay" id="modal-inventario-completo" role="dialog" aria-modal="true" aria-labelledby="titulo-inventario-completo">
+          <div class="modal modal-catalogo-lg">
+            <div class="modal-header">
+              <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap">
+                <h3 id="titulo-inventario-completo">Inventario completo de productos</h3>
+                <span class="badge" id="modal-inv-contador">Mostrando 0 productos</span>
               </div>
-              <div class="field">
-                <label class="label" for="ent-origen">Tipo de entrada *</label>
-                <select class="select" id="ent-origen">
-                  <option value="Entrada por compra">Entrada por compra a proveedor</option>
-                  <option value="Ajuste autorizado">Ajuste autorizado (+)</option>
-                  <option value="Corrección justificada">Corrección justificada (+)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="label" for="ent-cantidad">Cantidad *</label>
-                <input class="input num" id="ent-cantidad" type="number" min="0.01" step="0.01" placeholder="0" required>
-              </div>
-              <div class="field full">
-                <label class="label" for="ent-motivo">Motivo / Factura o proveedor *</label>
-                <input class="input" id="ent-motivo" placeholder="Ej: Compra factura #412 Proveedor Vitral" required>
-              </div>
-              <div class="field full">
-                <label class="check">
-                  <input type="checkbox" id="ent-registrar-gasto">
-                  Registrar simultáneamente el gasto de esta compra en Contabilidad
-                </label>
-              </div>
-              <div class="field hidden" id="box-ent-metodo">
-                <label class="label" for="ent-metodo-pago">Método de pago de la compra</label>
-                <select class="select" id="ent-metodo-pago">
-                  <option value="Transferencia">Transferencia</option>
-                  <option value="Efectivo">Efectivo</option>
-                  <option value="Tarjeta débito">Tarjeta débito</option>
-                </select>
-              </div>
-              <div class="field hidden" id="box-ent-costo">
-                <label class="label" for="ent-costo-total">Costo total pagado (COP)</label>
-                <input class="input num" id="ent-costo-total" type="number" min="0" step="100" placeholder="Autocalculado según costo">
-              </div>
-              <div class="field full">
-                <button type="submit" class="btn btn-primary">Confirmar entrada</button>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <div class="cat-modal-searchbar">
+              <input class="input" type="search" id="buscar-inventario-modal" placeholder="Buscar por nombre, código, categoría o estado...">
+              <div class="chips" style="margin:0" role="tablist" aria-label="Filtrar por estado">
+                <button type="button" class="chip active" data-modal-inv-estado="todos">Todos</button>
+                <button type="button" class="chip" data-modal-inv-estado="disponible">Disponibles</button>
+                <button type="button" class="chip" data-modal-inv-estado="bajo">Stock bajo</button>
+                <button type="button" class="chip" data-modal-inv-estado="agotado">Agotados</button>
+                <button type="button" class="chip" data-modal-inv-estado="inactivo">Inactivos</button>
               </div>
             </div>
-          </form>
-
-          <form class="card" id="form-salida">
-            <div class="card-header"><h3>Registrar salida / baja</h3><span class="badge badge-danger">− Stock</span></div>
-            <div class="card-body form-grid">
-              <div class="field full">
-                <label class="label" for="sal-producto">Producto *</label>
-                <select class="select" id="sal-producto" required></select>
+            <div class="cat-modal-body">
+              <div class="cat-modal-grid-wrap">
+                <div class="table-wrap">
+                  <table class="table" id="tabla-productos-modal">
+                    <thead>
+                      <tr>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th>Categoría</th>
+                        <th>Modalidad / Unidad</th>
+                        <th class="num">Costo compra</th>
+                        <th class="num">Precio venta</th>
+                        <th class="num">Stock</th>
+                        <th class="num">Mínimo</th>
+                        <th>Estado</th>
+                        <th class="text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td colspan="10" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div class="field">
-                <label class="label" for="sal-origen">Tipo de salida *</label>
-                <select class="select" id="sal-origen">
-                  <option value="Pérdida o daño">Pérdida o daño registrado (rotura/merma)</option>
-                  <option value="Ajuste autorizado">Ajuste autorizado (−)</option>
-                  <option value="Corrección justificada">Corrección justificada (−)</option>
-                  <option value="Uso interno en obra">Uso interno / instalación</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="label" for="sal-cantidad">Cantidad *</label>
-                <input class="input num" id="sal-cantidad" type="number" min="0.01" step="0.01" placeholder="0" required>
-              </div>
-              <div class="field full">
-                <label class="label" for="sal-motivo">Motivo obligatorio *</label>
-                <input class="input" id="sal-motivo" placeholder="Ej: Lámina fisurada en descargue / ajuste de conteo físico" required>
-              </div>
-              <div class="field full">
-                <button type="submit" class="btn btn-outline">Confirmar salida</button>
-              </div>
+              <aside class="cat-modal-sidebar" aria-label="Resumen rápido del inventario">
+                <div class="cat-modal-sidebar-head">
+                  <h4 style="margin:0">Resumen del inventario</h4>
+                  <span class="help">Cifras según el filtro actual</span>
+                </div>
+                <div style="padding:1rem; display:grid; gap:.6rem; flex:1; overflow-y:auto; align-content:start">
+                  <div class="summary-row"><span>Total productos</span><b class="num" id="modal-inv-res-total">0</b></div>
+                  <div class="summary-row"><span>Disponibles</span><b class="num text-income" id="modal-inv-res-disp">0</b></div>
+                  <div class="summary-row"><span>Stock bajo</span><b class="num" style="color:var(--warning)" id="modal-inv-res-bajo">0</b></div>
+                  <div class="summary-row"><span>Agotados</span><b class="num text-expense" id="modal-inv-res-agot">0</b></div>
+                  <hr style="border:0; border-top:1px solid var(--border-color); margin:.25rem 0">
+                  <div class="summary-row"><span>Valor en bodega (costo)</span><b class="num" id="modal-inv-res-costo">$ 0</b></div>
+                  <div class="summary-row"><span>Valor en bodega (venta)</span><b class="num" id="modal-inv-res-venta">$ 0</b></div>
+                </div>
+                <div class="cat-modal-footer" style="display:grid; gap:.5rem">
+                  <button type="button" class="btn btn-primary btn-block" id="btn-modal-inv-nuevo">+ Nuevo Producto</button>
+                  <button type="button" class="btn btn-outline btn-block" id="btn-modal-inv-entrada">+ Registrar Entrada</button>
+                  <button type="button" class="btn btn-outline btn-block" id="btn-modal-inv-salida">− Registrar Salida</button>
+                </div>
+              </aside>
             </div>
-          </form>
+          </div>
         </div>
 
-        <!-- Historial de movimientos de inventario (Kardex) -->
-        <section class="card" style="margin-top:1.25rem">
-          <div class="card-header">
-            <h3>Historial de movimientos de inventario (Kardex)</h3>
-            <span class="badge" id="inv-kardex-count">0 movimientos</span>
+        <!-- Modal: Registrar Entrada (Compra / Ajuste +) -->
+        <div class="modal-overlay" id="modal-entrada-inv" role="dialog" aria-modal="true" aria-labelledby="titulo-entrada-inv">
+          <div class="modal" style="max-width:640px">
+            <div class="modal-header"><h3 id="titulo-entrada-inv">Registrar entrada de inventario</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+            <form id="form-entrada">
+              <div class="modal-body form-grid">
+                <div class="field full">
+                  <label class="label" for="ent-producto">Producto *</label>
+                  <select class="select" id="ent-producto" required></select>
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-origen">Tipo de entrada *</label>
+                  <select class="select" id="ent-origen">
+                    <option value="Entrada por compra">Entrada por compra a proveedor</option>
+                    <option value="Ajuste autorizado">Ajuste autorizado (+)</option>
+                    <option value="Corrección justificada">Corrección justificada (+)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-cantidad">Cantidad / medida *</label>
+                  <input class="input num" id="ent-cantidad" type="number" min="0.01" step="0.01" placeholder="0" required>
+                </div>
+                <div class="field full hidden" id="ent-calc-dim-box" style="padding:.75rem; background:var(--bg-subtle); border:1px solid var(--border-color); border-radius:var(--radius-sm)">
+                  <div class="form-grid">
+                    <div class="field"><label class="label" for="ent-laminas">N° de láminas</label><input class="input num" id="ent-laminas" type="number" min="1" step="1" value="1"></div>
+                    <div class="field"><label class="label" for="ent-ancho">Ancho (m)</label><input class="input num" id="ent-ancho" type="number" min="0.01" step="0.01" placeholder="Ej: 2"></div>
+                    <div class="field"><label class="label" for="ent-alto">Alto (m)</label><input class="input num" id="ent-alto" type="number" min="0.01" step="0.01" placeholder="Ej: 3"></div>
+                    <div class="field full"><span class="help" id="ent-area-preview">Área calculada: 0 m² (se asigna automáticamente a la cantidad).</span></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-precio-compra">Precio de compra unitario (COP)</label>
+                  <input class="input num" id="ent-precio-compra" type="text" inputmode="numeric" data-money-input="1" placeholder="Opcional">
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-fecha">Fecha *</label>
+                  <input class="input" id="ent-fecha" type="date">
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-proveedor">Proveedor (opcional)</label>
+                  <input class="input" id="ent-proveedor" placeholder="Ej: Vitral S.A.">
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-motivo">Motivo / Factura *</label>
+                  <input class="input" id="ent-motivo" placeholder="Ej: Compra factura #412" required>
+                </div>
+                <div class="field full">
+                  <label class="check">
+                    <input type="checkbox" id="ent-registrar-gasto">
+                    Registrar también este pago como gasto en Contabilidad
+                  </label>
+                </div>
+                <div class="field hidden" id="box-ent-metodo">
+                  <label class="label" for="ent-metodo-pago">Método de pago</label>
+                  <select class="select" id="ent-metodo-pago">
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="Efectivo">Efectivo</option>
+                  </select>
+                </div>
+                <div class="field hidden" id="box-ent-costo">
+                  <label class="label" for="ent-costo-total">Costo total pagado (COP)</label>
+                  <input class="input num" id="ent-costo-total" type="number" min="0" step="100" placeholder="Autocalculado">
+                </div>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-outline" href="#">Cancelar</a>
+                <button type="submit" class="btn btn-primary">Confirmar entrada</button>
+              </div>
+            </form>
           </div>
-          <div class="table-wrap">
-            <table class="table" id="tabla-kardex-inventario">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Código</th>
-                  <th>Producto</th>
-                  <th>Tipo</th>
-                  <th>Origen</th>
-                  <th class="num">Cantidad</th>
-                  <th class="num">Stock ant.</th>
-                  <th class="num">Stock nuevo</th>
-                  <th>Motivo</th>
-                  <th>Responsable</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td colspan="10" class="text-muted" style="text-align:center; padding:1.5rem">No hay movimientos de inventario registrados.</td></tr>
-              </tbody>
-            </table>
+        </div>
+
+        <!-- Modal: Registrar Salida / Baja -->
+        <div class="modal-overlay" id="modal-salida-inv" role="dialog" aria-modal="true" aria-labelledby="titulo-salida-inv">
+          <div class="modal" style="max-width:600px">
+            <div class="modal-header"><h3 id="titulo-salida-inv">Registrar salida o baja</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+            <form id="form-salida">
+              <div class="modal-body form-grid">
+                <div class="field full">
+                  <label class="label" for="sal-producto">Producto *</label>
+                  <select class="select" id="sal-producto" required></select>
+                </div>
+                <div class="field">
+                  <label class="label" for="sal-origen">Tipo de salida *</label>
+                  <select class="select" id="sal-origen">
+                    <option value="Pérdida o daño">Pérdida o daño (rotura/merma)</option>
+                    <option value="Ajuste autorizado">Ajuste autorizado (−)</option>
+                    <option value="Corrección justificada">Corrección justificada (−)</option>
+                    <option value="Uso interno en obra">Uso interno / instalación</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="sal-cantidad">Cantidad / medida *</label>
+                  <input class="input num" id="sal-cantidad" type="number" min="0.01" step="0.01" placeholder="0" required>
+                </div>
+                <div class="field full hidden" id="sal-calc-dim-box" style="padding:.75rem; background:var(--bg-subtle); border:1px solid var(--border-color); border-radius:var(--radius-sm)">
+                  <div class="form-grid">
+                    <div class="field"><label class="label" for="sal-laminas">N° de piezas</label><input class="input num" id="sal-laminas" type="number" min="1" step="1" value="1"></div>
+                    <div class="field"><label class="label" for="sal-ancho">Ancho (m)</label><input class="input num" id="sal-ancho" type="number" min="0.01" step="0.01" placeholder="Ej: 1.2"></div>
+                    <div class="field"><label class="label" for="sal-alto">Alto (m)</label><input class="input num" id="sal-alto" type="number" min="0.01" step="0.01" placeholder="Ej: 1.5"></div>
+                    <div class="field full"><span class="help" id="sal-area-preview">Área calculada: 0 m²</span></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="label" for="sal-fecha">Fecha *</label>
+                  <input class="input" id="sal-fecha" type="date">
+                </div>
+                <div class="field full">
+                  <label class="label" for="sal-motivo">Motivo obligatorio *</label>
+                  <input class="input" id="sal-motivo" placeholder="Ej: Lámina fisurada en descargue" required>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-outline" href="#">Cancelar</a>
+                <button type="submit" class="btn btn-danger">Confirmar salida</button>
+              </div>
+            </form>
           </div>
-        </section>
+        </div>
+
+        <!-- Modal: detalle de producto y sus últimos movimientos -->
+        <div class="modal-overlay" id="modal-detalle-producto-inv" role="dialog" aria-modal="true" aria-labelledby="titulo-detalle-inv">
+          <div class="modal" style="max-width:680px">
+            <div class="modal-header"><h3 id="titulo-detalle-inv">Detalle del producto</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+            <div class="modal-body" id="detalle-producto-inv-body"></div>
+            <div class="modal-footer"><a class="btn btn-outline" href="#">Cerrar</a></div>
+          </div>
+        </div>
 
         <!-- Modal: crear o editar producto -->
         <div class="modal-overlay" id="modal-producto" role="dialog" aria-modal="true" aria-labelledby="titulo-producto">
@@ -1504,14 +1397,8 @@
             <form id="form-producto">
               <input type="hidden" id="prod-id" value="">
               <div class="modal-body form-grid">
-                <div class="field full">
-                  <label class="label" for="prod-nombre">Nombre del producto *</label>
-                  <input class="input" id="prod-nombre" required placeholder="Ej: Vidrio templado 10 mm">
-                </div>
-                <div class="field">
-                  <label class="label" for="prod-codigo">Código único *</label>
-                  <input class="input" id="prod-codigo" required placeholder="Ej: VT-010">
-                </div>
+                <div class="field full"><label class="label" for="prod-nombre">Nombre del producto *</label><input class="input" id="prod-nombre" required placeholder="Ej: Vidrio templado 10 mm"></div>
+                <div class="field"><label class="label" for="prod-codigo">Código único *</label><input class="input" id="prod-codigo" required placeholder="Ej: VT-010"></div>
                 <div class="field">
                   <label class="label" for="prod-categoria">Categoría *</label>
                   <select class="select" id="prod-categoria">
@@ -1522,44 +1409,36 @@
                   </select>
                 </div>
                 <div class="field">
-                  <label class="label" for="prod-unidad">Unidad de medida (opcional)</label>
+                  <label class="label" for="prod-modalidad">Modalidad de inventario *</label>
+                  <select class="select" id="prod-modalidad">
+                    <option value="m2">Metros cuadrados (m²)</option>
+                    <option value="m">Metros lineales (m)</option>
+                    <option value="unidades">Unidades (u)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="prod-unidad">Unidad de medida *</label>
                   <select class="select" id="prod-unidad">
                     <option value="m²">Metro cuadrado (m²)</option>
                     <option value="m">Metro lineal (m)</option>
                     <option value="u">Unidad (u)</option>
+                    <option value="lámina">Lámina</option>
+                    <option value="kg">Kilogramo (kg)</option>
+                    <option value="L">Litro (L)</option>
+                    <option value="caja">Caja</option>
+                    <option value="paquete">Paquete</option>
                     <option value="">Sin unidad</option>
                   </select>
                 </div>
                 <div class="field full hidden" id="field-prod-decimal">
-                  <label class="check">
-                    <input type="checkbox" id="prod-permite-decimal">
-                    Permitir cantidades decimales para este producto sin unidad
-                  </label>
+                  <label class="check"><input type="checkbox" id="prod-permite-decimal"> Permitir cantidades decimales para este producto sin unidad</label>
                 </div>
-                <div class="field">
-                  <label class="label" for="prod-precio-compra">Precio de compra (COP)</label>
-                  <input class="input num" id="prod-precio-compra" type="number" min="0" step="100" value="0" required>
-                </div>
-                <div class="field">
-                  <label class="label" for="prod-precio">Precio de venta (COP) *</label>
-                  <input class="input num" id="prod-precio" type="number" min="0" step="100" required>
-                </div>
-                <div class="field" id="field-prod-stock-inicial">
-                  <label class="label" for="prod-stock">Stock inicial</label>
-                  <input class="input num" id="prod-stock" type="number" min="0" step="0.01" value="0">
-                </div>
-                <div class="field">
-                  <label class="label" for="prod-minimo">Stock mínimo de alerta</label>
-                  <input class="input num" id="prod-minimo" type="number" min="0" step="0.01" value="5">
-                  <span class="help">Se alertará cuando el stock llegue a este nivel.</span>
-                </div>
-                <div class="field full">
-                  <label class="label" for="prod-descripcion">Descripción opcional</label>
-                  <input class="input" id="prod-descripcion" placeholder="Especificación técnica, calibre, acabado">
-                </div>
-                <div class="field full">
-                  <div id="prod-error" class="alert alert-danger hidden"></div>
-                </div>
+                <div class="field"><label class="label" for="prod-precio-compra">Precio de compra (COP)</label><input class="input num" id="prod-precio-compra" type="text" inputmode="numeric" data-money-input="1" value="0" required></div>
+                <div class="field"><label class="label" for="prod-precio">Precio de venta (COP) *</label><input class="input num" id="prod-precio" type="text" inputmode="numeric" data-money-input="1" required></div>
+                <div class="field" id="field-prod-stock-inicial"><label class="label" for="prod-stock">Stock inicial</label><input class="input num" id="prod-stock" type="number" min="0" step="0.01" value="0"></div>
+                <div class="field"><label class="label" for="prod-minimo">Stock mínimo de alerta</label><input class="input num" id="prod-minimo" type="number" min="0" step="0.01" value="5"></div>
+                <div class="field full"><label class="label" for="prod-descripcion">Descripción opcional</label><input class="input" id="prod-descripcion" placeholder="Especificación técnica, calibre, acabado"></div>
+                <div class="field full"><div id="prod-error" class="alert alert-danger hidden"></div></div>
               </div>
               <div class="modal-footer">
                 <a class="btn btn-outline" href="#">Cancelar</a>
@@ -1571,701 +1450,457 @@
       </div>
   </template>
   <template id="tpl-contabilidad">
-      <div class="page-header">
-        <div>
-          <h2>Contabilidad Básica</h2>
-          <p>Control sencillo del dinero que entra, el dinero que sale y el dinero disponible en el negocio</p>
-        </div>
-        <div class="flex gap-2 items-center" style="flex-wrap:wrap">
-          <label for="contab-periodo-resumen" class="text-sm" style="font-weight:700;color:var(--navy-900)">Ver cifras de:</label>
-          <select class="select" id="contab-periodo-resumen" style="width:auto;min-width:195px;min-height:44px;font-size:.98rem;font-weight:600">
-            <option value="todos">Todo el historial</option>
-            <option value="hoy">Hoy</option>
-            <option value="semana">Esta semana</option>
-            <option value="mes">Este mes</option>
-            <option value="anio">Este año</option>
-            <option value="personalizado">Elegir fechas...</option>
-          </select>
-          <button type="button" class="btn btn-secondary" id="btn-ir-historial-contable" style="min-height:44px;font-size:.95rem">Consultar movimientos</button>
-          <button type="button" class="btn btn-secondary" id="btn-exportar-contable-csv" style="min-height:44px;font-size:.95rem">Descargar CSV</button>
-          <button type="button" class="btn btn-secondary" id="btn-imprimir-contable" style="min-height:44px;font-size:.95rem">Imprimir informe</button>
-        </div>
-      </div>
-
-      <!-- Aviso de estado de conexión con Firebase Firestore (Sección 13) -->
-      <div class="alert alert-warning mb-3" id="contab-firebase-banner" style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;font-size:.95rem">
-        <div>
-          <strong>Estado de almacenamiento:</strong>
-          <span id="contab-firebase-status-text">Comprobando conexión con Firebase Firestore...</span>
-        </div>
-        <span class="badge badge-warning" id="contab-firebase-badge">Pendiente configurar Firebase</span>
-      </div>
-
-      <div class="contab-accessible">
-        <!-- ===================================================================
-             SECCIÓN 1: RESUMEN FINANCIERO (4 TARJETAS GRANDES Y CLARAS)
-             =================================================================== -->
-        <div class="contab-step-banner" style="margin-top:.25rem">
-          <h3 class="contab-step-title">
-            <span class="contab-step-badge">1</span>
-            Resumen financiero del negocio
-          </h3>
-          <span class="text-sm text-muted">Cifras actualizadas automáticamente con las ventas y registros reales</span>
+<div class="view contab-accessible" data-view="contabilidad">
+        <!-- BLOQUE 1: Encabezado y 4 tarjetas de resumen financiero -->
+        <div class="page-header">
+          <div>
+            <h2>Contabilidad</h2>
+            <p>Control sencillo de ingresos, gastos, traslados y dinero disponible</p>
+          </div>
+          <div class="flex gap-2 items-center" style="flex-wrap:wrap">
+            <label for="contab-periodo-resumen" class="text-sm" style="font-weight:700">Período:</label>
+            <select class="select" id="contab-periodo-resumen" style="width:auto;min-width:175px;min-height:42px;font-weight:600">
+              <option value="hoy">Hoy</option>
+              <option value="semana">Esta semana</option>
+              <option value="mes">Este mes</option>
+              <option value="anio">Este año</option>
+              <option value="todos" selected>Todo el historial</option>
+            </select>
+            <button type="button" class="btn btn-outline" id="btn-exportar-contable-csv" style="min-height:42px">Exportar CSV</button>
+            <button type="button" class="btn btn-outline" id="btn-imprimir-contable" style="min-height:42px">Imprimir</button>
+          </div>
         </div>
 
-        <div class="grid grid-4 mb-4">
-          <!-- Tarjeta 1: Dinero que ingresó -->
-          <div class="card stat income contab-stat-card">
-            <div class="stat-label">Dinero que ingresó (Total de ingresos)</div>
+        <div id="contab-feedback-banner" class="alert mb-3" style="display:none;font-size:1rem;padding:.85rem 1rem"></div>
+
+        <div class="contab-kpis">
+          <article class="card stat income contab-stat-card">
+            <div class="stat-label">Dinero que entró (Ingresos)</div>
             <p class="stat-value num text-success" id="contab-kpi-ingresos">$ 0</p>
-            <div class="stat-sub" id="contab-kpi-ingresos-sub">Pagos de ventas, anticipos y otros ingresos</div>
-          </div>
+            <div class="stat-sub" id="contab-kpi-ingresos-sub">0 registros</div>
+          </article>
 
-          <!-- Tarjeta 2: Dinero que salió -->
-          <div class="card stat expense contab-stat-card">
-            <div class="stat-label">Dinero que salió (Total de gastos)</div>
+          <article class="card stat expense contab-stat-card">
+            <div class="stat-label">Dinero que salió (Gastos)</div>
             <p class="stat-value num text-danger" id="contab-kpi-gastos">$ 0</p>
-            <div class="stat-sub" id="contab-kpi-gastos-sub">Servicios, arriendo, transporte, nómina y otros</div>
-          </div>
+            <div class="stat-sub" id="contab-kpi-gastos-sub">0 registros</div>
+          </article>
 
-          <!-- Tarjeta 3: Resultado del período -->
-          <div class="card stat contab-stat-card">
+          <article class="card stat contab-stat-card">
             <div class="flex justify-between items-center gap-2">
               <div class="stat-label">Resultado del período</div>
               <span class="badge badge-neutral" id="contab-kpi-resultado-badge">Sin movimientos</span>
             </div>
             <p class="stat-value num" id="contab-kpi-resultado">$ 0</p>
-            <div class="stat-sub" id="contab-kpi-resultado-sub">Ingresos menos gastos (no equivale al efectivo físico en caja)</div>
-          </div>
+            <div class="stat-sub" id="contab-kpi-resultado-sub">Ingresos menos gastos reconocidos</div>
+          </article>
 
-          <!-- Tarjeta 4: Dinero disponible (Caja física y Bancos por separado) -->
-          <div class="card stat contab-stat-card" style="border-left-color:var(--navy-700)">
-            <div class="stat-label">Dinero disponible (Caja y Bancos)</div>
-            <div style="margin-top:.45rem;display:grid;gap:.4rem">
-              <div class="flex justify-between items-center">
-                <span style="font-size:.92rem;color:var(--text-muted)">Efectivo disponible en caja:</span>
-                <strong class="num" style="font-size:1.15rem;color:var(--navy-900)" id="contab-kpi-efectivo-caja">$ 0</strong>
+          <article class="card stat contab-stat-card" style="border-left-color:var(--accent)">
+            <div class="stat-label">Disponible (Caja y Bancos)</div>
+            <div style="margin-top:.35rem;display:grid;gap:.3rem">
+              <div class="flex justify-between items-center gap-2">
+                <span class="text-sm text-muted">Caja física:</span>
+                <strong class="num" id="contab-kpi-efectivo-caja">$ 0</strong>
               </div>
-              <div class="flex justify-between items-center">
-                <span style="font-size:.92rem;color:var(--text-muted)">Saldo bancario:</span>
-                <strong class="num" style="font-size:1rem;color:var(--navy-800)" id="contab-kpi-saldo-bancos">Sin información registrada</strong>
+              <div class="flex justify-between items-center gap-2">
+                <span class="text-sm text-muted">Bancos:</span>
+                <strong class="num" id="contab-kpi-saldo-bancos">Sin datos</strong>
               </div>
-              <div class="flex justify-between items-center" style="border-top:1px dashed var(--border);padding-top:.3rem">
-                <span style="font-size:.86rem;color:var(--text-muted)">Pendiente por cobrar:</span>
-                <strong class="num" style="font-size:.92rem;color:var(--warning)" id="contab-kpi-por-cobrar">$ 0</strong>
+              <div class="flex justify-between items-center gap-2" style="border-top:1px dashed var(--border-color);padding-top:.25rem">
+                <span class="text-xs text-muted">Por cobrar:</span>
+                <strong class="num text-sm" style="color:var(--warning)" id="contab-kpi-por-cobrar">$ 0</strong>
               </div>
             </div>
             <div class="stat-sub mt-1">
-              <span class="badge badge-neutral" id="contab-kpi-caja-badge">Comprobando estado de caja...</span>
+              <span class="badge badge-neutral" id="contab-kpi-caja-badge">Comprobando caja...</span>
             </div>
-          </div>
+          </article>
         </div>
 
-        <!-- ===================================================================
-             SECCIÓN 2 Y 3: REGISTRAR INGRESOS Y REGISTRAR GASTOS
-             =================================================================== -->
-        <div class="contab-step-banner">
-          <h3 class="contab-step-title">
-            <span class="contab-step-badge">2</span>
-            ¿Qué operación desea realizar ahora?
-          </h3>
-          <span class="text-sm text-muted">Toque uno de los botones grandes para abrir su formulario</span>
-        </div>
-
-        <div class="contab-big-actions" role="tablist" aria-label="Acciones principales de contabilidad">
-          <button type="button" class="contab-action-btn action-income active" id="tab-btn-ingreso">
-            <span class="action-head">＋ Registrar ingreso (Dinero que entra)</span>
-            <span class="action-desc">Anotar un anticipo de cliente, abono de instalación u otro ingreso</span>
-          </button>
-          <button type="button" class="contab-action-btn action-expense" id="tab-btn-gasto">
-            <span class="action-head">－ Registrar gasto (Dinero que sale)</span>
-            <span class="action-desc">Anotar pago de servicios, arriendo, transporte, nómina o mantenimiento</span>
-          </button>
-          <button type="button" class="contab-action-btn action-transfer" id="tab-btn-traslado">
-            <span class="action-head">⇄ Traslado entre caja y banco</span>
-            <span class="action-desc">Consignar efectivo de la caja al banco o retirar del banco para la caja</span>
-          </button>
-        </div>
-
-        <!-- Tarjeta del formulario activo -->
-        <div class="card mb-4 contab-form-accessible" id="contab-form-card">
-          <div class="card-body">
-            <!-- Mensajes de confirmación o error del formulario -->
-            <div id="contab-feedback-banner" class="alert mb-3" style="display:none;font-size:1rem;padding:.9rem 1.1rem"></div>
-
-            <!-- PANEL 1: REGISTRAR INGRESO (Sección 6) -->
-            <div id="panel-ingreso" class="tab-panel" style="display:block">
-              <div class="alert alert-info mb-3" style="font-size:.95rem">
-                <strong>Importante:</strong> Las ventas cobradas en <b>Caja y Ventas</b> se guardan solas aquí automáticamente. Utilice este formulario para registrar <b>anticipos de clientes</b>, <b>abonos de instalaciones</b> u <b>otros ingresos</b>.
-              </div>
-              <form id="form-ingreso-contable" novalidate>
-                <div class="form-grid">
-                  <div class="field span-2">
-                    <label for="ing-concepto">1. Concepto: ¿De dónde viene el dinero? <span class="text-danger">* (Obligatorio)</span></label>
-                    <input class="input" id="ing-concepto" type="text" placeholder="Ejemplo: Anticipo 50% por ventana corrediza de aluminio" required>
-                  </div>
-                  <div class="field">
-                    <label for="ing-categoria">2. Categoría del ingreso <span class="text-danger">* (Obligatorio)</span></label>
-                    <select class="select" id="ing-categoria" required>
-                      <option value="Anticipo de cliente">Anticipo de cliente</option>
-                      <option value="Abono de instalación">Abono de instalación</option>
-                      <option value="Venta">Venta</option>
-                      <option value="Otros ingresos">Otros ingresos</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label for="ing-monto">3. Valor en pesos colombianos (COP) <span class="text-danger">* (Obligatorio)</span></label>
-                    <input class="input num" id="ing-monto" type="number" min="1" step="100" placeholder="Ejemplo: 150000" required>
-                  </div>
-                  <div class="field">
-                    <label for="ing-fecha">4. Fecha del ingreso <span class="text-danger">* (Obligatorio)</span></label>
-                    <input class="input" id="ing-fecha" type="date" required>
-                  </div>
-                  <div class="field">
-                    <label for="ing-metodo">5. Método de pago <span class="text-danger">* (Obligatorio)</span></label>
-                    <select class="select" id="ing-metodo" required>
-                      <option value="Efectivo">Efectivo</option>
-                      <option value="Transferencia bancaria">Transferencia bancaria (Nequi / Daviplata / Banco)</option>
-                      <option value="Tarjeta débito">Tarjeta débito</option>
-                      <option value="Tarjeta de crédito">Tarjeta de crédito</option>
-                      <option value="Otros">Otros</option>
-                    </select>
-                  </div>
-
-                  <!-- Casilla clara de efectivo en caja abierta -->
-                  <div class="field span-2" id="ing-wrap-afecta-caja" style="background:#f0fdf4;padding:.9rem 1.1rem;border-radius:var(--radius-sm);border:1px solid #86efac">
-                    <label style="display:flex;align-items:center;gap:.65rem;cursor:pointer;margin:0;font-weight:700;color:#166534">
-                      <input type="checkbox" id="ing-afecta-caja" checked style="width:20px;height:20px">
-                      <span>Este dinero en efectivo entró directamente a la caja física abierta</span>
-                    </label>
-                    <p class="text-xs text-muted mt-1" id="ing-afecta-caja-help" style="margin:.35rem 0 0;font-size:.88rem">
-                      Si está marcada, este dinero se sumará al efectivo esperado al cerrar la caja del turno.
-                    </p>
-                  </div>
-
-                  <!-- Campos opcionales claros -->
-                  <div class="field">
-                    <label for="ing-cliente">Cliente relacionado <span class="text-muted">(Opcional)</span></label>
-                    <input class="input" id="ing-cliente" type="text" placeholder="Ejemplo: Sr. Carlos Gómez">
-                  </div>
-                  <div class="field">
-                    <label for="ing-referencia">Referencia o número de comprobante <span class="text-muted">(Opcional)</span></label>
-                    <input class="input" id="ing-referencia" type="text" placeholder="Ejemplo: Recibo #105 o comprobante Nequi">
-                  </div>
-                  <div class="field">
-                    <label for="ing-pedido">Número de pedido o trabajo <span class="text-muted">(Opcional, para anticipos)</span></label>
-                    <input class="input" id="ing-pedido" type="text" placeholder="Ejemplo: PED-104">
-                  </div>
-                  <div class="field">
-                    <label for="ing-total-pedido">Valor total acordado del trabajo <span class="text-muted">(Opcional, calcula saldo pendiente)</span></label>
-                    <input class="input num" id="ing-total-pedido" type="number" min="0" step="1000" placeholder="Ejemplo: 300000">
-                  </div>
-                  <div class="field">
-                    <label for="ing-nota">Observaciones <span class="text-muted">(Opcional)</span></label>
-                    <input class="input" id="ing-nota" type="text" placeholder="Cualquier detalle adicional que desee recordar">
-                  </div>
-                  <div class="field">
-                    <label for="ing-responsable">Persona responsable del registro</label>
-                    <input class="input" id="ing-responsable" type="text" readonly style="background:var(--navy-50)">
-                  </div>
-                </div>
-                <div class="flex justify-end gap-2 mt-3">
-                  <button type="reset" class="btn btn-secondary" style="min-height:52px;font-size:1rem;padding:0 1.25rem">Limpiar campos</button>
-                  <button type="submit" class="btn btn-success contab-submit-btn" id="btn-guardar-ingreso">Guardar ingreso</button>
-                </div>
-              </form>
-            </div>
-
-            <!-- PANEL 2: REGISTRAR GASTO (Sección 7) -->
-            <div id="panel-gasto" class="tab-panel" style="display:none">
-              <div class="alert alert-warning mb-3" style="font-size:.95rem">
-                <strong>Nota sobre compras de material:</strong> Para compras de vidrio, aluminio, espejos y accesorios que suman existencias a la bodega, regístrelas desde el módulo <b>Inventario (Entrada por compra)</b> para no contar dos veces el mismo desembolso.
-              </div>
-              <form id="form-gasto-contable" novalidate>
-                <div class="form-grid">
-                  <div class="field span-2">
-                    <label for="gas-concepto">1. Concepto del gasto: ¿En qué se gastó el dinero? <span class="text-danger">* (Obligatorio)</span></label>
-                    <input class="input" id="gas-concepto" type="text" placeholder="Ejemplo: Pago recibo de energía eléctrica del local" required>
-                  </div>
-                  <div class="field">
-                    <label for="gas-categoria">2. Categoría del gasto <span class="text-danger">* (Obligatorio)</span></label>
-                    <select class="select" id="gas-categoria" required>
-                      <option value="Servicios públicos">Servicios públicos (Agua, energía, internet, teléfono)</option>
-                      <option value="Arriendo">Arriendo del local o bodega</option>
-                      <option value="Transporte">Transporte, fletes y combustible</option>
-                      <option value="Nómina">Nómina y pagos a trabajadores</option>
-                      <option value="Mantenimiento">Mantenimiento de herramientas y equipos</option>
-                      <option value="Publicidad">Publicidad y avisos</option>
-                      <option value="Gastos administrativos">Gastos administrativos (Papelería, aseo, cafetería)</option>
-                      <option value="Otros gastos">Otros gastos</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label for="gas-monto">3. Valor en pesos colombianos (COP) <span class="text-danger">* (Obligatorio)</span></label>
-                    <input class="input num" id="gas-monto" type="number" min="1" step="100" placeholder="Ejemplo: 150000" required>
-                  </div>
-                  <div class="field">
-                    <label for="gas-fecha">4. Fecha del gasto <span class="text-danger">* (Obligatorio)</span></label>
-                    <input class="input" id="gas-fecha" type="date" required>
-                  </div>
-                  <div class="field">
-                    <label for="gas-metodo">5. Método de pago <span class="text-danger">* (Obligatorio)</span></label>
-                    <select class="select" id="gas-metodo" required>
-                      <option value="Efectivo">Efectivo</option>
-                      <option value="Transferencia bancaria">Transferencia bancaria (Nequi / Daviplata / Banco)</option>
-                      <option value="Tarjeta débito">Tarjeta débito</option>
-                      <option value="Tarjeta de crédito">Tarjeta de crédito</option>
-                      <option value="Otros">Otros</option>
-                    </select>
-                  </div>
-
-                  <!-- Casilla clara de salida de efectivo de la caja abierta -->
-                  <div class="field span-2" id="gas-wrap-afecta-caja" style="background:#fef2f2;padding:.9rem 1.1rem;border-radius:var(--radius-sm);border:1px solid #fca5a5">
-                    <label style="display:flex;align-items:center;gap:.65rem;cursor:pointer;margin:0;font-weight:700;color:#991b1b">
-                      <input type="checkbox" id="gas-afecta-caja" checked style="width:20px;height:20px">
-                      <span>El dinero en efectivo se sacó de la caja abierta del turno</span>
-                    </label>
-                    <p class="text-xs text-muted mt-1" id="gas-afecta-caja-help" style="margin:.35rem 0 0;font-size:.88rem">
-                      Si el gasto se pagó con billetes de la caja abierta, déjela marcada para descontarlo del efectivo esperado al cerrar turno. Si se pagó por transferencia bancaria, no modifica el efectivo físico.
-                    </p>
-                  </div>
-
-                  <!-- Campos opcionales claros -->
-                  <div class="field">
-                    <label for="gas-proveedor">Proveedor o persona a quien se pagó <span class="text-muted">(Opcional)</span></label>
-                    <input class="input" id="gas-proveedor" type="text" placeholder="Ejemplo: Empresas Públicas / Transportadora">
-                  </div>
-                  <div class="field">
-                    <label for="gas-referencia">Número de factura o comprobante <span class="text-muted">(Opcional)</span></label>
-                    <input class="input" id="gas-referencia" type="text" placeholder="Ejemplo: Factura #4590">
-                  </div>
-                  <div class="field">
-                    <label for="gas-nota">Observaciones <span class="text-muted">(Opcional)</span></label>
-                    <input class="input" id="gas-nota" type="text" placeholder="Detalle adicional sobre el pago realizado">
-                  </div>
-                  <div class="field">
-                    <label for="gas-responsable">Persona responsable del registro</label>
-                    <input class="input" id="gas-responsable" type="text" readonly style="background:var(--navy-50)">
-                  </div>
-                </div>
-                <div class="flex justify-end gap-2 mt-3">
-                  <button type="reset" class="btn btn-secondary" style="min-height:52px;font-size:1rem;padding:0 1.25rem">Limpiar campos</button>
-                  <button type="submit" class="btn btn-danger contab-submit-btn" id="btn-guardar-gasto">Guardar gasto</button>
-                </div>
-              </form>
-            </div>
-
-            <!-- PANEL 3: TRASLADO ENTRE CAJA Y BANCO (Sección 8) -->
-            <div id="panel-traslado" class="tab-panel" style="display:none">
-              <div class="alert alert-info mb-3" style="font-size:.95rem">
-                <strong>¿Para qué sirve este traslado?</strong> Cuando lleva efectivo de la caja para consignarlo en el banco (o retira del banco para poner sencillo en la caja), ese movimiento <b>no es un ingreso nuevo ni un gasto</b>: solo cambia dónde está guardado el dinero.
-              </div>
-              <form id="form-traslado-contable" novalidate>
-                <div class="form-grid">
-                  <div class="field">
-                    <label for="tras-origen">1. ¿De dónde sale el dinero? <span class="text-danger">*</span></label>
-                    <select class="select" id="tras-origen" required>
-                      <option value="Caja física">Caja física (Efectivo del local)</option>
-                      <option value="Cuenta bancaria">Cuenta bancaria</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label for="tras-destino">2. ¿A dónde entra el dinero? <span class="text-danger">*</span></label>
-                    <select class="select" id="tras-destino" required>
-                      <option value="Cuenta bancaria">Cuenta bancaria</option>
-                      <option value="Caja física">Caja física (Efectivo del local)</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label for="tras-monto">3. Valor trasladado (COP) <span class="text-danger">*</span></label>
-                    <input class="input num" id="tras-monto" type="number" min="1" step="1000" placeholder="Ejemplo: 200000" required>
-                  </div>
-                  <div class="field">
-                    <label for="tras-fecha">4. Fecha del traslado <span class="text-danger">*</span></label>
-                    <input class="input" id="tras-fecha" type="date" required>
-                  </div>
-                  <div class="field">
-                    <label for="tras-referencia">Comprobante bancario <span class="text-muted">(Opcional)</span></label>
-                    <input class="input" id="tras-referencia" type="text" placeholder="Ejemplo: Consignación #8812">
-                  </div>
-                  <div class="field">
-                    <label for="tras-nota">Observaciones <span class="text-muted">(Opcional)</span></label>
-                    <input class="input" id="tras-nota" type="text" placeholder="Ejemplo: Consignación de cierre de tarde">
-                  </div>
-                </div>
-                <div class="flex justify-end mt-3">
-                  <button type="submit" class="btn btn-primary contab-submit-btn" id="btn-guardar-traslado">Guardar traslado entre cuentas</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-
-        <!-- ===================================================================
-             SECCIÓN 4: HISTORIAL DE MOVIMIENTOS (Sección 9)
-             =================================================================== -->
-        <div class="contab-step-banner" id="seccion-historial-contable">
-          <h3 class="contab-step-title">
-            <span class="contab-step-badge">3</span>
-            Historial de movimientos (Consultar ingresos y gastos)
-          </h3>
-          <span class="badge badge-neutral" id="contab-history-count" style="font-size:.95rem;padding:.4rem .85rem">0 movimientos</span>
-        </div>
-
-        <div class="card mb-4">
-          <div class="card-body" style="border-bottom:1px solid var(--border)">
-            <!-- Botones rápidos grandes de filtro (Sección 9) -->
-            <div style="margin-bottom:.6rem;font-weight:700;color:var(--navy-900);font-size:.95rem">Mostrar rápidamente:</div>
-            <div class="contab-quick-filters" id="contab-quick-filter-bar">
-              <button type="button" class="contab-pill-btn active" data-qfilter="Todos">Todos los movimientos</button>
-              <button type="button" class="contab-pill-btn" data-qfilter="Ingresos">Solo Ingresos (Dinero que entró)</button>
-              <button type="button" class="contab-pill-btn" data-qfilter="Gastos">Solo Gastos (Dinero que salió)</button>
-              <button type="button" class="contab-pill-btn" data-qfilter="Efectivo">Pagados en Efectivo</button>
-              <button type="button" class="contab-pill-btn" data-qfilter="Transferencias">Pagados por Transferencia</button>
-            </div>
-
-            <!-- Buscador y filtros adicionales -->
-            <div class="toolbar" style="margin-bottom:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:.85rem;align-items:end">
-              <div class="field" style="grid-column:span 2">
-                <label for="contab-search" style="font-size:.9rem;font-weight:700">Buscar movimiento</label>
-                <input class="input" id="contab-search" type="search" placeholder="Buscar movimiento por concepto, cliente, proveedor o factura..." style="min-height:44px;font-size:.98rem">
-              </div>
-              <div class="field">
-                <label for="contab-filter-tipo" style="font-size:.9rem;font-weight:700">Tipo de movimiento</label>
-                <select class="select" id="contab-filter-tipo" style="min-height:44px">
-                  <option value="Todos">Todos</option>
-                  <option value="Ingresos">Ingresos</option>
-                  <option value="Gastos">Gastos</option>
-                  <option value="Traslado interno">Traslados internos</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="contab-filter-categoria" style="font-size:.9rem;font-weight:700">Categoría</label>
-                <select class="select" id="contab-filter-categoria" style="min-height:44px">
-                  <option value="Todas">Todas las categorías</option>
-                  <optgroup label="Ingresos">
-                    <option value="Venta">Venta / Mostrador</option>
-                    <option value="Anticipo de cliente">Anticipo de cliente</option>
-                    <option value="Abono de instalación">Abono de instalación</option>
-                    <option value="Otros ingresos">Otros ingresos</option>
-                  </optgroup>
-                  <optgroup label="Gastos">
-                    <option value="Servicios públicos">Servicios públicos</option>
-                    <option value="Arriendo">Arriendo</option>
-                    <option value="Transporte">Transporte</option>
-                    <option value="Nómina">Nómina</option>
-                    <option value="Mantenimiento">Mantenimiento</option>
-                    <option value="Publicidad">Publicidad</option>
-                    <option value="Gastos administrativos">Gastos administrativos</option>
-                    <option value="Compra de mercancía">Compra de mercancía (Inventario)</option>
-                    <option value="Otros gastos">Otros gastos</option>
-                  </optgroup>
-                </select>
-              </div>
-              <div class="field">
-                <label for="contab-filter-metodo" style="font-size:.9rem;font-weight:700">Método de pago</label>
-                <select class="select" id="contab-filter-metodo" style="min-height:44px">
-                  <option value="Todos">Todos los métodos</option>
-                  <option value="Efectivo">Efectivo</option>
-                  <option value="Transferencia bancaria">Transferencia bancaria</option>
-                  <option value="Tarjeta débito">Tarjeta débito</option>
-                  <option value="Tarjeta de crédito">Tarjeta de crédito</option>
-                  <option value="Otros">Otros</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="contab-filter-desde" style="font-size:.9rem;font-weight:700">Desde la fecha</label>
-                <input class="input" id="contab-filter-desde" type="date" style="min-height:44px">
-              </div>
-              <div class="field">
-                <label for="contab-filter-hasta" style="font-size:.9rem;font-weight:700">Hasta la fecha</label>
-                <input class="input" id="contab-filter-hasta" type="date" style="min-height:44px">
-              </div>
-              <div class="field">
-                <label for="contab-filter-usuario" style="font-size:.9rem;font-weight:700">Responsable</label>
-                <input class="input" id="contab-filter-usuario" type="text" placeholder="Todos" style="min-height:44px">
-              </div>
-              <div class="field">
-                <button type="button" class="btn btn-secondary btn-block" id="btn-limpiar-filtros-contable" style="min-height:44px">Ver todos sin filtro</button>
-              </div>
-            </div>
+        <!-- BLOQUE 2: 3 Botones grandes + Formulario corto y puntual -->
+        <section id="contab-pane-registrar" class="mb-4">
+          <div class="contab-big-actions" role="tablist" aria-label="Tipo de movimiento contable">
+            <button type="button" class="contab-action-btn action-income active" id="tab-btn-ingreso">
+              <span class="action-head">＋ Registrar ingreso</span>
+              <span class="action-desc">Anticipos, abonos de instalación u otros ingresos</span>
+            </button>
+            <button type="button" class="contab-action-btn action-expense" id="tab-btn-gasto">
+              <span class="action-head">－ Registrar gasto</span>
+              <span class="action-desc">Servicios, arriendo, transporte, nómina o compras</span>
+            </button>
+            <button type="button" class="contab-action-btn action-transfer" id="tab-btn-traslado">
+              <span class="action-head">⇄ Traslado caja / banco</span>
+              <span class="action-desc">Consignar efectivo al banco o retirar para caja</span>
+            </button>
           </div>
 
-          <!-- Tabla sencilla y organizada (Sección 9) -->
-          <div class="table-wrap">
-            <table class="contab-table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Tipo de movimiento</th>
-                  <th>Concepto</th>
-                  <th>Categoría</th>
-                  <th>Método de pago</th>
-                  <th>Comprobante / Ref.</th>
-                  <th class="text-right">Valor</th>
-                  <th>Responsable</th>
-                  <th>Estado</th>
-                  <th class="text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody id="contab-table-body"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- ===================================================================
-             SECCIÓN 5: INFORMES FINANCIEROS Y GRÁFICOS CLAROS (Sección 10)
-             =================================================================== -->
-        <div class="contab-step-banner" id="seccion-informes-contable">
-          <h3 class="contab-step-title">
-            <span class="contab-step-badge">4</span>
-            Informes financieros (¿Cómo va el negocio?)
-          </h3>
-          <div class="flex gap-2 items-center" style="flex-wrap:wrap">
-            <button type="button" class="contab-pill-btn" data-rep-periodo="hoy">Hoy</button>
-            <button type="button" class="contab-pill-btn" data-rep-periodo="semana">Esta semana</button>
-            <button type="button" class="contab-pill-btn" data-rep-periodo="mes">Este mes</button>
-            <button type="button" class="contab-pill-btn" data-rep-periodo="anio">Este año</button>
-            <button type="button" class="contab-pill-btn active" data-rep-periodo="todos">Todo el historial</button>
-          </div>
-        </div>
-
-        <!-- Resumen de totales del informe -->
-        <div class="grid grid-3 mb-3">
-          <div class="card stat income contab-stat-card">
-            <div class="stat-label">Total de ingresos en el informe</div>
-            <p class="stat-value num text-success" id="contab-inf-ingresos">$ 0</p>
-          </div>
-          <div class="card stat expense contab-stat-card">
-            <div class="stat-label">Total de gastos en el informe</div>
-            <p class="stat-value num text-danger" id="contab-inf-gastos">$ 0</p>
-          </div>
-          <div class="card stat contab-stat-card">
-            <div class="stat-label">Resultado del período seleccionado</div>
-            <p class="stat-value num" id="contab-inf-resultado">$ 0</p>
-          </div>
-        </div>
-
-        <div class="grid grid-3 mb-4">
-          <!-- Ingresos por categoría (Gráfico visual + Tabla) -->
-          <div class="card">
-            <div class="card-header">
-              <h3 style="font-size:1.05rem">Ingresos por categoría</h3>
-            </div>
+          <div class="card contab-form-accessible" id="contab-form-card">
             <div class="card-body">
-              <div id="contab-chart-ingresos-cat" class="contab-chart-list mb-3"></div>
+              <!-- PANEL 1: INGRESO (5 campos) -->
+              <div id="panel-ingreso" class="tab-panel" style="display:block">
+                <form id="form-ingreso-contable" novalidate>
+                  <div class="contab-form-grid">
+                    <div class="field span-2">
+                      <label for="ing-concepto">Concepto del ingreso <span class="text-danger">*</span></label>
+                      <input class="input" id="ing-concepto" type="text" placeholder="Ej: Anticipo 50% ventana corrediza de aluminio" required>
+                    </div>
+                    <div class="field">
+                      <label for="ing-categoria">Categoría <span class="text-danger">*</span></label>
+                      <select class="select" id="ing-categoria" required>
+                        <option value="Anticipos de clientes">Anticipos de clientes</option>
+                        <option value="Abonos de instalaciones">Abonos de instalaciones</option>
+                        <option value="Abonos de cartera">Abonos de cartera</option>
+                        <option value="Ventas de mostrador">Ventas de mostrador</option>
+                        <option value="Otros ingresos">Otros ingresos</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="ing-monto">Valor recibido ($) <span class="text-danger">*</span></label>
+                      <input class="input num" id="ing-monto" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 150,000" required>
+                    </div>
+                    <div class="field">
+                      <label for="ing-fecha">Fecha <span class="text-danger">*</span></label>
+                      <input class="input" id="ing-fecha" type="date" required>
+                    </div>
+                    <div class="field">
+                      <label for="ing-metodo">Método de pago <span class="text-danger">*</span></label>
+                      <select class="select" id="ing-metodo" required>
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Transferencia bancaria">Transferencia bancaria</option>
+                        <option value="Nequi">Nequi</option>
+                        <option value="Daviplata">Daviplata</option>
+                      </select>
+                    </div>
+                    <div class="field span-2 contab-afecta-box" id="ing-wrap-afecta-caja">
+                      <label class="contab-afecta-check">
+                        <input type="checkbox" id="ing-afecta-caja" checked>
+                        <span>Este dinero en efectivo entró a la caja física abierta</span>
+                      </label>
+                      <p class="text-xs text-muted mt-1" id="ing-afecta-caja-help" style="margin-bottom:0">Si está marcada, sumará al efectivo esperado al cerrar la caja.</p>
+                    </div>
+                    <div class="field span-2">
+                      <label for="ing-nota">Cliente u observación (opcional)</label>
+                      <input class="input" id="ing-nota" type="text" placeholder="Nombre del cliente o nota breve">
+                    </div>
+                    <input type="hidden" id="ing-responsable">
+                  </div>
+                  <div class="mt-3 flex justify-end">
+                    <button type="submit" class="btn btn-success contab-submit-btn">Registrar ingreso</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- PANEL 2: GASTO (5 campos) -->
+              <div id="panel-gasto" class="tab-panel" style="display:none">
+                <form id="form-gasto-contable" novalidate>
+                  <div class="contab-form-grid">
+                    <div class="field span-2">
+                      <label for="gas-concepto">Concepto del gasto <span class="text-danger">*</span></label>
+                      <input class="input" id="gas-concepto" type="text" placeholder="Ej: Pago de energía eléctrica del taller" required>
+                    </div>
+                    <div class="field">
+                      <label for="gas-categoria">Categoría <span class="text-danger">*</span></label>
+                      <select class="select" id="gas-categoria" required>
+                        <option value="Servicios públicos">Servicios públicos</option>
+                        <option value="Arriendo">Arriendo</option>
+                        <option value="Transporte">Transporte</option>
+                        <option value="Nómina">Nómina</option>
+                        <option value="Mantenimiento">Mantenimiento</option>
+                        <option value="Gastos administrativos">Gastos administrativos</option>
+                        <option value="Publicidad">Publicidad</option>
+                        <option value="Otros gastos">Otros gastos</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="gas-monto">Valor pagado ($) <span class="text-danger">*</span></label>
+                      <input class="input num" id="gas-monto" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 85,000" required>
+                    </div>
+                    <div class="field">
+                      <label for="gas-fecha">Fecha <span class="text-danger">*</span></label>
+                      <input class="input" id="gas-fecha" type="date" required>
+                    </div>
+                    <div class="field">
+                      <label for="gas-metodo">Método de pago <span class="text-danger">*</span></label>
+                      <select class="select" id="gas-metodo" required>
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Transferencia bancaria">Transferencia bancaria</option>
+                        <option value="Nequi">Nequi</option>
+                        <option value="Daviplata">Daviplata</option>
+                      </select>
+                    </div>
+                    <div class="field span-2 contab-afecta-box" id="gas-wrap-afecta-caja">
+                      <label class="contab-afecta-check">
+                        <input type="checkbox" id="gas-afecta-caja" checked>
+                        <span>Este gasto salió del efectivo de la caja física abierta</span>
+                      </label>
+                      <p class="text-xs text-muted mt-1" id="gas-afecta-caja-help" style="margin-bottom:0">Si se pagó con billetes de la caja, déjela marcada para descontarlo del cierre.</p>
+                    </div>
+                    <div class="field span-2">
+                      <label for="gas-nota">Proveedor u observación (opcional)</label>
+                      <input class="input" id="gas-nota" type="text" placeholder="Nombre del proveedor o nota breve">
+                    </div>
+                    <input type="hidden" id="gas-responsable">
+                  </div>
+                  <div class="mt-3 flex justify-end">
+                    <button type="submit" class="btn btn-danger contab-submit-btn">Registrar gasto</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- PANEL 3: TRASLADO (5 campos) -->
+              <div id="panel-traslado" class="tab-panel" style="display:none">
+                <form id="form-traslado-contable" novalidate>
+                  <div class="contab-form-grid">
+                    <div class="field">
+                      <label for="tras-origen">Sale de <span class="text-danger">*</span></label>
+                      <select class="select" id="tras-origen" required>
+                        <option value="Caja física">Caja física (Efectivo)</option>
+                        <option value="Cuenta bancaria">Cuenta bancaria</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="tras-destino">Entra a <span class="text-danger">*</span></label>
+                      <select class="select" id="tras-destino" required>
+                        <option value="Cuenta bancaria">Cuenta bancaria</option>
+                        <option value="Caja física">Caja física (Efectivo)</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="tras-monto">Valor a trasladar ($) <span class="text-danger">*</span></label>
+                      <input class="input num" id="tras-monto" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 200,000" required>
+                    </div>
+                    <div class="field">
+                      <label for="tras-fecha">Fecha <span class="text-danger">*</span></label>
+                      <input class="input" id="tras-fecha" type="date" required>
+                    </div>
+                    <div class="field span-2">
+                      <label for="tras-nota">Observación (opcional)</label>
+                      <input class="input" id="tras-nota" type="text" placeholder="Detalle del traslado">
+                    </div>
+                  </div>
+                  <div class="mt-3 flex justify-end">
+                    <button type="submit" class="btn btn-primary contab-submit-btn">Registrar traslado</button>
+                  </div>
+                </form>
+              </div>
             </div>
+          </div>
+        </section>
+
+        <!-- BLOQUE 3: Historial de movimientos con buscador sencillo y botón "Ver todos" -->
+        <section id="contab-pane-movimientos">
+          <article class="card" id="seccion-historial-contable">
+            <div class="card-header">
+              <div>
+                <h3>Historial de movimientos</h3>
+                <span class="text-xs text-muted" id="contab-history-count">0 movimientos encontrados</span>
+              </div>
+              <button type="button" class="btn btn-primary" id="btn-ver-todo-contabilidad">Ver todos (<span id="contab-ver-todo-count">0</span>)</button>
+            </div>
+            <div class="card-body" style="padding: 1.25rem 1.25rem 1.35rem;">
+              <input type="hidden" id="contab-filter-tipo" value="Todos">
+              <input type="hidden" id="contab-filter-metodo" value="Todos">
+
+              <div class="contab-history-toolbar">
+                <div class="contab-quick-filters" id="contab-quick-filter-bar">
+                  <button type="button" class="contab-pill-btn active" data-qfilter="Todos">Todos</button>
+                  <button type="button" class="contab-pill-btn" data-qfilter="Ingresos">Ingresos</button>
+                  <button type="button" class="contab-pill-btn" data-qfilter="Gastos">Gastos</button>
+                  <button type="button" class="contab-pill-btn" data-qfilter="Efectivo">Efectivo</button>
+                  <button type="button" class="contab-pill-btn" data-qfilter="Transferencias">Transferencias</button>
+                </div>
+              </div>
+
+              <div class="contab-search-wrap" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: .85rem;">
+                <div class="field" style="flex: 2 1 280px; margin-bottom: 0;">
+                  <label for="contab-search" class="label">Buscar movimiento</label>
+                  <input class="input" id="contab-search" type="search" placeholder="Buscar por concepto, categoría o método...">
+                </div>
+                <div class="field" style="flex: 1 1 160px; margin-bottom: 0;">
+                  <label for="contab-filter-desde" class="label">Desde fecha</label>
+                  <input class="input" id="contab-filter-desde" type="date">
+                </div>
+                <div class="field" style="flex: 1 1 160px; margin-bottom: 0;">
+                  <label for="contab-filter-hasta" class="label">Hasta fecha</label>
+                  <input class="input" id="contab-filter-hasta" type="date">
+                </div>
+                <div style="flex: 0 0 auto;">
+                  <button type="button" class="btn btn-outline" id="btn-limpiar-filtros-contable" style="min-height:46px">Limpiar</button>
+                </div>
+              </div>
+            </div>
+
             <div class="table-wrap">
-              <table>
+              <table class="table contab-table">
                 <thead>
                   <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Concepto</th>
                     <th>Categoría</th>
-                    <th class="text-right">Cant.</th>
-                    <th class="text-right">Total</th>
-                    <th class="text-right">%</th>
-                  </tr>
-                </thead>
-                <tbody id="contab-rep-ingresos-cat"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Gastos por categoría (Gráfico visual + Tabla) -->
-          <div class="card">
-            <div class="card-header">
-              <h3 style="font-size:1.05rem">Gastos por categoría</h3>
-            </div>
-            <div class="card-body">
-              <div id="contab-chart-gastos-cat" class="contab-chart-list mb-3"></div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Categoría</th>
-                    <th class="text-right">Cant.</th>
-                    <th class="text-right">Total</th>
-                    <th class="text-right">%</th>
-                  </tr>
-                </thead>
-                <tbody id="contab-rep-gastos-cat"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Métodos de pago utilizados (Gráfico visual + Tabla) -->
-          <div class="card">
-            <div class="card-header">
-              <h3 style="font-size:1.05rem">Métodos de pago utilizados</h3>
-            </div>
-            <div class="card-body">
-              <div id="contab-chart-metodos" class="contab-chart-list mb-3"></div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
                     <th>Método</th>
-                    <th class="text-right">Entradas</th>
-                    <th class="text-right">Salidas</th>
-                    <th class="text-right">Neto</th>
+                    <th class="text-right">Valor</th>
+                    <th class="text-right">Acción</th>
                   </tr>
                 </thead>
-                <tbody id="contab-rep-metodos"></tbody>
+                <tbody id="contab-table-body"></tbody>
               </table>
             </div>
-          </div>
-        </div>
+            <div id="contab-tabla-footer" class="card-footer hidden" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.85rem 1.25rem;border-top:1px solid var(--border-color)">
+              <span class="text-sm text-muted" id="contab-tabla-footer-texto">Mostrando 12 de 0 movimientos</span>
+              <button type="button" class="btn btn-outline btn-sm" id="btn-ver-contabilidad-inferior">Ver todos (<span id="contab-inferior-count">0</span>)</button>
+            </div>
+          </article>
+        </section>
 
-        <!-- Evolución día por día -->
-        <div class="card">
-          <div class="card-header">
-            <h3 style="font-size:1.05rem">Resumen día por día de ingresos y gastos</h3>
-            <span class="badge badge-neutral" id="contab-rep-rango-label">Período completo</span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th class="text-right">Dinero que ingresó</th>
-                  <th class="text-right">Dinero que salió</th>
-                  <th class="text-right">Resultado del día</th>
-                </tr>
-              </thead>
-              <tbody id="contab-rep-evolucion"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- MODAL DE CONFIRMACIÓN CLARA ANTES DE GUARDAR (Sección 3.E) -->
-      <div class="modal-backdrop" id="modal-confirmar-contable" style="display:none">
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-confirmar-contable-title" style="max-width:520px">
-          <div class="modal-header">
-            <h3 id="modal-confirmar-contable-title" style="font-size:1.25rem">Confirmar registro</h3>
-            <button type="button" class="modal-close" id="btn-cerrar-confirmar-contable" aria-label="Cerrar">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p id="confirm-contable-pregunta" style="font-size:1.22rem;font-weight:800;color:var(--navy-900);margin:0 0 1rem;line-height:1.35">
-              ¿Desea registrar este movimiento?
-            </p>
-            <div id="confirm-contable-resumen" style="background:var(--navy-50);padding:1rem 1.15rem;border-radius:var(--radius-sm);border:1px solid var(--border);font-size:1rem;display:grid;gap:.45rem"></div>
-          </div>
-          <div class="modal-footer" style="gap:.85rem">
-            <button type="button" class="btn btn-secondary" id="btn-confirmar-no-contable" style="min-height:48px;font-size:1.02rem;padding:0 1.4rem">Cancelar</button>
-            <button type="button" class="btn btn-primary" id="btn-confirmar-si-contable" style="min-height:48px;font-size:1.05rem;font-weight:800;padding:0 1.6rem">Sí, registrar</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- MODAL DE DETALLE COMPLETO Y CORRECCIÓN / REVERSIÓN AUTORIZADA (Sección 9 y 14) -->
-      <div class="modal-backdrop" id="modal-detalle-contable" style="display:none">
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-detalle-contable-title" style="max-width:620px">
-          <div class="modal-header">
-            <h3 id="modal-detalle-contable-title" style="font-size:1.2rem">Detalle completo del movimiento</h3>
-            <button type="button" class="modal-close" id="btn-cerrar-detalle-contable" aria-label="Cerrar">&times;</button>
-          </div>
-          <div class="modal-body">
-            <div id="detalle-contable-contenido" style="font-size:1rem"></div>
-            <div id="detalle-contable-reversion-box" style="display:none;margin-top:1.15rem;padding-top:1rem;border-top:2px solid var(--border)">
-              <h4 style="margin:0 0 .45rem;font-size:1.05rem;color:var(--danger)">Corregir o revertir este movimiento (Solo Administrador)</h4>
-              <p class="text-sm text-muted mb-2" style="font-size:.94rem">
-                Por seguridad contable, ningún movimiento se borra del historial. Si hubo un error al anotar este registro, escriba el motivo para marcarlo como <b>Revertido</b> y descontarlo de los totales.
-              </p>
-              <div class="field mb-2">
-                <label for="rev-contable-motivo" style="font-weight:700">Motivo de la corrección o reversión <span class="text-danger">*</span></label>
-                <input class="input" id="rev-contable-motivo" type="text" placeholder="Ejemplo: Se anotó el valor equivocado en la factura" style="min-height:44px;font-size:1rem">
+        <!-- MODAL: HISTORIAL COMPLETO DE MOVIMIENTOS -->
+        <div class="modal-overlay" id="modal-contabilidad-completo" role="dialog" aria-modal="true" aria-labelledby="modal-contab-titulo">
+          <div class="modal modal-catalogo-lg">
+            <div class="modal-header">
+              <div>
+                <h3 id="modal-contab-titulo">Todos los movimientos contables</h3>
+                <span class="text-sm text-muted" id="modal-contab-contador">0 movimientos encontrados</span>
               </div>
-              <button type="button" class="btn btn-danger" id="btn-confirmar-reversion-contable" style="min-height:46px;font-size:.98rem;font-weight:700">Confirmar reversión del movimiento</button>
+              <button type="button" class="modal-close" data-close-modal="modal-contabilidad-completo" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="cat-modal-searchbar" style="margin-bottom: 1rem;">
+              <div class="contab-quick-filters" id="modal-contab-quick-bar" style="margin:0">
+                <button type="button" class="contab-pill-btn active" data-modal-contab-qfilter="Todos">Todos</button>
+                <button type="button" class="contab-pill-btn" data-modal-contab-qfilter="Ingresos">Ingresos</button>
+                <button type="button" class="contab-pill-btn" data-modal-contab-qfilter="Gastos">Gastos</button>
+                <button type="button" class="contab-pill-btn" data-modal-contab-qfilter="Efectivo">Efectivo</button>
+                <button type="button" class="contab-pill-btn" data-modal-contab-qfilter="Transferencias">Transferencias</button>
+              </div>
+              <input class="input" id="buscar-contabilidad-modal" type="search" placeholder="Buscar movimiento por concepto, categoría o método..." style="flex:2 1 240px;min-height:44px">
+              <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+                <label for="modal-contab-desde" class="text-sm" style="font-weight:700">Desde</label>
+                <input class="input" id="modal-contab-desde" type="date" style="width:auto;min-height:44px">
+                <label for="modal-contab-hasta" class="text-sm" style="font-weight:700">Hasta</label>
+                <input class="input" id="modal-contab-hasta" type="date" style="width:auto;min-height:44px">
+              </div>
+            </div>
+            <div class="cat-modal-body">
+              <div class="cat-modal-grid-wrap">
+                <div class="table-wrap">
+                  <table class="table contab-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Tipo</th>
+                        <th>Concepto</th>
+                        <th>Categoría</th>
+                        <th>Método</th>
+                        <th class="text-right">Valor</th>
+                        <th class="text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody id="contab-table-body-modal"></tbody>
+                  </table>
+                </div>
+              </div>
+              <aside class="cat-modal-sidebar">
+                <div style="display:grid;gap:.75rem">
+                  <h4 style="margin:0;font-size:1rem">Resumen de la vista</h4>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm text-muted">Movimientos:</span>
+                    <strong class="num" id="modal-contab-res-total">0</strong>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm text-muted">Ingresos:</span>
+                    <strong class="num text-success" id="modal-contab-res-ingresos">$ 0</strong>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm text-muted">Gastos:</span>
+                    <strong class="num text-danger" id="modal-contab-res-gastos">$ 0</strong>
+                  </div>
+                  <div class="flex justify-between items-center" style="border-top:1px dashed var(--border-color);padding-top:.5rem">
+                    <span class="text-sm text-muted">Resultado:</span>
+                    <strong class="num" id="modal-contab-res-resultado">$ 0</strong>
+                  </div>
+                </div>
+              </aside>
+            </div>
+            <div class="modal-footer cat-modal-footer">
+              <button type="button" class="btn btn-primary" data-close-modal="modal-contabilidad-completo">Cerrar</button>
             </div>
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" id="btn-cerrar-detalle-contable-2" style="min-height:46px;font-size:1rem">Cerrar ventana</button>
+        </div>
+
+        <!-- MODAL DE CONFIRMACIÓN -->
+        <div class="modal-overlay" id="modal-confirmar-contable" role="dialog" aria-modal="true" aria-labelledby="modal-confirmar-contable-title">
+          <div class="modal" style="max-width:480px">
+            <div class="modal-header">
+              <h3 id="modal-confirmar-contable-title">Confirmar registro</h3>
+              <button type="button" class="modal-close" id="btn-cerrar-confirmar-contable" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p id="confirm-contable-pregunta" style="font-size:1.12rem;font-weight:800;margin:0 0 .85rem"></p>
+              <div id="confirm-contable-resumen" style="background:var(--bg-subtle);padding:.9rem 1rem;border-radius:var(--radius-sm);border:1px solid var(--border-color);display:grid;gap:.4rem"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline" id="btn-confirmar-no-contable">Cancelar</button>
+              <button type="button" class="btn btn-primary" id="btn-confirmar-si-contable">Sí, registrar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODAL DE DETALLE Y REVERSIÓN -->
+        <div class="modal-overlay" id="modal-detalle-contable" role="dialog" aria-modal="true" aria-labelledby="modal-detalle-contable-title">
+          <div class="modal" style="max-width:560px">
+            <div class="modal-header">
+              <h3 id="modal-detalle-contable-title">Detalle del movimiento</h3>
+              <button type="button" class="modal-close" id="btn-cerrar-detalle-contable" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div id="detalle-contable-contenido"></div>
+              <div id="detalle-contable-reversion-box" style="display:none;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border-color)">
+                <div class="field mb-2">
+                  <label for="rev-contable-motivo" style="font-weight:700">Motivo de la corrección o reversión <span class="text-danger">*</span></label>
+                  <input class="input" id="rev-contable-motivo" type="text" placeholder="Ej: Se anotó el valor equivocado">
+                </div>
+                <button type="button" class="btn btn-danger" id="btn-confirmar-reversion-contable">Confirmar reversión</button>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline" id="btn-cerrar-detalle-contable-2">Cerrar</button>
+            </div>
           </div>
         </div>
       </div>
-  </template>
+    </template>
   <template id="tpl-reportes">
-      <!-- VISTA: Consultas y Reportes · Los 11 reportes obligatorios basados en datos reales (Sección 9) -->
-      <div class="view" data-view="reportes">
+<div class="view" data-view="reportes">
 
-        <!-- Filtros completos de consulta, exportación CSV e impresión PDF -->
-        <section class="card" style="margin-bottom:1.25rem">
-          <form class="card-body form-grid" id="form-filtro-reportes" style="margin:0; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
-            <div class="field">
-              <label class="label" for="rep-desde">Fecha inicial</label>
-              <input class="input" id="rep-desde" type="date">
+        <!-- Barra superior limpia de período y acciones -->
+        <section class="card" style="margin-bottom:1.5rem">
+          <form class="card-body rep-filter-bar" id="form-filtro-reportes">
+            <input type="hidden" id="rep-csv-tipo" value="ventas_periodo">
+            <div class="rep-period-pills" id="rep-period-pills" role="group" aria-label="Períodos rápidos">
+              <button type="button" class="btn btn-outline btn-sm rep-period-btn" data-rep-rango="hoy">Hoy</button>
+              <button type="button" class="btn btn-outline btn-sm rep-period-btn" data-rep-rango="semana">Esta semana</button>
+              <button type="button" class="btn btn-outline btn-sm rep-period-btn" data-rep-rango="mes">Este mes</button>
+              <button type="button" class="btn btn-primary btn-sm rep-period-btn active" data-rep-rango="todos">Todo el historial</button>
             </div>
-            <div class="field">
-              <label class="label" for="rep-hasta">Fecha final</label>
-              <input class="input" id="rep-hasta" type="date">
+            <div class="rep-date-group">
+              <div class="field" style="margin-bottom:0;min-width:170px">
+                <label class="label" for="rep-desde">Fecha inicial</label>
+                <input class="input" id="rep-desde" type="date">
+              </div>
+              <div class="field" style="margin-bottom:0;min-width:170px">
+                <label class="label" for="rep-hasta">Fecha final</label>
+                <input class="input" id="rep-hasta" type="date">
+              </div>
             </div>
-            <div class="field">
-              <label class="label" for="rep-producto">Producto</label>
-              <select class="select" id="rep-producto">
-                <option value="Todos">Todos los productos</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label" for="rep-categoria">Categoría</label>
-              <select class="select" id="rep-categoria">
-                <option value="Todas">Todas las categorías</option>
-                <option value="Vidrios">Vidrios</option>
-                <option value="Perfiles">Perfiles</option>
-                <option value="Accesorios">Accesorios</option>
-                <option value="Insumos">Insumos</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label" for="rep-metodo">Método de pago</label>
-              <select class="select" id="rep-metodo">
-                <option value="Todos">Todos</option>
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Tarjeta débito">Tarjeta débito</option>
-                <option value="Tarjeta crédito">Tarjeta crédito</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label" for="rep-estado">Estado de venta</label>
-              <select class="select" id="rep-estado">
-                <option value="Todos">Todos</option>
-                <option value="Completada">Completada</option>
-                <option value="Devuelta">Devuelta</option>
-                <option value="Anulada">Anulada</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label" for="rep-usuario">Usuario responsable</label>
-              <input class="input" id="rep-usuario" placeholder="Todos">
-            </div>
-            <div class="field">
-              <label class="label" for="rep-csv-tipo">Reporte a exportar (CSV)</label>
-              <select class="select" id="rep-csv-tipo">
-                <option value="ventas_periodo">1. Ventas por período</option>
-                <option value="detalle_ventas">2. Detalle de ventas</option>
-                <option value="mas_vendidos">3. Productos más vendidos</option>
-                <option value="inventario_actual">4. Inventario actual</option>
-                <option value="stock_bajo">5. Productos con stock bajo</option>
-                <option value="movimientos_inventario">6. Movimientos de inventario</option>
-                <option value="ingresos_gastos">7. Ingresos y gastos</option>
-                <option value="metodos_pago">8. Métodos de pago</option>
-                <option value="cierres_caja">9. Cierres de caja</option>
-                <option value="diferencias_efectivo">10. Diferencias de efectivo</option>
-                <option value="anulaciones_devoluciones">11. Anulaciones y devoluciones</option>
-              </select>
-            </div>
-            <div class="field full" style="display:flex; justify-content:flex-end; gap:.5rem; flex-wrap:wrap">
-              <button type="submit" class="btn btn-outline">Aplicar filtros</button>
+            <div class="rep-filter-actions">
+              <button type="button" class="btn btn-outline" id="btn-rep-limpiar-fechas">Limpiar fechas</button>
               <button type="button" class="btn btn-outline" id="btn-exportar-csv">Exportar CSV</button>
               <button type="button" class="btn btn-primary" id="btn-imprimir">Imprimir / PDF</button>
             </div>
           </form>
         </section>
 
-        <!-- Totales consolidados del periodo consultado -->
-        <div class="grid grid-4" style="margin-bottom:1.25rem">
+        <!-- Totales consolidados del período consultado -->
+        <div class="grid grid-4" style="margin-bottom:1.75rem">
           <article class="kpi">
             <div class="kpi-label">Ventas efectivas del período</div>
             <p class="kpi-value num" id="rep-total-ventas">$ 0</p>
@@ -2288,11 +1923,21 @@
           </article>
         </div>
 
-        <!-- 1 y 3. Ventas por período y Productos más vendidos -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
+        <!-- Barra de botones grandes de un solo clic para elegir reporte -->
+        <div class="rep-tabs" role="tablist" aria-label="Tipo de reporte">
+          <button type="button" class="btn btn-primary rep-tab-btn" data-rep-btn="ventas_periodo" aria-pressed="true">Ventas del período</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="mas_vendidos" aria-pressed="false">Productos más vendidos</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="inventario_actual" aria-pressed="false">Inventario y Stock bajo</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="movimientos_inventario" aria-pressed="false">Movimientos de bodega (Kardex)</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="ingresos_gastos" aria-pressed="false">Ingresos, Gastos y Pagos</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="cierres_caja" aria-pressed="false">Cierres de caja y Devoluciones</button>
+        </div>
+
+        <div class="rep-panels-stack">
+          <!-- Ventas por día -->
+          <section class="card" data-rep-panel="ventas_periodo">
             <div class="card-header">
-              <h3>1. Ventas por período</h3>
+              <h3>Ventas por día</h3>
               <span class="badge">Agrupado por día</span>
             </div>
             <div class="table-wrap">
@@ -2305,9 +1950,26 @@
             </div>
           </section>
 
-          <section class="card">
+          <!-- Detalle de líneas de venta -->
+          <section class="card" data-rep-panel="ventas_periodo">
             <div class="card-header">
-              <h3>3. Productos más vendidos</h3>
+              <h3>Detalle de líneas de venta</h3>
+              <span class="badge" id="rep-detalle-count">0 líneas</span>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Venta</th><th>Fecha</th><th>Cliente</th><th>Producto / Medidas</th><th class="num">Cant.</th><th class="num">Subtotal</th><th>Estado</th></tr></thead>
+                <tbody id="rep-tabla-detalle-ventas">
+                  <tr><td colspan="7" class="text-muted" style="text-align:center; padding:1.25rem">No hay detalle de ventas para mostrar.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Productos más vendidos -->
+          <section class="card hidden" data-rep-panel="mas_vendidos">
+            <div class="card-header">
+              <h3>Productos más vendidos</h3>
               <span class="badge">Ranking comercial</span>
             </div>
             <div class="table-wrap">
@@ -2319,29 +1981,27 @@
               </table>
             </div>
           </section>
-        </div>
 
-        <!-- 2. Detalle de ventas -->
-        <section class="card" style="margin-bottom:1.25rem">
-          <div class="card-header">
-            <h3>2. Detalle de líneas de venta</h3>
-            <span class="badge" id="rep-detalle-count">0 líneas</span>
-          </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>Venta</th><th>Fecha</th><th>Cliente</th><th>Producto / Medidas</th><th class="num">Cant.</th><th class="num">Subtotal</th><th>Estado</th></tr></thead>
-              <tbody id="rep-tabla-detalle-ventas">
-                <tr><td colspan="7" class="text-muted" style="text-align:center; padding:1.25rem">No hay detalle de ventas para mostrar.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- 4 y 5. Inventario actual y Productos con stock bajo -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
+          <!-- Productos con stock bajo o agotados -->
+          <section class="card hidden" data-rep-panel="inventario_actual">
             <div class="card-header">
-              <h3>4. Inventario actual valorizado</h3>
+              <h3>Productos con stock bajo o agotados</h3>
+              <span class="badge badge-warning" id="rep-bajo-count">0 alertas</span>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Código</th><th>Producto</th><th class="num">Stock</th><th class="num">Mínimo</th><th>Estado</th></tr></thead>
+                <tbody id="rep-tabla-stock-bajo">
+                  <tr><td colspan="5" class="text-muted" style="text-align:center; padding:1.25rem">No hay productos con stock bajo o agotado.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Inventario actual valorizado -->
+          <section class="card hidden" data-rep-panel="inventario_actual">
+            <div class="card-header">
+              <h3>Inventario actual valorizado</h3>
               <span class="badge" id="rep-inv-count">0 productos</span>
             </div>
             <div class="table-wrap">
@@ -2354,27 +2014,26 @@
             </div>
           </section>
 
-          <section class="card">
+          <!-- Movimientos de inventario (Kardex) -->
+          <section class="card hidden" data-rep-panel="movimientos_inventario">
             <div class="card-header">
-              <h3>5. Productos con stock bajo o agotados</h3>
-              <span class="badge badge-warning" id="rep-bajo-count">0 alertas</span>
+              <h3>Movimientos de inventario del período</h3>
+              <span class="badge" id="rep-mov-inv-count">0 movimientos</span>
             </div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>Código</th><th>Producto</th><th class="num">Stock</th><th class="num">Mínimo</th><th>Estado</th></tr></thead>
-                <tbody id="rep-tabla-stock-bajo">
-                  <tr><td colspan="5" class="text-muted" style="text-align:center; padding:1.25rem">No hay productos con stock bajo o agotado.</td></tr>
+                <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo / Origen</th><th class="num">Cantidad</th><th class="num">Saldo stock</th><th>Motivo</th><th>Usuario</th></tr></thead>
+                <tbody id="rep-tabla-mov-inventario">
+                  <tr><td colspan="7" class="text-muted" style="text-align:center; padding:1.25rem">No hay movimientos de inventario en el período.</td></tr>
                 </tbody>
               </table>
             </div>
           </section>
-        </div>
 
-        <!-- 7 y 8. Ingresos/Gastos por categoría y Métodos de pago -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
+          <!-- Ingresos y gastos por categoría -->
+          <section class="card hidden" data-rep-panel="ingresos_gastos">
             <div class="card-header">
-              <h3>7. Ingresos y gastos por categoría</h3>
+              <h3>Ingresos y gastos por categoría</h3>
               <span class="badge">Contabilidad</span>
             </div>
             <div class="table-wrap">
@@ -2387,9 +2046,10 @@
             </div>
           </section>
 
-          <section class="card">
+          <!-- Distribución por método de pago -->
+          <section class="card hidden" data-rep-panel="ingresos_gastos">
             <div class="card-header">
-              <h3>8. Distribución por método de pago</h3>
+              <h3>Distribución por método de pago</h3>
               <span class="badge">Ventas efectivas</span>
             </div>
             <div class="table-wrap">
@@ -2401,13 +2061,11 @@
               </table>
             </div>
           </section>
-        </div>
 
-        <!-- 9, 10 y 11. Cierres de caja, Diferencias de efectivo y Anulaciones/Devoluciones -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
+          <!-- Historial de cierres de caja y diferencias -->
+          <section class="card hidden" data-rep-panel="cierres_caja">
             <div class="card-header">
-              <h3>9 y 10. Historial de cierres de caja y diferencias</h3>
+              <h3>Historial de cierres de caja y diferencias</h3>
               <span class="badge" id="rep-cierres-count">0 cierres</span>
             </div>
             <div class="table-wrap">
@@ -2420,9 +2078,10 @@
             </div>
           </section>
 
-          <section class="card">
+          <!-- Anulaciones y devoluciones -->
+          <section class="card hidden" data-rep-panel="cierres_caja">
             <div class="card-header">
-              <h3>11. Anulaciones y devoluciones</h3>
+              <h3>Anulaciones y devoluciones</h3>
               <span class="badge" id="rep-anulaciones-count">0 registros</span>
             </div>
             <div class="table-wrap">
@@ -2436,27 +2095,37 @@
           </section>
         </div>
 
-        <!-- 6. Movimientos de inventario (Kardex) -->
-        <section class="card">
-          <div class="card-header">
-            <h3>6. Movimientos de inventario del período</h3>
-            <span class="badge" id="rep-mov-inv-count">0 movimientos</span>
+        <!-- MODAL: TODOS LOS REGISTROS DE UN REPORTE -->
+        <div class="modal-overlay" id="modal-reporte-completo" role="dialog" aria-modal="true" aria-labelledby="modal-rep-titulo">
+          <div class="modal modal-catalogo-lg" style="max-width: 1280px; width: 96vw; height: 86vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+              <div>
+                <h3 id="modal-rep-titulo">Todos los registros</h3>
+                <span class="text-sm text-muted" id="modal-rep-contador">0 registros encontrados</span>
+              </div>
+              <button type="button" class="modal-close" data-close-rep-modal aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="cat-modal-searchbar">
+              <input class="input" id="buscar-reporte-modal" type="search" placeholder="Buscar dentro de esta tabla..." style="flex:1;min-width:240px;min-height:46px">
+            </div>
+            <div class="cat-modal-body" style="flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; padding: 0 1.25rem 1rem;">
+              <div class="table-wrap" style="flex:1; overflow-y:auto;">
+                <table class="table">
+                  <thead id="modal-rep-thead"></thead>
+                  <tbody id="modal-rep-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="modal-footer cat-modal-footer">
+              <button type="button" class="btn btn-primary" data-close-rep-modal>Cerrar</button>
+            </div>
           </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo / Origen</th><th class="num">Cantidad</th><th class="num">Saldo stock</th><th>Motivo</th><th>Usuario</th></tr></thead>
-              <tbody id="rep-tabla-mov-inventario">
-                <tr><td colspan="7" class="text-muted" style="text-align:center; padding:1.25rem">No hay movimientos de inventario en el período.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+        </div>
 
       </div>
-  </template>
+    </template>
   <template id="tpl-usuarios">
-      <!-- VISTA: Usuarios y Seguridad (Sección 10 · Control de roles, activación y auditoría) -->
-      <div class="view" data-view="usuarios">
+<div class="view" data-view="usuarios">
         <div class="page-header">
           <div>
             <h2>Usuarios y control de acceso</h2>
@@ -2488,34 +2157,6 @@
           </div>
         </section>
 
-        <div class="alert alert-info" style="margin-top:1.25rem">
-          <b>Seguridad y roles (Firebase Authentication):</b> las contraseñas nunca se almacenan en documentos de Firestore.
-          Roles disponibles: <b>Administrador</b> (acceso total), <b>Cajero</b> (apertura/cierre de caja y ventas), <b>Inventario</b> (productos y bodega) y <b>Contabilidad</b> (ingresos, gastos y reportes).
-        </div>
-
-        <!-- Bitácora de actividad relevante y auditoría -->
-        <section class="card" style="margin-top:1.25rem">
-          <div class="card-header">
-            <h3>Actividad relevante del sistema (Auditoría)</h3>
-            <span class="badge" id="usr-auditoria-count">0 eventos</span>
-          </div>
-          <div class="table-wrap">
-            <table class="table" id="tabla-auditoria">
-              <thead>
-                <tr>
-                  <th>Fecha y hora</th>
-                  <th>Operación</th>
-                  <th>Usuario</th>
-                  <th>Detalle de trazabilidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td colspan="4" class="text-muted" style="text-align:center; padding:1.5rem">No hay eventos de auditoría registrados.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
         <!-- Modal: crear o editar usuario -->
         <div class="modal-overlay" id="modal-usuario" role="dialog" aria-modal="true" aria-labelledby="titulo-usuario">
           <div class="modal">
@@ -2534,9 +2175,6 @@
                 <div class="field">
                   <label class="label" for="usr-rol">Rol del sistema *</label>
                   <select class="select" id="usr-rol">
-                    <option value="Cajero">Cajero</option>
-                    <option value="Inventario">Inventario</option>
-                    <option value="Contabilidad">Contabilidad</option>
                     <option value="Empleado">Empleado general</option>
                     <option value="Administrador">Administrador</option>
                   </select>
@@ -2547,6 +2185,10 @@
                     <option value="activo">Activo</option>
                     <option value="inactivo">Inactivo (acceso bloqueado)</option>
                   </select>
+                </div>
+                <div class="field full">
+                  <label class="label" for="usr-clave">Clave / PIN de acceso (opcional, mín. 4 caracteres)</label>
+                  <input class="input" id="usr-clave" type="password" minlength="4" autocomplete="new-password" placeholder="Dejar vacío para mantener la actual">
                 </div>
                 <div class="field full">
                   <div id="usr-error" class="alert alert-danger hidden"></div>

@@ -90,13 +90,15 @@ export function watchClientes(callback) {
 
 export function buscarClientes(termino = "", lista = null) {
   const q = String(termino || "").trim().toLowerCase();
+  const qDigits = q.replace(/\D+/g, "");
   const todos = Array.isArray(lista) ? lista : listarClientes();
   if (!q) return todos;
   return todos.filter(
     (c) =>
       String(c.nombre || "").toLowerCase().includes(q) ||
       String(c.documento || "").toLowerCase().includes(q) ||
-      String(c.telefono || "").toLowerCase().includes(q)
+      String(c.telefono || "").toLowerCase().includes(q) ||
+      (qDigits && String(c.telefono || "").replace(/\D+/g, "").includes(qDigits))
   );
 }
 
@@ -107,8 +109,12 @@ export async function crearCliente(
   assertPermission("clientes.crear", user);
   const nom = String(nombre || "").trim();
   const docId = String(documento || "").trim();
+  const telLimpio = String(telefono || "").replace(/\D+/g, "");
   if (!nom || !docId) {
     throw new Error("El nombre y el documento del cliente son obligatorios.");
+  }
+  if (telLimpio.length > 0 && (telLimpio.length < 7 || telLimpio.length > 10)) {
+    throw new Error("El teléfono debe tener entre 7 y 10 dígitos numéricos.");
   }
 
   return runAtomicTransaction(async (tx) => {
@@ -120,7 +126,7 @@ export async function crearCliente(
       nombre: nom,
       documento: docId,
       tipoDocumento: String(tipoDocumento || "").trim(),
-      telefono: String(telefono || "").trim(),
+      telefono: telLimpio,
       esConsumidorFinal: false,
       saldoAFavorDisponible: 0,
       saldoAFavorGeneradoTotal: 0,

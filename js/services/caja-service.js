@@ -25,11 +25,15 @@ import {
 } from "./inventario-service.js";
 import { TIPOS_CONTABLE } from "./contabilidad-service.js";
 
-export const METODOS_PAGO = [
+export const METODOS_PAGO_VISIBLES = [
   "Efectivo",
   "Transferencia",
   "Nequi",
-  "Daviplata",
+  "Daviplata"
+];
+
+export const METODOS_PAGO = [
+  ...METODOS_PAGO_VISIBLES,
   "Tarjeta débito",
   "Tarjeta crédito"
 ];
@@ -465,6 +469,9 @@ export async function registrarVenta(
   user = getCurrentUser()
 ) {
   assertPermission("ventas.registrar", user);
+  if (clienteId === "" || clienteId === null) {
+    throw new Error("Debes seleccionar o registrar un cliente antes de cobrar la venta.");
+  }
 
   // Protección de idempotencia contra doble clic o reintentos de red
   if (idempotencyKey) {
@@ -1891,10 +1898,19 @@ export function filtrarHistorialVentas(
       return false;
     }
     if (q) {
-      const matchNum = String(v.numero || "").toLowerCase().includes(q);
-      const matchCli = String(v.cliente?.nombre || "").toLowerCase().includes(q) || String(v.cliente?.documento || "").toLowerCase().includes(q);
+      const qDigits = q.replace(/\D+/g, "");
+      const numDigits = String(v.numero || "").replace(/\D+/g, "");
+      const matchNum =
+        String(v.numero || "").toLowerCase().includes(q) ||
+        (qDigits && (numDigits.includes(qDigits) || Number.parseInt(numDigits, 10) === Number.parseInt(qDigits, 10)));
+      const matchCli =
+        String(v.cliente?.nombre || "").toLowerCase().includes(q) ||
+        String(v.cliente?.documento || "").toLowerCase().includes(q);
+      const matchMetodoEstado =
+        String(v.metodoPago || "").toLowerCase().includes(q) ||
+        String(v.estado || "").toLowerCase().includes(q);
       const matchUsr = String(v.vendedor || "").toLowerCase().includes(q);
-      if (!matchNum && !matchCli && !matchUsr) return false;
+      if (!matchNum && !matchCli && !matchMetodoEstado && !matchUsr) return false;
     }
     return true;
   });

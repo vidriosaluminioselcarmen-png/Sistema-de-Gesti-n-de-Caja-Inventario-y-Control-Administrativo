@@ -112,6 +112,7 @@
 .topbar-title h1 { margin: 0; font-size: 1.35rem; color: var(--text-primary); }
 .topbar-title p { margin: 0; font-size: .88rem; color: var(--text-secondary); }
 .topbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
+#firebase-status-badge { display: none !important; }
 .topbar-date { font-size: .88rem; color: var(--text-secondary); font-weight: 500; }
 
 .theme-toggle-btn {

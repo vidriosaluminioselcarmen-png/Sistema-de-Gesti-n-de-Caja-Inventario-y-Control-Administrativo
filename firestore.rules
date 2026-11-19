@@ -27,11 +27,11 @@ service cloud.firestore {
     }
 
     function canManageInventory() {
-      return isActiveUser() && userRole() in ['Administrador', 'Inventario', 'Empleado'];
+      return isActiveUser() && userRole() in ['Administrador', 'Inventario'];
     }
 
     function canManageAccounting() {
-      return isActiveUser() && userRole() in ['Administrador', 'Contabilidad', 'Empleado'];
+      return isActiveUser() && userRole() in ['Administrador', 'Contabilidad'];
     }
 
     // Denegar por defecto cualquier ruta no declarada explícitamente

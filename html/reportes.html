@@ -30,11 +30,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span class="nav-text">Dashboard</span></a></li>
         <li><a class="nav-link" href="caja.html" data-route="caja" title="Caja y Ventas">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="nav-text">Caja y Ventas</span></a></li>
-        <li><a class="nav-link" href="inventario.html" data-route="inventario" title="Inventario">
+        <li data-role="admin"><a class="nav-link" href="inventario.html" data-route="inventario" title="Inventario">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg><span class="nav-text">Inventario</span></a></li>
-        <li><a class="nav-link" href="contabilidad.html" data-route="contabilidad" title="Contabilidad">
+        <li data-role="admin"><a class="nav-link" href="contabilidad.html" data-route="contabilidad" title="Contabilidad">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span class="nav-text">Contabilidad</span></a></li>
-        <li><a class="nav-link active" href="reportes.html" data-route="reportes" title="Consultas y Reportes">
+        <li data-role="admin"><a class="nav-link active" href="reportes.html" data-route="reportes" title="Consultas y Reportes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span class="nav-text">Reportes</span></a></li>
         <li data-role="admin"><a class="nav-link" href="usuarios.html" data-route="usuarios" title="Usuarios">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span class="nav-text">Usuarios</span></a></li>
@@ -67,85 +67,39 @@
     </header>
 
     <main id="app-root">
-      <!-- VISTA: Consultas y Reportes · Los 11 reportes obligatorios basados en datos reales (Sección 9) -->
+      <!-- VISTA: Consultas y Reportes -->
       <div class="view" data-view="reportes">
 
-        <!-- Filtros completos de consulta, exportación CSV e impresión PDF -->
-        <section class="card" style="margin-bottom:1.25rem">
-          <form class="card-body form-grid" id="form-filtro-reportes" style="margin:0; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
-            <div class="field">
-              <label class="label" for="rep-desde">Fecha inicial</label>
-              <input class="input" id="rep-desde" type="date">
+        <!-- Barra superior limpia de período y acciones -->
+        <section class="card" style="margin-bottom:1.5rem">
+          <form class="card-body rep-filter-bar" id="form-filtro-reportes">
+            <input type="hidden" id="rep-csv-tipo" value="ventas_periodo">
+            <div class="rep-period-pills" id="rep-period-pills" role="group" aria-label="Períodos rápidos">
+              <button type="button" class="btn btn-outline btn-sm rep-period-btn" data-rep-rango="hoy">Hoy</button>
+              <button type="button" class="btn btn-outline btn-sm rep-period-btn" data-rep-rango="semana">Esta semana</button>
+              <button type="button" class="btn btn-outline btn-sm rep-period-btn" data-rep-rango="mes">Este mes</button>
+              <button type="button" class="btn btn-primary btn-sm rep-period-btn active" data-rep-rango="todos">Todo el historial</button>
             </div>
-            <div class="field">
-              <label class="label" for="rep-hasta">Fecha final</label>
-              <input class="input" id="rep-hasta" type="date">
+            <div class="rep-date-group">
+              <div class="field" style="margin-bottom:0;min-width:170px">
+                <label class="label" for="rep-desde">Fecha inicial</label>
+                <input class="input" id="rep-desde" type="date">
+              </div>
+              <div class="field" style="margin-bottom:0;min-width:170px">
+                <label class="label" for="rep-hasta">Fecha final</label>
+                <input class="input" id="rep-hasta" type="date">
+              </div>
             </div>
-            <div class="field">
-              <label class="label" for="rep-producto">Producto</label>
-              <select class="select" id="rep-producto">
-                <option value="Todos">Todos los productos</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label" for="rep-categoria">Categoría</label>
-              <select class="select" id="rep-categoria">
-                <option value="Todas">Todas las categorías</option>
-                <option value="Vidrios">Vidrios</option>
-                <option value="Perfiles">Perfiles</option>
-                <option value="Accesorios">Accesorios</option>
-                <option value="Insumos">Insumos</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label" for="rep-metodo">Método de pago</label>
-              <select class="select" id="rep-metodo">
-                <option value="Todos">Todos</option>
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Tarjeta débito">Tarjeta débito</option>
-                <option value="Tarjeta crédito">Tarjeta crédito</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label" for="rep-estado">Estado de venta</label>
-              <select class="select" id="rep-estado">
-                <option value="Todos">Todos</option>
-                <option value="Completada">Completada</option>
-                <option value="Devuelta">Devuelta</option>
-                <option value="Anulada">Anulada</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label" for="rep-usuario">Usuario responsable</label>
-              <input class="input" id="rep-usuario" placeholder="Todos">
-            </div>
-            <div class="field">
-              <label class="label" for="rep-csv-tipo">Reporte a exportar (CSV)</label>
-              <select class="select" id="rep-csv-tipo">
-                <option value="ventas_periodo">1. Ventas por período</option>
-                <option value="detalle_ventas">2. Detalle de ventas</option>
-                <option value="mas_vendidos">3. Productos más vendidos</option>
-                <option value="inventario_actual">4. Inventario actual</option>
-                <option value="stock_bajo">5. Productos con stock bajo</option>
-                <option value="movimientos_inventario">6. Movimientos de inventario</option>
-                <option value="ingresos_gastos">7. Ingresos y gastos</option>
-                <option value="metodos_pago">8. Métodos de pago</option>
-                <option value="cierres_caja">9. Cierres de caja</option>
-                <option value="diferencias_efectivo">10. Diferencias de efectivo</option>
-                <option value="anulaciones_devoluciones">11. Anulaciones y devoluciones</option>
-              </select>
-            </div>
-            <div class="field full" style="display:flex; justify-content:flex-end; gap:.5rem; flex-wrap:wrap">
-              <button type="submit" class="btn btn-outline">Aplicar filtros</button>
+            <div class="rep-filter-actions">
+              <button type="button" class="btn btn-outline" id="btn-rep-limpiar-fechas">Limpiar fechas</button>
               <button type="button" class="btn btn-outline" id="btn-exportar-csv">Exportar CSV</button>
               <button type="button" class="btn btn-primary" id="btn-imprimir">Imprimir / PDF</button>
             </div>
           </form>
         </section>
 
-        <!-- Totales consolidados del periodo consultado -->
-        <div class="grid grid-4" style="margin-bottom:1.25rem">
+        <!-- Totales consolidados del período consultado -->
+        <div class="grid grid-4" style="margin-bottom:1.75rem">
           <article class="kpi">
             <div class="kpi-label">Ventas efectivas del período</div>
             <p class="kpi-value num" id="rep-total-ventas">$ 0</p>
@@ -168,11 +122,21 @@
           </article>
         </div>
 
-        <!-- 1 y 3. Ventas por período y Productos más vendidos -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
+        <!-- Barra de botones grandes de un solo clic para elegir reporte -->
+        <div class="rep-tabs" role="tablist" aria-label="Tipo de reporte">
+          <button type="button" class="btn btn-primary rep-tab-btn" data-rep-btn="ventas_periodo" aria-pressed="true">Ventas del período</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="mas_vendidos" aria-pressed="false">Productos más vendidos</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="inventario_actual" aria-pressed="false">Inventario y Stock bajo</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="movimientos_inventario" aria-pressed="false">Movimientos de bodega (Kardex)</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="ingresos_gastos" aria-pressed="false">Ingresos, Gastos y Pagos</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="cierres_caja" aria-pressed="false">Cierres de caja y Devoluciones</button>
+        </div>
+
+        <div class="rep-panels-stack">
+          <!-- Ventas por día -->
+          <section class="card" data-rep-panel="ventas_periodo">
             <div class="card-header">
-              <h3>1. Ventas por período</h3>
+              <h3>Ventas por día</h3>
               <span class="badge">Agrupado por día</span>
             </div>
             <div class="table-wrap">
@@ -185,9 +149,26 @@
             </div>
           </section>
 
-          <section class="card">
+          <!-- Detalle de líneas de venta -->
+          <section class="card" data-rep-panel="ventas_periodo">
             <div class="card-header">
-              <h3>3. Productos más vendidos</h3>
+              <h3>Detalle de líneas de venta</h3>
+              <span class="badge" id="rep-detalle-count">0 líneas</span>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Venta</th><th>Fecha</th><th>Cliente</th><th>Producto / Medidas</th><th class="num">Cant.</th><th class="num">Subtotal</th><th>Estado</th></tr></thead>
+                <tbody id="rep-tabla-detalle-ventas">
+                  <tr><td colspan="7" class="text-muted" style="text-align:center; padding:1.25rem">No hay detalle de ventas para mostrar.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Productos más vendidos -->
+          <section class="card hidden" data-rep-panel="mas_vendidos">
+            <div class="card-header">
+              <h3>Productos más vendidos</h3>
               <span class="badge">Ranking comercial</span>
             </div>
             <div class="table-wrap">
@@ -199,29 +180,27 @@
               </table>
             </div>
           </section>
-        </div>
 
-        <!-- 2. Detalle de ventas -->
-        <section class="card" style="margin-bottom:1.25rem">
-          <div class="card-header">
-            <h3>2. Detalle de líneas de venta</h3>
-            <span class="badge" id="rep-detalle-count">0 líneas</span>
-          </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>Venta</th><th>Fecha</th><th>Cliente</th><th>Producto / Medidas</th><th class="num">Cant.</th><th class="num">Subtotal</th><th>Estado</th></tr></thead>
-              <tbody id="rep-tabla-detalle-ventas">
-                <tr><td colspan="7" class="text-muted" style="text-align:center; padding:1.25rem">No hay detalle de ventas para mostrar.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- 4 y 5. Inventario actual y Productos con stock bajo -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
+          <!-- Productos con stock bajo o agotados -->
+          <section class="card hidden" data-rep-panel="inventario_actual">
             <div class="card-header">
-              <h3>4. Inventario actual valorizado</h3>
+              <h3>Productos con stock bajo o agotados</h3>
+              <span class="badge badge-warning" id="rep-bajo-count">0 alertas</span>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Código</th><th>Producto</th><th class="num">Stock</th><th class="num">Mínimo</th><th>Estado</th></tr></thead>
+                <tbody id="rep-tabla-stock-bajo">
+                  <tr><td colspan="5" class="text-muted" style="text-align:center; padding:1.25rem">No hay productos con stock bajo o agotado.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Inventario actual valorizado -->
+          <section class="card hidden" data-rep-panel="inventario_actual">
+            <div class="card-header">
+              <h3>Inventario actual valorizado</h3>
               <span class="badge" id="rep-inv-count">0 productos</span>
             </div>
             <div class="table-wrap">
@@ -234,27 +213,26 @@
             </div>
           </section>
 
-          <section class="card">
+          <!-- Movimientos de inventario (Kardex) -->
+          <section class="card hidden" data-rep-panel="movimientos_inventario">
             <div class="card-header">
-              <h3>5. Productos con stock bajo o agotados</h3>
-              <span class="badge badge-warning" id="rep-bajo-count">0 alertas</span>
+              <h3>Movimientos de inventario del período</h3>
+              <span class="badge" id="rep-mov-inv-count">0 movimientos</span>
             </div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>Código</th><th>Producto</th><th class="num">Stock</th><th class="num">Mínimo</th><th>Estado</th></tr></thead>
-                <tbody id="rep-tabla-stock-bajo">
-                  <tr><td colspan="5" class="text-muted" style="text-align:center; padding:1.25rem">No hay productos con stock bajo o agotado.</td></tr>
+                <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo / Origen</th><th class="num">Cantidad</th><th class="num">Saldo stock</th><th>Motivo</th><th>Usuario</th></tr></thead>
+                <tbody id="rep-tabla-mov-inventario">
+                  <tr><td colspan="7" class="text-muted" style="text-align:center; padding:1.25rem">No hay movimientos de inventario en el período.</td></tr>
                 </tbody>
               </table>
             </div>
           </section>
-        </div>
 
-        <!-- 7 y 8. Ingresos/Gastos por categoría y Métodos de pago -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
+          <!-- Ingresos y gastos por categoría -->
+          <section class="card hidden" data-rep-panel="ingresos_gastos">
             <div class="card-header">
-              <h3>7. Ingresos y gastos por categoría</h3>
+              <h3>Ingresos y gastos por categoría</h3>
               <span class="badge">Contabilidad</span>
             </div>
             <div class="table-wrap">
@@ -267,9 +245,10 @@
             </div>
           </section>
 
-          <section class="card">
+          <!-- Distribución por método de pago -->
+          <section class="card hidden" data-rep-panel="ingresos_gastos">
             <div class="card-header">
-              <h3>8. Distribución por método de pago</h3>
+              <h3>Distribución por método de pago</h3>
               <span class="badge">Ventas efectivas</span>
             </div>
             <div class="table-wrap">
@@ -281,13 +260,11 @@
               </table>
             </div>
           </section>
-        </div>
 
-        <!-- 9, 10 y 11. Cierres de caja, Diferencias de efectivo y Anulaciones/Devoluciones -->
-        <div class="grid grid-2" style="margin-bottom:1.25rem">
-          <section class="card">
+          <!-- Historial de cierres de caja y diferencias -->
+          <section class="card hidden" data-rep-panel="cierres_caja">
             <div class="card-header">
-              <h3>9 y 10. Historial de cierres de caja y diferencias</h3>
+              <h3>Historial de cierres de caja y diferencias</h3>
               <span class="badge" id="rep-cierres-count">0 cierres</span>
             </div>
             <div class="table-wrap">
@@ -300,9 +277,10 @@
             </div>
           </section>
 
-          <section class="card">
+          <!-- Anulaciones y devoluciones -->
+          <section class="card hidden" data-rep-panel="cierres_caja">
             <div class="card-header">
-              <h3>11. Anulaciones y devoluciones</h3>
+              <h3>Anulaciones y devoluciones</h3>
               <span class="badge" id="rep-anulaciones-count">0 registros</span>
             </div>
             <div class="table-wrap">
@@ -316,21 +294,32 @@
           </section>
         </div>
 
-        <!-- 6. Movimientos de inventario (Kardex) -->
-        <section class="card">
-          <div class="card-header">
-            <h3>6. Movimientos de inventario del período</h3>
-            <span class="badge" id="rep-mov-inv-count">0 movimientos</span>
+        <!-- MODAL: TODOS LOS REGISTROS DE UN REPORTE -->
+        <div class="modal-overlay" id="modal-reporte-completo" role="dialog" aria-modal="true" aria-labelledby="modal-rep-titulo">
+          <div class="modal modal-catalogo-lg" style="max-width: 1280px; width: 96vw; height: 86vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+              <div>
+                <h3 id="modal-rep-titulo">Todos los registros</h3>
+                <span class="text-sm text-muted" id="modal-rep-contador">0 registros encontrados</span>
+              </div>
+              <button type="button" class="modal-close" data-close-rep-modal aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="cat-modal-searchbar">
+              <input class="input" id="buscar-reporte-modal" type="search" placeholder="Buscar dentro de esta tabla..." style="flex:1;min-width:240px;min-height:46px">
+            </div>
+            <div class="cat-modal-body" style="flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; padding: 0 1.25rem 1rem;">
+              <div class="table-wrap" style="flex:1; overflow-y:auto;">
+                <table class="table">
+                  <thead id="modal-rep-thead"></thead>
+                  <tbody id="modal-rep-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="modal-footer cat-modal-footer">
+              <button type="button" class="btn btn-primary" data-close-rep-modal>Cerrar</button>
+            </div>
           </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo / Origen</th><th class="num">Cantidad</th><th class="num">Saldo stock</th><th>Motivo</th><th>Usuario</th></tr></thead>
-              <tbody id="rep-tabla-mov-inventario">
-                <tr><td colspan="7" class="text-muted" style="text-align:center; padding:1.25rem">No hay movimientos de inventario en el período.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+        </div>
 
       </div>
     </main>

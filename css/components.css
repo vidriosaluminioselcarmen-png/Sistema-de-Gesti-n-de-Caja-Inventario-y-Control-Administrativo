@@ -48,8 +48,7 @@
 /* ---------- Formularios (>= 44px, etiquetas siempre visibles) ---------- */
 .form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 1200px) {
-  .card-body .form-grid:not(.cart-pay-grid),
-  .contab-form-accessible .form-grid {
+  .form-grid-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -91,7 +90,8 @@
 .table th:last-child  { border-top-right-radius: var(--radius-sm); }
 .table td { padding: .85rem 1rem; border-bottom: 1px solid var(--border-color); color: var(--text-primary); vertical-align: middle; }
 .table tbody tr:hover { background: var(--bg-subtle); }
-.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.table th.num,
+.table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------- Etiquetas ---------- */
 .badge {

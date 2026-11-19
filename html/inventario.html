@@ -30,11 +30,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span class="nav-text">Dashboard</span></a></li>
         <li><a class="nav-link" href="caja.html" data-route="caja" title="Caja y Ventas">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="nav-text">Caja y Ventas</span></a></li>
-        <li><a class="nav-link active" href="inventario.html" data-route="inventario" title="Inventario">
+        <li data-role="admin"><a class="nav-link active" href="inventario.html" data-route="inventario" title="Inventario">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg><span class="nav-text">Inventario</span></a></li>
-        <li><a class="nav-link" href="contabilidad.html" data-route="contabilidad" title="Contabilidad">
+        <li data-role="admin"><a class="nav-link" href="contabilidad.html" data-route="contabilidad" title="Contabilidad">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span class="nav-text">Contabilidad</span></a></li>
-        <li><a class="nav-link" href="reportes.html" data-route="reportes" title="Consultas y Reportes">
+        <li data-role="admin"><a class="nav-link" href="reportes.html" data-route="reportes" title="Consultas y Reportes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span class="nav-text">Reportes</span></a></li>
         <li data-role="admin"><a class="nav-link" href="usuarios.html" data-route="usuarios" title="Usuarios">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span class="nav-text">Usuarios</span></a></li>
@@ -68,34 +68,92 @@
 
     <main id="app-root">
       <!-- VISTA: Inventario (Sección 7 · Gestión real de productos, costos, existencias y Kardex) -->
-      <div class="view" data-view="inventario">
+            <div class="view" data-view="inventario">
 
         <div class="page-header">
           <div>
-            <h2>Catálogo y control de existencias</h2>
-            <p class="text-muted" style="margin:.15rem 0 0; font-size:.86rem">Productos por unidad (u), metro lineal (m) y metro cuadrado (m²), con trazabilidad de movimientos</p>
+            <h2>Inventario</h2>
+            <p class="text-muted" style="margin:.15rem 0 0; font-size:.92rem">Consulte existencias, cree productos y registre entradas o salidas</p>
           </div>
           <div class="page-actions">
             <button type="button" class="btn btn-primary" id="btn-nuevo-producto">+ Nuevo Producto</button>
+            <button type="button" class="btn btn-outline" id="btn-abrir-entrada">+ Registrar Entrada (Compra)</button>
+            <button type="button" class="btn btn-outline" id="btn-abrir-salida">− Registrar Salida / Baja</button>
           </div>
         </div>
 
         <div id="inv-feedback" class="alert alert-info hidden" role="status" style="margin-bottom:1rem"></div>
 
-        <div class="toolbar">
-          <input class="input" type="search" id="buscar-inventario" placeholder="Buscar por nombre, código o descripción">
-          <select class="select" id="inv-filtro-categoria" style="width:auto" aria-label="Filtrar por categoría">
+        <!-- 4 tarjetas informativas con botón explícito para filtrar la tabla -->
+        <div class="inv-kpis">
+          <article class="inv-kpi kpi-info is-active">
+            <div class="inv-kpi-info">
+              <span class="inv-kpi-label">Total productos</span>
+              <span class="inv-kpi-value num" id="inv-kpi-total">0</span>
+              <span class="inv-kpi-hint">Catálogo completo</span>
+            </div>
+            <div class="inv-kpi-actions">
+              <button type="button" class="btn btn-primary btn-sm inv-kpi-btn active" data-inv-kpi="todos" aria-pressed="true">Viendo ✓</button>
+            </div>
+          </article>
+          <article class="inv-kpi kpi-ok">
+            <div class="inv-kpi-info">
+              <span class="inv-kpi-label">Disponibles</span>
+              <span class="inv-kpi-value num" id="inv-kpi-disponibles">0</span>
+              <span class="inv-kpi-hint">Existencias suficientes</span>
+            </div>
+            <div class="inv-kpi-actions">
+              <button type="button" class="btn btn-outline btn-sm inv-kpi-btn" data-inv-kpi="disponible" aria-pressed="false">Ver</button>
+            </div>
+          </article>
+          <article class="inv-kpi kpi-low">
+            <div class="inv-kpi-info">
+              <span class="inv-kpi-label">Stock bajo</span>
+              <span class="inv-kpi-value num" id="inv-kpi-bajo">0</span>
+              <span class="inv-kpi-hint">Por reponer</span>
+            </div>
+            <div class="inv-kpi-actions">
+              <button type="button" class="btn btn-outline btn-sm inv-kpi-btn" data-inv-kpi="bajo" aria-pressed="false">Ver</button>
+            </div>
+          </article>
+          <article class="inv-kpi kpi-out">
+            <div class="inv-kpi-info">
+              <span class="inv-kpi-label">Agotados</span>
+              <span class="inv-kpi-value num" id="inv-kpi-agotados">0</span>
+              <span class="inv-kpi-hint">Sin existencias</span>
+            </div>
+            <div class="inv-kpi-actions">
+              <button type="button" class="btn btn-outline btn-sm inv-kpi-btn" data-inv-kpi="agotado" aria-pressed="false">Ver</button>
+            </div>
+          </article>
+        </div>
+
+        <div id="inv-filtro-estado-activo" class="alert alert-info hidden" role="status" style="margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap">
+          <span id="inv-filtro-estado-texto"></span>
+          <button type="button" class="btn btn-outline btn-sm" id="inv-quitar-filtro-estado">Quitar filtro</button>
+        </div>
+
+        <div class="toolbar" id="inv-sec-productos">
+          <input class="input" type="search" id="buscar-inventario" placeholder="Buscar producto por nombre, código o descripción...">
+          <select class="select" id="inv-filtro-categoria" aria-label="Filtrar por categoría">
             <option value="Todos">Todas las categorías</option>
             <option value="Vidrios">Vidrios</option>
             <option value="Perfiles">Perfiles</option>
             <option value="Accesorios">Accesorios</option>
             <option value="Insumos">Insumos</option>
           </select>
+          <select class="select" id="inv-filtro-modalidad" aria-label="Filtrar por modalidad">
+            <option value="Todas">Todas las modalidades</option>
+            <option value="unidades">Unidades (u)</option>
+            <option value="m2">Metros cuadrados (m²)</option>
+            <option value="m">Metros lineales (m)</option>
+          </select>
           <label class="check"><input type="checkbox" id="solo-bajo"> Solo stock bajo o agotado</label>
           <label class="check"><input type="checkbox" id="mostrar-inactivos"> Mostrar inactivos</label>
+          <button type="button" class="btn btn-primary" id="btn-ver-todo-inventario">Ver todos (<span id="inv-ver-todo-count">0</span>)</button>
         </div>
 
-        <!-- Catálogo completo -->
+        <!-- Catálogo completo (protagonista único del módulo) -->
         <section class="card">
           <div class="table-wrap">
             <table class="table" id="tabla-productos">
@@ -104,6 +162,7 @@
                   <th>Código</th>
                   <th>Producto</th>
                   <th>Categoría</th>
+                  <th>Modalidad / Unidad</th>
                   <th class="num">Costo compra</th>
                   <th class="num">Precio venta</th>
                   <th class="num">Stock</th>
@@ -113,120 +172,213 @@
                 </tr>
               </thead>
               <tbody>
-                <tr><td colspan="9" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
+                <tr><td colspan="10" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
               </tbody>
             </table>
           </div>
+          <div id="inv-tabla-footer" class="hidden" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.75rem; padding:1rem 1.25rem; border-top:1px solid var(--border-color); background:var(--bg-subtle)">
+            <span id="inv-tabla-footer-texto" class="text-muted">Mostrando 12 de 0 productos</span>
+            <button type="button" class="btn btn-outline" id="btn-ver-inventario-inferior">Ver inventario completo (<span id="inv-inferior-count">0</span> productos)</button>
+          </div>
         </section>
 
-        <!-- Formularios: entradas y salidas justificadas de mercancía -->
-        <div class="grid grid-2" style="margin-top:1.25rem">
-          <form class="card" id="form-entrada">
-            <div class="card-header"><h3>Registrar entrada</h3><span class="badge badge-success">+ Stock</span></div>
-            <div class="card-body form-grid">
-              <div class="field full">
-                <label class="label" for="ent-producto">Producto *</label>
-                <select class="select" id="ent-producto" required></select>
+        <!-- Modal: Menú grande de inventario completo (escalable a 500+ productos) -->
+        <div class="modal-overlay" id="modal-inventario-completo" role="dialog" aria-modal="true" aria-labelledby="titulo-inventario-completo">
+          <div class="modal modal-catalogo-lg">
+            <div class="modal-header">
+              <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap">
+                <h3 id="titulo-inventario-completo">Inventario completo de productos</h3>
+                <span class="badge" id="modal-inv-contador">Mostrando 0 productos</span>
               </div>
-              <div class="field">
-                <label class="label" for="ent-origen">Tipo de entrada *</label>
-                <select class="select" id="ent-origen">
-                  <option value="Entrada por compra">Entrada por compra a proveedor</option>
-                  <option value="Ajuste autorizado">Ajuste autorizado (+)</option>
-                  <option value="Corrección justificada">Corrección justificada (+)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="label" for="ent-cantidad">Cantidad *</label>
-                <input class="input num" id="ent-cantidad" type="number" min="0.01" step="0.01" placeholder="0" required>
-              </div>
-              <div class="field full">
-                <label class="label" for="ent-motivo">Motivo / Factura o proveedor *</label>
-                <input class="input" id="ent-motivo" placeholder="Ej: Compra factura #412 Proveedor Vitral" required>
-              </div>
-              <div class="field full">
-                <label class="check">
-                  <input type="checkbox" id="ent-registrar-gasto">
-                  Registrar simultáneamente el gasto de esta compra en Contabilidad
-                </label>
-              </div>
-              <div class="field hidden" id="box-ent-metodo">
-                <label class="label" for="ent-metodo-pago">Método de pago de la compra</label>
-                <select class="select" id="ent-metodo-pago">
-                  <option value="Transferencia">Transferencia</option>
-                  <option value="Efectivo">Efectivo</option>
-                  <option value="Tarjeta débito">Tarjeta débito</option>
-                </select>
-              </div>
-              <div class="field hidden" id="box-ent-costo">
-                <label class="label" for="ent-costo-total">Costo total pagado (COP)</label>
-                <input class="input num" id="ent-costo-total" type="number" min="0" step="100" placeholder="Autocalculado según costo">
-              </div>
-              <div class="field full">
-                <button type="submit" class="btn btn-primary">Confirmar entrada</button>
+              <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+            </div>
+            <div class="cat-modal-searchbar">
+              <input class="input" type="search" id="buscar-inventario-modal" placeholder="Buscar por nombre, código, categoría o estado...">
+              <div class="chips" style="margin:0" role="tablist" aria-label="Filtrar por estado">
+                <button type="button" class="chip active" data-modal-inv-estado="todos">Todos</button>
+                <button type="button" class="chip" data-modal-inv-estado="disponible">Disponibles</button>
+                <button type="button" class="chip" data-modal-inv-estado="bajo">Stock bajo</button>
+                <button type="button" class="chip" data-modal-inv-estado="agotado">Agotados</button>
+                <button type="button" class="chip" data-modal-inv-estado="inactivo">Inactivos</button>
               </div>
             </div>
-          </form>
-
-          <form class="card" id="form-salida">
-            <div class="card-header"><h3>Registrar salida / baja</h3><span class="badge badge-danger">− Stock</span></div>
-            <div class="card-body form-grid">
-              <div class="field full">
-                <label class="label" for="sal-producto">Producto *</label>
-                <select class="select" id="sal-producto" required></select>
+            <div class="cat-modal-body">
+              <div class="cat-modal-grid-wrap">
+                <div class="table-wrap">
+                  <table class="table" id="tabla-productos-modal">
+                    <thead>
+                      <tr>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th>Categoría</th>
+                        <th>Modalidad / Unidad</th>
+                        <th class="num">Costo compra</th>
+                        <th class="num">Precio venta</th>
+                        <th class="num">Stock</th>
+                        <th class="num">Mínimo</th>
+                        <th>Estado</th>
+                        <th class="text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td colspan="10" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div class="field">
-                <label class="label" for="sal-origen">Tipo de salida *</label>
-                <select class="select" id="sal-origen">
-                  <option value="Pérdida o daño">Pérdida o daño registrado (rotura/merma)</option>
-                  <option value="Ajuste autorizado">Ajuste autorizado (−)</option>
-                  <option value="Corrección justificada">Corrección justificada (−)</option>
-                  <option value="Uso interno en obra">Uso interno / instalación</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="label" for="sal-cantidad">Cantidad *</label>
-                <input class="input num" id="sal-cantidad" type="number" min="0.01" step="0.01" placeholder="0" required>
-              </div>
-              <div class="field full">
-                <label class="label" for="sal-motivo">Motivo obligatorio *</label>
-                <input class="input" id="sal-motivo" placeholder="Ej: Lámina fisurada en descargue / ajuste de conteo físico" required>
-              </div>
-              <div class="field full">
-                <button type="submit" class="btn btn-outline">Confirmar salida</button>
-              </div>
+              <aside class="cat-modal-sidebar" aria-label="Resumen rápido del inventario">
+                <div class="cat-modal-sidebar-head">
+                  <h4 style="margin:0">Resumen del inventario</h4>
+                  <span class="help">Cifras según el filtro actual</span>
+                </div>
+                <div style="padding:1rem; display:grid; gap:.6rem; flex:1; overflow-y:auto; align-content:start">
+                  <div class="summary-row"><span>Total productos</span><b class="num" id="modal-inv-res-total">0</b></div>
+                  <div class="summary-row"><span>Disponibles</span><b class="num text-income" id="modal-inv-res-disp">0</b></div>
+                  <div class="summary-row"><span>Stock bajo</span><b class="num" style="color:var(--warning)" id="modal-inv-res-bajo">0</b></div>
+                  <div class="summary-row"><span>Agotados</span><b class="num text-expense" id="modal-inv-res-agot">0</b></div>
+                  <hr style="border:0; border-top:1px solid var(--border-color); margin:.25rem 0">
+                  <div class="summary-row"><span>Valor en bodega (costo)</span><b class="num" id="modal-inv-res-costo">$ 0</b></div>
+                  <div class="summary-row"><span>Valor en bodega (venta)</span><b class="num" id="modal-inv-res-venta">$ 0</b></div>
+                </div>
+                <div class="cat-modal-footer" style="display:grid; gap:.5rem">
+                  <button type="button" class="btn btn-primary btn-block" id="btn-modal-inv-nuevo">+ Nuevo Producto</button>
+                  <button type="button" class="btn btn-outline btn-block" id="btn-modal-inv-entrada">+ Registrar Entrada</button>
+                  <button type="button" class="btn btn-outline btn-block" id="btn-modal-inv-salida">− Registrar Salida</button>
+                </div>
+              </aside>
             </div>
-          </form>
+          </div>
         </div>
 
-        <!-- Historial de movimientos de inventario (Kardex) -->
-        <section class="card" style="margin-top:1.25rem">
-          <div class="card-header">
-            <h3>Historial de movimientos de inventario (Kardex)</h3>
-            <span class="badge" id="inv-kardex-count">0 movimientos</span>
+        <!-- Modal: Registrar Entrada (Compra / Ajuste +) -->
+        <div class="modal-overlay" id="modal-entrada-inv" role="dialog" aria-modal="true" aria-labelledby="titulo-entrada-inv">
+          <div class="modal" style="max-width:640px">
+            <div class="modal-header"><h3 id="titulo-entrada-inv">Registrar entrada de inventario</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+            <form id="form-entrada">
+              <div class="modal-body form-grid">
+                <div class="field full">
+                  <label class="label" for="ent-producto">Producto *</label>
+                  <select class="select" id="ent-producto" required></select>
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-origen">Tipo de entrada *</label>
+                  <select class="select" id="ent-origen">
+                    <option value="Entrada por compra">Entrada por compra a proveedor</option>
+                    <option value="Ajuste autorizado">Ajuste autorizado (+)</option>
+                    <option value="Corrección justificada">Corrección justificada (+)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-cantidad">Cantidad / medida *</label>
+                  <input class="input num" id="ent-cantidad" type="number" min="0.01" step="0.01" placeholder="0" required>
+                </div>
+                <div class="field full hidden" id="ent-calc-dim-box" style="padding:.75rem; background:var(--bg-subtle); border:1px solid var(--border-color); border-radius:var(--radius-sm)">
+                  <div class="form-grid">
+                    <div class="field"><label class="label" for="ent-laminas">N° de láminas</label><input class="input num" id="ent-laminas" type="number" min="1" step="1" value="1"></div>
+                    <div class="field"><label class="label" for="ent-ancho">Ancho (m)</label><input class="input num" id="ent-ancho" type="number" min="0.01" step="0.01" placeholder="Ej: 2"></div>
+                    <div class="field"><label class="label" for="ent-alto">Alto (m)</label><input class="input num" id="ent-alto" type="number" min="0.01" step="0.01" placeholder="Ej: 3"></div>
+                    <div class="field full"><span class="help" id="ent-area-preview">Área calculada: 0 m² (se asigna automáticamente a la cantidad).</span></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-precio-compra">Precio de compra unitario (COP)</label>
+                  <input class="input num" id="ent-precio-compra" type="text" inputmode="numeric" data-money-input="1" placeholder="Opcional">
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-fecha">Fecha *</label>
+                  <input class="input" id="ent-fecha" type="date">
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-proveedor">Proveedor (opcional)</label>
+                  <input class="input" id="ent-proveedor" placeholder="Ej: Vitral S.A.">
+                </div>
+                <div class="field">
+                  <label class="label" for="ent-motivo">Motivo / Factura *</label>
+                  <input class="input" id="ent-motivo" placeholder="Ej: Compra factura #412" required>
+                </div>
+                <div class="field full">
+                  <label class="check">
+                    <input type="checkbox" id="ent-registrar-gasto">
+                    Registrar también este pago como gasto en Contabilidad
+                  </label>
+                </div>
+                <div class="field hidden" id="box-ent-metodo">
+                  <label class="label" for="ent-metodo-pago">Método de pago</label>
+                  <select class="select" id="ent-metodo-pago">
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Tarjeta débito">Tarjeta débito</option>
+                  </select>
+                </div>
+                <div class="field hidden" id="box-ent-costo">
+                  <label class="label" for="ent-costo-total">Costo total pagado (COP)</label>
+                  <input class="input num" id="ent-costo-total" type="number" min="0" step="100" placeholder="Autocalculado">
+                </div>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-outline" href="#">Cancelar</a>
+                <button type="submit" class="btn btn-primary">Confirmar entrada</button>
+              </div>
+            </form>
           </div>
-          <div class="table-wrap">
-            <table class="table" id="tabla-kardex-inventario">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Código</th>
-                  <th>Producto</th>
-                  <th>Tipo</th>
-                  <th>Origen</th>
-                  <th class="num">Cantidad</th>
-                  <th class="num">Stock ant.</th>
-                  <th class="num">Stock nuevo</th>
-                  <th>Motivo</th>
-                  <th>Responsable</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td colspan="10" class="text-muted" style="text-align:center; padding:1.5rem">No hay movimientos de inventario registrados.</td></tr>
-              </tbody>
-            </table>
+        </div>
+
+        <!-- Modal: Registrar Salida / Baja -->
+        <div class="modal-overlay" id="modal-salida-inv" role="dialog" aria-modal="true" aria-labelledby="titulo-salida-inv">
+          <div class="modal" style="max-width:600px">
+            <div class="modal-header"><h3 id="titulo-salida-inv">Registrar salida o baja</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+            <form id="form-salida">
+              <div class="modal-body form-grid">
+                <div class="field full">
+                  <label class="label" for="sal-producto">Producto *</label>
+                  <select class="select" id="sal-producto" required></select>
+                </div>
+                <div class="field">
+                  <label class="label" for="sal-origen">Tipo de salida *</label>
+                  <select class="select" id="sal-origen">
+                    <option value="Pérdida o daño">Pérdida o daño (rotura/merma)</option>
+                    <option value="Ajuste autorizado">Ajuste autorizado (−)</option>
+                    <option value="Corrección justificada">Corrección justificada (−)</option>
+                    <option value="Uso interno en obra">Uso interno / instalación</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="sal-cantidad">Cantidad / medida *</label>
+                  <input class="input num" id="sal-cantidad" type="number" min="0.01" step="0.01" placeholder="0" required>
+                </div>
+                <div class="field full hidden" id="sal-calc-dim-box" style="padding:.75rem; background:var(--bg-subtle); border:1px solid var(--border-color); border-radius:var(--radius-sm)">
+                  <div class="form-grid">
+                    <div class="field"><label class="label" for="sal-laminas">N° de piezas</label><input class="input num" id="sal-laminas" type="number" min="1" step="1" value="1"></div>
+                    <div class="field"><label class="label" for="sal-ancho">Ancho (m)</label><input class="input num" id="sal-ancho" type="number" min="0.01" step="0.01" placeholder="Ej: 1.2"></div>
+                    <div class="field"><label class="label" for="sal-alto">Alto (m)</label><input class="input num" id="sal-alto" type="number" min="0.01" step="0.01" placeholder="Ej: 1.5"></div>
+                    <div class="field full"><span class="help" id="sal-area-preview">Área calculada: 0 m²</span></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="label" for="sal-fecha">Fecha *</label>
+                  <input class="input" id="sal-fecha" type="date">
+                </div>
+                <div class="field full">
+                  <label class="label" for="sal-motivo">Motivo obligatorio *</label>
+                  <input class="input" id="sal-motivo" placeholder="Ej: Lámina fisurada en descargue" required>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-outline" href="#">Cancelar</a>
+                <button type="submit" class="btn btn-danger">Confirmar salida</button>
+              </div>
+            </form>
           </div>
-        </section>
+        </div>
+
+        <!-- Modal: detalle de producto y sus últimos movimientos -->
+        <div class="modal-overlay" id="modal-detalle-producto-inv" role="dialog" aria-modal="true" aria-labelledby="titulo-detalle-inv">
+          <div class="modal" style="max-width:680px">
+            <div class="modal-header"><h3 id="titulo-detalle-inv">Detalle del producto</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+            <div class="modal-body" id="detalle-producto-inv-body"></div>
+            <div class="modal-footer"><a class="btn btn-outline" href="#">Cerrar</a></div>
+          </div>
+        </div>
 
         <!-- Modal: crear o editar producto -->
         <div class="modal-overlay" id="modal-producto" role="dialog" aria-modal="true" aria-labelledby="titulo-producto">
@@ -235,14 +387,8 @@
             <form id="form-producto">
               <input type="hidden" id="prod-id" value="">
               <div class="modal-body form-grid">
-                <div class="field full">
-                  <label class="label" for="prod-nombre">Nombre del producto *</label>
-                  <input class="input" id="prod-nombre" required placeholder="Ej: Vidrio templado 10 mm">
-                </div>
-                <div class="field">
-                  <label class="label" for="prod-codigo">Código único *</label>
-                  <input class="input" id="prod-codigo" required placeholder="Ej: VT-010">
-                </div>
+                <div class="field full"><label class="label" for="prod-nombre">Nombre del producto *</label><input class="input" id="prod-nombre" required placeholder="Ej: Vidrio templado 10 mm"></div>
+                <div class="field"><label class="label" for="prod-codigo">Código único *</label><input class="input" id="prod-codigo" required placeholder="Ej: VT-010"></div>
                 <div class="field">
                   <label class="label" for="prod-categoria">Categoría *</label>
                   <select class="select" id="prod-categoria">
@@ -253,44 +399,36 @@
                   </select>
                 </div>
                 <div class="field">
-                  <label class="label" for="prod-unidad">Unidad de medida (opcional)</label>
+                  <label class="label" for="prod-modalidad">Modalidad de inventario *</label>
+                  <select class="select" id="prod-modalidad">
+                    <option value="m2">Metros cuadrados (m²)</option>
+                    <option value="m">Metros lineales (m)</option>
+                    <option value="unidades">Unidades (u)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="prod-unidad">Unidad de medida *</label>
                   <select class="select" id="prod-unidad">
                     <option value="m²">Metro cuadrado (m²)</option>
                     <option value="m">Metro lineal (m)</option>
                     <option value="u">Unidad (u)</option>
+                    <option value="lámina">Lámina</option>
+                    <option value="kg">Kilogramo (kg)</option>
+                    <option value="L">Litro (L)</option>
+                    <option value="caja">Caja</option>
+                    <option value="paquete">Paquete</option>
                     <option value="">Sin unidad</option>
                   </select>
                 </div>
                 <div class="field full hidden" id="field-prod-decimal">
-                  <label class="check">
-                    <input type="checkbox" id="prod-permite-decimal">
-                    Permitir cantidades decimales para este producto sin unidad
-                  </label>
+                  <label class="check"><input type="checkbox" id="prod-permite-decimal"> Permitir cantidades decimales para este producto sin unidad</label>
                 </div>
-                <div class="field">
-                  <label class="label" for="prod-precio-compra">Precio de compra (COP)</label>
-                  <input class="input num" id="prod-precio-compra" type="number" min="0" step="100" value="0" required>
-                </div>
-                <div class="field">
-                  <label class="label" for="prod-precio">Precio de venta (COP) *</label>
-                  <input class="input num" id="prod-precio" type="number" min="0" step="100" required>
-                </div>
-                <div class="field" id="field-prod-stock-inicial">
-                  <label class="label" for="prod-stock">Stock inicial</label>
-                  <input class="input num" id="prod-stock" type="number" min="0" step="0.01" value="0">
-                </div>
-                <div class="field">
-                  <label class="label" for="prod-minimo">Stock mínimo de alerta</label>
-                  <input class="input num" id="prod-minimo" type="number" min="0" step="0.01" value="5">
-                  <span class="help">Se alertará cuando el stock llegue a este nivel.</span>
-                </div>
-                <div class="field full">
-                  <label class="label" for="prod-descripcion">Descripción opcional</label>
-                  <input class="input" id="prod-descripcion" placeholder="Especificación técnica, calibre, acabado">
-                </div>
-                <div class="field full">
-                  <div id="prod-error" class="alert alert-danger hidden"></div>
-                </div>
+                <div class="field"><label class="label" for="prod-precio-compra">Precio de compra (COP)</label><input class="input num" id="prod-precio-compra" type="text" inputmode="numeric" data-money-input="1" value="0" required></div>
+                <div class="field"><label class="label" for="prod-precio">Precio de venta (COP) *</label><input class="input num" id="prod-precio" type="text" inputmode="numeric" data-money-input="1" required></div>
+                <div class="field" id="field-prod-stock-inicial"><label class="label" for="prod-stock">Stock inicial</label><input class="input num" id="prod-stock" type="number" min="0" step="0.01" value="0"></div>
+                <div class="field"><label class="label" for="prod-minimo">Stock mínimo de alerta</label><input class="input num" id="prod-minimo" type="number" min="0" step="0.01" value="5"></div>
+                <div class="field full"><label class="label" for="prod-descripcion">Descripción opcional</label><input class="input" id="prod-descripcion" placeholder="Especificación técnica, calibre, acabado"></div>
+                <div class="field full"><div id="prod-error" class="alert alert-danger hidden"></div></div>
               </div>
               <div class="modal-footer">
                 <a class="btn btn-outline" href="#">Cancelar</a>

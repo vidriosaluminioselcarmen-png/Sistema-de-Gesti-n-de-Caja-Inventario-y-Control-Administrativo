@@ -63,36 +63,44 @@ const ROLE_PERMISSIONS = {
     "ventas.registrar",
     "ventas.consultar",
     "ventas.abonar",
-    "clientes.crear",
-    "inventario.consultar",
-    "inventario.gestionar",
-    "contabilidad.consultar",
-    "contabilidad.gestionar"
+    "clientes.crear"
   ])
 };
+
+export function getRoleLabel(role) {
+  return role === ROLES.ADMIN ? "Administrador" : "Empleado general";
+}
+
+export function canAccessRoute(routeKey, user = getCurrentUser()) {
+  if (!user || !user.role || user.activo === false) return false;
+  if (user.role === ROLES.ADMIN) return true;
+  return routeKey === "caja" || routeKey === "dashboard";
+}
+
+export function applySidebarVisibility(user = getCurrentUser()) {
+  const esAdmin = user?.role === ROLES.ADMIN;
+  document.querySelectorAll(".sidebar .nav-list li").forEach((li) => {
+    const link = li.querySelector("a[data-route]");
+    const route = link?.dataset.route;
+    if (!esAdmin && route !== "dashboard" && route !== "caja") {
+      li.classList.add("hidden");
+      li.style.display = "none";
+    } else {
+      li.classList.remove("hidden");
+      li.style.display = "";
+    }
+  });
+  document.querySelectorAll("[data-role='admin']").forEach((el) => {
+    if (el.closest(".sidebar .nav-list")) return;
+    el.classList.toggle("hidden", !esAdmin);
+  });
+}
 
 export function getCurrentUser() {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw);
-      const correo = String(parsed?.email || "").toLowerCase();
-      // Si el propietario ingresó con el correo del negocio (ej. vidrios.aluminioselcarmen) antes de crear usuarios, asegurar rol Administrador
-      if (
-        parsed &&
-        parsed.role === ROLES.EMPLEADO &&
-        (correo.includes("vidrios") || correo.includes("elcarmen") || correo.startsWith("admin")) &&
-        !correo.startsWith("empleado") &&
-        !correo.startsWith("usuario") &&
-        !correo.startsWith("caja") &&
-        !correo.startsWith("bodega") &&
-        !correo.startsWith("inventario") &&
-        !correo.startsWith("contabilidad")
-      ) {
-        parsed.role = ROLES.ADMIN;
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(parsed));
-      }
-      return parsed;
+      return JSON.parse(raw);
     }
   } catch {
     // Ignorar error de sessionStorage
