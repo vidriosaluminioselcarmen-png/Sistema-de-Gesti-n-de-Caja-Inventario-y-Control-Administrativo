@@ -31,14 +31,17 @@ import {
   registrarMovimientoContable,
   registrarTrasladoInterno,
   revertirMovimientoContable,
+  pagarCuentaPorPagar,
+  normalizarCuentaContable,
   exportarContabilidadCSV,
   TIPOS_CONTABLE
 } from "../services/contabilidad-service.js";
 import {
   watchCajas,
-  watchVentas
+  watchVentas,
+  registrarAbonoVenta
 } from "../services/caja-service.js";
-import { calcularSaldoPendienteVenta } from "../services/clientes-service.js";
+import { calcularSaldoPendienteVenta, listarCarteraClientes } from "../services/clientes-service.js";
 import {
   generarReportesConsolidados,
   generarCSVReporte
@@ -111,6 +114,89 @@ function bindMoneyInputs(root) {
   );
 }
 
+function confirmarAccionModal({
+  titulo = "Confirmar acción",
+  pregunta = "¿Desea continuar?",
+  detallesHtml = "",
+  textoConfirmar = "Confirmar",
+  claseBoton = "btn-primary"
+} = {}) {
+  return new Promise((resolve) => {
+    let modal = document.getElementById("modal-confirmacion-global");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.className = "modal-overlay";
+      modal.id = "modal-confirmacion-global";
+      modal.setAttribute("role", "dialog");
+      modal.setAttribute("aria-modal", "true");
+      modal.setAttribute("aria-labelledby", "mcg-titulo");
+      modal.style.zIndex = "1200";
+      modal.innerHTML = `
+        <div class="modal" style="max-width:480px">
+          <div class="modal-header">
+            <h3 id="mcg-titulo">Confirmar</h3>
+            <button type="button" class="modal-close" data-mcg-cancel aria-label="Cerrar">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p id="mcg-pregunta" style="font-size:1.08rem;font-weight:700;margin:0 0 .75rem"></p>
+            <div id="mcg-detalles" style="background:var(--bg-subtle);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:.85rem 1rem;display:grid;gap:.35rem"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" data-mcg-cancel style="min-height:46px">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="mcg-confirmar" style="min-height:46px">Confirmar</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    const tituloEl = modal.querySelector("#mcg-titulo");
+    const pregEl = modal.querySelector("#mcg-pregunta");
+    const detEl = modal.querySelector("#mcg-detalles");
+    const btnOk = modal.querySelector("#mcg-confirmar");
+
+    if (tituloEl) tituloEl.textContent = titulo;
+    if (pregEl) pregEl.textContent = pregunta;
+    if (detEl) {
+      detEl.innerHTML = detallesHtml || "";
+      detEl.style.display = detallesHtml ? "grid" : "none";
+    }
+    if (btnOk) {
+      btnOk.textContent = textoConfirmar;
+      btnOk.className = `btn ${claseBoton}`;
+    }
+
+    let settled = false;
+    const cerrar = (resultado) => {
+      if (settled) return;
+      settled = true;
+      modal.classList.remove("is-open");
+      modal.removeEventListener("click", onClickModal);
+      document.removeEventListener("keydown", onKeyDown);
+      resolve(resultado);
+    };
+
+    const onClickModal = (e) => {
+      if (e.target.closest("[data-mcg-cancel]")) {
+        cerrar(false);
+        return;
+      }
+      if (e.target.closest("#mcg-confirmar")) {
+        cerrar(true);
+      }
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") cerrar(false);
+    };
+
+    modal.addEventListener("click", onClickModal);
+    document.addEventListener("keydown", onKeyDown);
+    modal.classList.add("is-open");
+    btnOk?.focus();
+  });
+}
+
 // ---------------------------------------------------------------------------
 // 1. VISTA DE INVENTARIO (Sección 7)
 // ---------------------------------------------------------------------------
@@ -121,6 +207,8 @@ export function mountInventarioView(root) {
   // Filtro por estado activado desde las tarjetas del panel ("todos" = sin filtro)
   let estadoFiltroKpi = "todos";
   let modalEstadoFiltro = "todos";
+  let kardexQuickFilter = "Todos";
+  let kardexUltimosFiltrados = [];
 
   bindMoneyInputs(root);
 
@@ -167,13 +255,14 @@ export function mountInventarioView(root) {
         <td class="num">${p.stockMinimo}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""}</td>
         <td><span class="badge ${est.claseBadge}">${est.etiqueta}</span></td>
         <td class="text-right" style="white-space:nowrap">
+          <button type="button" class="btn btn-outline btn-xs" data-kardex-prod="${escapeHtml(p.id)}">Kardex</button>
           ${
             puedeGestionar
               ? `
                 <button type="button" class="btn btn-outline btn-xs" data-edit-prod="${escapeHtml(p.id)}">Editar</button>
                 <button type="button" class="btn btn-outline btn-xs" data-toggle-prod="${escapeHtml(p.id)}">${esActivo ? "Desactivar" : "Activar"}</button>
               `
-              : `<span class="text-muted" style="font-size:.76rem">Solo lectura</span>`
+              : ""
           }
         </td>
       </tr>
@@ -541,48 +630,231 @@ export function mountInventarioView(root) {
     }
   }
 
+  function poblarSelectProductoKardex() {
+    const sel = $("#kardex-filtro-producto");
+    if (!sel) return;
+    const prev = sel.value || "Todos";
+    const ordenados = [...productos].sort((a, b) =>
+      String(a.nombre || "").localeCompare(String(b.nombre || ""), "es")
+    );
+    sel.innerHTML =
+      `<option value="Todos">Todos los productos</option>` +
+      ordenados
+        .map(
+          (p) =>
+            `<option value="${escapeHtml(p.id)}">${escapeHtml(p.nombre)} (${escapeHtml(p.codigo || "—")})</option>`
+        )
+        .join("");
+    const existe = ordenados.some((p) => p.id === prev);
+    sel.value = existe ? prev : "Todos";
+  }
+
+  function formatCantidadKardex(val) {
+    const n = Math.round((Number(val) || 0) * 100) / 100;
+    return n.toLocaleString("es-CO", { maximumFractionDigits: 2 });
+  }
+
   function renderKardex() {
+    const badgeTotal = $("#inv-kardex-total-badge");
+    if (badgeTotal) badgeTotal.textContent = String(kardex.length);
+
     const tbody = root.querySelector("#tabla-kardex-inventario tbody");
     const countEl = $("#inv-kardex-count");
+    const tituloEl = $("#titulo-kardex-inv");
+    const prodFiltro = $("#kardex-filtro-producto")?.value || "Todos";
     const qK = ($("#kardex-buscar")?.value || "").trim().toLowerCase();
-    const tipoK = $("#kardex-filtro-tipo")?.value || "Todos";
+    const desde = $("#kardex-desde")?.value || "";
+    const hasta = $("#kardex-hasta")?.value || "";
+
+    const prodSel = prodFiltro !== "Todos" ? productos.find((p) => p.id === prodFiltro) : null;
+    if (tituloEl) {
+      tituloEl.textContent = prodSel
+        ? `Kardex del producto: ${prodSel.nombre} (${prodSel.codigo})`
+        : "Kardex general de inventario";
+    }
 
     const listaFiltrada = kardex.filter((m) => {
-      if (tipoK !== "Todos" && m.tipo !== tipoK) return false;
+      if (prodFiltro !== "Todos" && m.productoId !== prodFiltro) return false;
+      const origenLow = String(m.origen || "").toLowerCase();
+      if (kardexQuickFilter === "Entrada" && m.tipo !== "Entrada") return false;
+      if (kardexQuickFilter === "Salida" && m.tipo !== "Salida") return false;
+      if (kardexQuickFilter === "Venta" && !origenLow.includes("venta")) return false;
+      if (
+        kardexQuickFilter === "Baja" &&
+        !origenLow.includes("pérdida") &&
+        !origenLow.includes("perdida") &&
+        !origenLow.includes("daño") &&
+        !origenLow.includes("dano") &&
+        !origenLow.includes("baja")
+      ) {
+        return false;
+      }
+
+      const dia = String(m.fecha || "").slice(0, 10);
+      if (desde && dia < desde) return false;
+      if (hasta && dia > hasta) return false;
+
       if (!qK) return true;
       return (
         String(m.productoNombre || "").toLowerCase().includes(qK) ||
         String(m.codigo || "").toLowerCase().includes(qK) ||
+        String(m.referenciaId || "").toLowerCase().includes(qK) ||
+        String(m.origen || "").toLowerCase().includes(qK) ||
         String(m.motivo || "").toLowerCase().includes(qK) ||
+        String(m.proveedor || "").toLowerCase().includes(qK) ||
         String(m.usuario || "").toLowerCase().includes(qK)
       );
     });
 
-    if (countEl) countEl.textContent = `${listaFiltrada.length} movimientos`;
+    kardexUltimosFiltrados = listaFiltrada;
+    if (countEl) {
+      countEl.textContent =
+        listaFiltrada.length === 1
+          ? "1 movimiento encontrado"
+          : `${listaFiltrada.length} movimientos encontrados`;
+    }
+
+    let totalEntradas = 0;
+    let totalSalidas = 0;
+    for (const m of listaFiltrada) {
+      const c = Number(m.cantidad) || 0;
+      if (m.tipo === "Entrada") totalEntradas += c;
+      else if (m.tipo === "Salida") totalSalidas += c;
+    }
+    const unitSuffix = prodSel?.unidad ? ` ${prodSel.unidad}` : "";
+    if ($("#kardex-res-total")) $("#kardex-res-total").textContent = String(listaFiltrada.length);
+    if ($("#kardex-res-entradas")) {
+      $("#kardex-res-entradas").textContent = `+ ${formatCantidadKardex(totalEntradas)}${unitSuffix}`;
+    }
+    if ($("#kardex-res-salidas")) {
+      $("#kardex-res-salidas").textContent = `− ${formatCantidadKardex(totalSalidas)}${unitSuffix}`;
+    }
+
+    const fichaEl = $("#kardex-prod-ficha");
+    if (fichaEl) {
+      if (prodSel) {
+        const est = presentarEstado(prodSel);
+        const u = prodSel.unidad ? ` ${escapeHtml(prodSel.unidad)}` : "";
+        fichaEl.classList.remove("hidden");
+        fichaEl.innerHTML = `
+          <div class="kardex-prod-card-head">
+            <div>
+              <div class="kardex-prod-card-title">${escapeHtml(prodSel.nombre)}</div>
+              <small class="text-muted">Código: <b>${escapeHtml(prodSel.codigo || "—")}</b></small>
+            </div>
+            <span class="badge ${est.claseBadge}">${escapeHtml(est.etiqueta)}</span>
+          </div>
+          <div class="kardex-prod-card-grid">
+            <div><span>Existencia actual</span><b class="num">${prodSel.stock}${u}</b></div>
+            <div><span>Stock mínimo</span><b class="num">${prodSel.stockMinimo ?? 0}${u}</b></div>
+            <div><span>Costo unitario</span><b class="num">${formatCOP(prodSel.precioCompra || 0)}</b></div>
+            <div><span>Precio de venta</span><b class="num">${formatCOP(prodSel.precio || 0)}</b></div>
+          </div>
+        `;
+      } else {
+        fichaEl.classList.add("hidden");
+        fichaEl.innerHTML = "";
+      }
+    }
+
     if (!tbody) return;
 
     tbody.innerHTML = listaFiltrada.length
       ? listaFiltrada
-          .slice(0, 80)
           .map((m) => {
             const esEntrada = m.tipo === "Entrada";
+            const u = m.unidad ? ` ${escapeHtml(m.unidad)}` : "";
+            const costoVal =
+              m.costoTotal != null && m.costoTotal !== ""
+                ? formatCOP(m.costoTotal)
+                : m.precioCompra != null && m.precioCompra !== ""
+                  ? formatCOP(m.precioCompra)
+                  : "—";
+            const refPart = m.referenciaId ? ` · Ref: <b>${escapeHtml(m.referenciaId)}</b>` : "";
+            const provPart = m.proveedor ? ` · Prov: ${escapeHtml(m.proveedor)}` : "";
             return `
               <tr data-dia="${escapeHtml(String(m.fecha || "").slice(0, 10))}">
-                <td>${formatDateTime(m.fecha)}</td>
-                <td><b>${escapeHtml(m.codigo || "—")}</b></td>
-                <td>${escapeHtml(m.productoNombre)}</td>
-                <td><span class="badge ${esEntrada ? "badge-success" : "badge-warning"}">${escapeHtml(m.tipo)}</span></td>
-                <td>${escapeHtml(m.origen || "—")}</td>
-                <td class="num ${esEntrada ? "text-income" : "text-expense"}">${esEntrada ? "+ " : "− "}${m.cantidad}${m.unidad ? ` ${escapeHtml(m.unidad)}` : ""}</td>
-                <td class="num">${m.stockAnterior ?? "—"}</td>
-                <td class="num"><b>${m.stockNuevo ?? "—"}</b></td>
-                <td>${escapeHtml(m.motivo || "—")}${m.proveedor ? ` · Prov: ${escapeHtml(m.proveedor)}` : ""}</td>
-                <td>${escapeHtml(m.usuario || "—")}</td>
+                <td style="white-space:nowrap">${formatDateTime(m.fecha)}</td>
+                <td>
+                  <b>${escapeHtml(m.productoNombre || "—")}</b>
+                  <br><small class="text-muted">${escapeHtml(m.codigo || "—")}</small>
+                </td>
+                <td>
+                  <div class="kardex-tipo-stack">
+                    <span class="badge ${esEntrada ? "badge-success" : "badge-danger"}">${esEntrada ? "+ Entrada" : "− Salida"}</span>
+                    <span class="kardex-origen-txt">${escapeHtml(m.origen || "—")}</span>
+                  </div>
+                </td>
+                <td class="num">${m.stockAnterior ?? "—"}${m.stockAnterior != null ? u : ""}</td>
+                <td class="num ${esEntrada ? "text-income" : "text-expense"}"><b>${esEntrada ? "+ " : "− "}${m.cantidad}${u}</b></td>
+                <td class="num"><b>${m.stockNuevo ?? "—"}${m.stockNuevo != null ? u : ""}</b></td>
+                <td class="num">${costoVal}</td>
+                <td>
+                  <span>${escapeHtml(m.motivo || "—")}${refPart}${provPart}</span>
+                  <br><small class="text-muted">${escapeHtml(m.usuario || "—")}</small>
+                </td>
               </tr>
             `;
           })
           .join("")
-      : `<tr><td colspan="10" style="text-align:center; padding:1.5rem" class="text-muted">No hay movimientos de inventario registrados.</td></tr>`;
+      : `<tr><td colspan="8" style="text-align:center; padding:1.5rem" class="text-muted">No hay movimientos de inventario que coincidan con los filtros.</td></tr>`;
+  }
+
+  function abrirModalKardex(productoId = "Todos") {
+    poblarSelectProductoKardex();
+    const sel = $("#kardex-filtro-producto");
+    if (sel) sel.value = productoId || "Todos";
+    renderKardex();
+    $("#modal-kardex-inventario")?.classList.add("is-open");
+  }
+
+  function exportarKardexCSV() {
+    const csvCell = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
+    const headers = [
+      "Fecha",
+      "Código",
+      "Producto",
+      "Tipo",
+      "Origen",
+      "Stock Anterior",
+      "Cantidad",
+      "Unidad",
+      "Stock Nuevo",
+      "Costo Unitario",
+      "Motivo/Proveedor",
+      "Usuario"
+    ];
+    const rows = kardexUltimosFiltrados.map((m) => {
+      const motivoProv = [m.motivo, m.referenciaId ? `Ref: ${m.referenciaId}` : "", m.proveedor ? `Prov: ${m.proveedor}` : ""]
+        .filter(Boolean)
+        .join(" | ");
+      return [
+        formatDateTime(m.fecha),
+        m.codigo || "",
+        m.productoNombre || "",
+        m.tipo || "",
+        m.origen || "",
+        m.stockAnterior ?? "",
+        m.cantidad ?? "",
+        m.unidad || "",
+        m.stockNuevo ?? "",
+        m.precioCompra ?? m.costoTotal ?? "",
+        motivoProv,
+        m.usuario || ""
+      ]
+        .map(csvCell)
+        .join(",");
+    });
+    const csvContent = "\uFEFF" + [headers.map(csvCell).join(","), ...rows].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `kardex_inventario_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   let unidadTocadaManualmente = false;
@@ -708,6 +980,53 @@ export function mountInventarioView(root) {
   $("#btn-modal-inv-nuevo")?.addEventListener("click", () => abrirModalProducto(null));
   $("#btn-modal-inv-entrada")?.addEventListener("click", () => $("#modal-entrada-inv")?.classList.add("is-open"));
   $("#btn-modal-inv-salida")?.addEventListener("click", () => $("#modal-salida-inv")?.classList.add("is-open"));
+  $("#btn-modal-inv-kardex")?.addEventListener("click", () => abrirModalKardex("Todos"));
+  $("#btn-abrir-kardex")?.addEventListener("click", () => abrirModalKardex("Todos"));
+  root.querySelectorAll("[data-close-kardex]").forEach((btn) =>
+    btn.addEventListener("click", () => $("#modal-kardex-inventario")?.classList.remove("is-open"))
+  );
+  root.querySelectorAll("[data-kardex-q]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      kardexQuickFilter = chip.dataset.kardexQ || "Todos";
+      root.querySelectorAll("[data-kardex-q]").forEach((c) =>
+        c.classList.toggle("active", c.dataset.kardexQ === kardexQuickFilter)
+      );
+      renderKardex();
+    });
+  });
+  $("#kardex-filtro-producto")?.addEventListener("change", renderKardex);
+  $("#kardex-desde")?.addEventListener("change", renderKardex);
+  $("#kardex-hasta")?.addEventListener("change", renderKardex);
+  $("#btn-limpiar-kardex")?.addEventListener("click", () => {
+    kardexQuickFilter = "Todos";
+    root.querySelectorAll("[data-kardex-q]").forEach((c) =>
+      c.classList.toggle("active", c.dataset.kardexQ === "Todos")
+    );
+    if ($("#kardex-filtro-producto")) $("#kardex-filtro-producto").value = "Todos";
+    if ($("#kardex-buscar")) $("#kardex-buscar").value = "";
+    if ($("#kardex-desde")) $("#kardex-desde").value = "";
+    if ($("#kardex-hasta")) $("#kardex-hasta").value = "";
+    renderKardex();
+  });
+  $("#btn-exportar-kardex-csv")?.addEventListener("click", exportarKardexCSV);
+  $("#btn-kardex-entrada")?.addEventListener("click", () => {
+    const prodFiltro = $("#kardex-filtro-producto")?.value || "Todos";
+    const entSel = $("#ent-producto");
+    if (entSel && prodFiltro !== "Todos" && [...entSel.options].some((o) => o.value === prodFiltro)) {
+      entSel.value = prodFiltro;
+      syncDimensionesMovimiento("ent");
+    }
+    $("#modal-entrada-inv")?.classList.add("is-open");
+  });
+  $("#btn-kardex-salida")?.addEventListener("click", () => {
+    const prodFiltro = $("#kardex-filtro-producto")?.value || "Todos";
+    const salSel = $("#sal-producto");
+    if (salSel && prodFiltro !== "Todos" && [...salSel.options].some((o) => o.value === prodFiltro)) {
+      salSel.value = prodFiltro;
+      syncDimensionesMovimiento("sal");
+    }
+    $("#modal-salida-inv")?.classList.add("is-open");
+  });
   $("#modal-inventario-completo")?.addEventListener("click", (e) => {
     if (e.target.closest(".modal-close")) {
       e.preventDefault();
@@ -720,7 +1039,6 @@ export function mountInventarioView(root) {
   $("#solo-bajo")?.addEventListener("change", renderTablaInventario);
   $("#mostrar-inactivos")?.addEventListener("change", renderTablaInventario);
   $("#kardex-buscar")?.addEventListener("input", renderKardex);
-  $("#kardex-filtro-tipo")?.addEventListener("change", renderKardex);
 
   // Botones "Ver" dentro de las tarjetas KPI: filtran la tabla de productos por estado
   root.querySelectorAll("[data-inv-kpi]").forEach((btn) =>
@@ -772,6 +1090,11 @@ export function mountInventarioView(root) {
   });
 
   async function manejarClickTablaProductos(e) {
+    const kardexBtn = e.target.closest("[data-kardex-prod]");
+    if (kardexBtn) {
+      abrirModalKardex(kardexBtn.dataset.kardexProd);
+      return;
+    }
     const editBtn = e.target.closest("[data-edit-prod]");
     if (editBtn) {
       const prod = productos.find((p) => p.id === editBtn.dataset.editProd);
@@ -783,10 +1106,14 @@ export function mountInventarioView(root) {
       const prod = productos.find((p) => p.id === toggleBtn.dataset.toggleProd);
       if (!prod) return;
       const nuevoEstado = prod.activo === false;
-      if (typeof window !== "undefined" && typeof window.confirm === "function") {
-        const accionTxt = nuevoEstado ? "activar" : "desactivar";
-        if (!window.confirm(`¿Desea ${accionTxt} el producto "${prod.nombre}"?`)) return;
-      }
+      const accionTxt = nuevoEstado ? "activar" : "desactivar";
+      const confirmado = await confirmarAccionModal({
+        titulo: `${nuevoEstado ? "Activar" : "Desactivar"} producto`,
+        pregunta: `¿Desea ${accionTxt} el producto "${prod.nombre}"?`,
+        textoConfirmar: `Sí, ${accionTxt}`,
+        claseBoton: nuevoEstado ? "btn-primary" : "btn-danger"
+      });
+      if (!confirmado) return;
       try {
         await cambiarEstadoProducto(prod.id, nuevoEstado, getCurrentUser());
         showFeedback(
@@ -888,10 +1215,23 @@ export function mountInventarioView(root) {
 
   $("#form-salida")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const prodSel = productos.find((p) => p.id === $("#sal-producto")?.value);
+    const origenTxt = $("#sal-origen")?.value || "Pérdida o daño";
     const cantTxt = $("#sal-cantidad")?.value || "0";
-    if (typeof window !== "undefined" && typeof window.confirm === "function") {
-      if (!window.confirm(`¿Confirmar salida de inventario por ${cantTxt} unidades/medida?`)) return;
-    }
+    const motivoTxt = ($("#sal-motivo")?.value || "").trim() || "Sin motivo especificado";
+    const confirmado = await confirmarAccionModal({
+      titulo: "Confirmar salida de inventario",
+      pregunta: "¿Desea registrar esta salida / baja de inventario?",
+      detallesHtml: `
+        <div><strong>Producto:</strong> ${escapeHtml(prodSel ? `${prodSel.nombre} (${prodSel.codigo})` : "Producto seleccionado")}</div>
+        <div><strong>Tipo de salida:</strong> ${escapeHtml(origenTxt)}</div>
+        <div><strong>Cantidad / medida:</strong> ${escapeHtml(cantTxt)}${prodSel?.unidad ? ` ${escapeHtml(prodSel.unidad)}` : ""}</div>
+        <div><strong>Motivo:</strong> ${escapeHtml(motivoTxt)}</div>
+      `,
+      textoConfirmar: "Confirmar salida",
+      claseBoton: "btn-danger"
+    });
+    if (!confirmado) return;
     try {
       const mov = await registrarMovimientoBodega(
         {
@@ -923,8 +1263,12 @@ export function mountInventarioView(root) {
       productos = lista;
       renderTablaInventario();
       renderDashboardInventario();
+      poblarSelectProductoKardex();
       if ($("#modal-inventario-completo")?.classList.contains("is-open")) {
         renderInventarioModal();
+      }
+      if ($("#modal-kardex-inventario")?.classList.contains("is-open")) {
+        renderKardex();
       }
     },
     { incluirInactivos: true }
@@ -974,27 +1318,66 @@ export function mountContabilidadView(root) {
   if ($("#ing-responsable")) $("#ing-responsable").value = currentUser.name || currentUser.email;
   if ($("#gas-responsable")) $("#gas-responsable").value = currentUser.name || currentUser.email;
 
-  // Cambio entre los 3 botones grandes (Registrar ingreso / Registrar gasto / Traslado)
-  const tabBtns = [
-    { btn: "#tab-btn-ingreso", panel: "#panel-ingreso" },
-    { btn: "#tab-btn-gasto", panel: "#panel-gasto" },
-    { btn: "#tab-btn-traslado", panel: "#panel-traslado" }
-  ];
-  tabBtns.forEach(({ btn, panel }) => {
-    $(btn)?.addEventListener("click", () => {
-      tabBtns.forEach((t) => {
-        $(t.btn)?.classList.toggle("active", t.btn === btn);
-        const p = $(t.panel);
-        if (p) p.style.display = t.panel === panel ? "block" : "none";
-      });
-      if (feedbackEl) feedbackEl.style.display = "none";
+  // Pestañas principales de Contabilidad (Resumen, Movimientos, Cartera, Caja y Bancos, Cuentas por pagar)
+  function cambiarPestanaContable(tabName = "resumen") {
+    root.querySelectorAll("[data-contab-view]").forEach((btn) =>
+      btn.classList.toggle("active", btn.dataset.contabView === tabName)
+    );
+    ["resumen", "movimientos", "cartera", "bancos", "por_pagar"].forEach((name) => {
+      $(`#contab-view-${name}`)?.classList.toggle("hidden", name !== tabName);
     });
+  }
+  root.querySelectorAll("[data-contab-view]").forEach((btn) =>
+    btn.addEventListener("click", () => cambiarPestanaContable(btn.dataset.contabView || "resumen"))
+  );
+  $("#btn-ir-a-movimientos")?.addEventListener("click", () => cambiarPestanaContable("movimientos"));
+
+  // Cambio entre los 3 botones grandes dentro del modal + Nuevo movimiento
+  const tabBtns = [
+    { btn: "#tab-btn-ingreso", panel: "#panel-ingreso", key: "ingreso" },
+    { btn: "#tab-btn-gasto", panel: "#panel-gasto", key: "gasto" },
+    { btn: "#tab-btn-traslado", panel: "#panel-traslado", key: "traslado" }
+  ];
+  function activarTabModalNuevoMov(key = "ingreso") {
+    tabBtns.forEach((t) => {
+      $(t.btn)?.classList.toggle("active", t.key === key);
+      const p = $(t.panel);
+      if (p) p.style.display = t.key === key ? "block" : "none";
+    });
+    if (feedbackEl) feedbackEl.style.display = "none";
+  }
+  tabBtns.forEach(({ btn, key }) => {
+    $(btn)?.addEventListener("click", () => activarTabModalNuevoMov(key));
   });
 
-  // Sincronizar casilla de efectivo en caja según el método de pago elegido
+  function abrirModalNuevoMov(tab = "ingreso", { gastoPendiente = false } = {}) {
+    activarTabModalNuevoMov(tab);
+    if (tab === "gasto" && $("#gas-estado-pago")) {
+      $("#gas-estado-pago").value = gastoPendiente ? "Pendiente" : "Pagado";
+    }
+    sincronizarVisibilidadCajaEfectivo();
+    $("#modal-nuevo-mov-contable")?.classList.add("is-open");
+  }
+  $("#btn-abrir-nuevo-mov-contable")?.addEventListener("click", () => abrirModalNuevoMov("ingreso"));
+  $("#btn-abrir-nuevo-mov-contable-2")?.addEventListener("click", () => abrirModalNuevoMov("ingreso"));
+  $("#btn-nuevo-traslado-bancos")?.addEventListener("click", () => abrirModalNuevoMov("traslado"));
+  $("#btn-nueva-cxp")?.addEventListener("click", () => abrirModalNuevoMov("gasto", { gastoPendiente: true }));
+  root.querySelectorAll('[data-close-modal="modal-nuevo-mov-contable"]').forEach((btn) =>
+    btn.addEventListener("click", () => $("#modal-nuevo-mov-contable")?.classList.remove("is-open"))
+  );
+  root.querySelectorAll('[data-close-modal="modal-abono-cartera"]').forEach((btn) =>
+    btn.addEventListener("click", () => $("#modal-abono-cartera")?.classList.remove("is-open"))
+  );
+  root.querySelectorAll('[data-close-modal="modal-pagar-cxp"]').forEach((btn) =>
+    btn.addEventListener("click", () => $("#modal-pagar-cxp")?.classList.remove("is-open"))
+  );
+
+  // Sincronizar casilla de efectivo en caja según el método de pago y estado de pago
   function sincronizarVisibilidadCajaEfectivo() {
     const ingEsEfectivo = ($("#ing-metodo")?.value || "Efectivo") === "Efectivo";
-    const gasEsEfectivo = ($("#gas-metodo")?.value || "Efectivo") === "Efectivo";
+    const gasEstado = $("#gas-estado-pago")?.value || "Pagado";
+    const gasEsPendiente = gasEstado === "Pendiente";
+    const gasEsEfectivo = ($("#gas-metodo")?.value || "Efectivo") === "Efectivo" && !gasEsPendiente;
 
     const chkIng = $("#ing-afecta-caja");
     const boxIng = $("#ing-wrap-afecta-caja");
@@ -1018,15 +1401,18 @@ export function mountContabilidadView(root) {
       chkGas.disabled = !gasEsEfectivo;
       boxGas.style.opacity = gasEsEfectivo ? "1" : "0.6";
       if (helpGas) {
-        helpGas.textContent = gasEsEfectivo
-          ? "Si el gasto se pagó con billetes de la caja abierta, déjela marcada para descontarlo del efectivo esperado."
-          : "Como el pago se hizo por transferencia o billetera digital, NO modifica el efectivo físico de la caja.";
+        helpGas.textContent = gasEsPendiente
+          ? "Al quedar como Cuenta por pagar pendiente, no descuenta dinero de Caja ni Banco hasta que se pague."
+          : gasEsEfectivo
+            ? "Si el gasto se pagó con billetes de la caja abierta, déjela marcada para descontarlo del efectivo esperado."
+            : "Como el pago se hizo por transferencia o billetera digital, NO modifica el efectivo físico de la caja.";
       }
     }
   }
 
   $("#ing-metodo")?.addEventListener("change", sincronizarVisibilidadCajaEfectivo);
   $("#gas-metodo")?.addEventListener("change", sincronizarVisibilidadCajaEfectivo);
+  $("#gas-estado-pago")?.addEventListener("change", sincronizarVisibilidadCajaEfectivo);
   sincronizarVisibilidadCajaEfectivo();
 
   // Modal de confirmación antes de guardar una operación importante
@@ -1052,10 +1438,6 @@ export function mountContabilidadView(root) {
     if (modal) modal.classList.remove("is-open");
     accionPendienteConfirmar = null;
   }
-
-  $("#modal-confirmar-contable")?.addEventListener("click", (e) => {
-    if (e.target.id === "modal-confirmar-contable") cerrarModalConfirmacion();
-  });
 
   $("#btn-confirmar-no-contable")?.addEventListener("click", cerrarModalConfirmacion);
   $("#btn-cerrar-confirmar-contable")?.addEventListener("click", cerrarModalConfirmacion);
@@ -1171,6 +1553,182 @@ export function mountContabilidadView(root) {
     $("#buscar-contabilidad-modal")?.focus();
   }
 
+  function renderMovimientosRecientes() {
+    const listEl = $("#contab-recientes-list");
+    if (!listEl) return;
+    const recientes = [...movimientos]
+      .filter((m) => !m.anulado && m.estado !== "Revertido" && m.tipo !== TIPOS_CONTABLE.REVERSION)
+      .sort((a, b) => String(b.fechaRegistro || b.fecha || "").localeCompare(String(a.fechaRegistro || a.fecha || "")))
+      .slice(0, 6);
+
+    if (!recientes.length) {
+      listEl.innerHTML = `<div class="text-muted" style="text-align:center;padding:1.5rem">Aún no hay movimientos contables registrados.</div>`;
+      return;
+    }
+
+    listEl.innerHTML = recientes
+      .map((m) => {
+        const esIng = m.tipo === TIPOS_CONTABLE.INGRESO;
+        const esTras = m.tipo === TIPOS_CONTABLE.TRASLADO;
+        const esDev = m.tipo === TIPOS_CONTABLE.DEVOLUCION;
+        const esGas = m.tipo === TIPOS_CONTABLE.GASTO;
+        const montoMostrar = esDev ? roundCOP(m.montoReembolsado ?? m.valor ?? m.monto) : roundCOP(m.valor ?? m.monto);
+        const signo = esIng ? "+" : esTras ? "⇄ " : "−";
+        const cls = esIng ? "text-success" : esTras ? "" : "text-danger";
+        const fechaTxt = formatShortDate(m.fechaEfectiva || m.fecha);
+        const cuentaTxt = esTras
+          ? `${m.cuentaOrigen || "Caja"} → ${m.cuentaDestino || "Banco"}`
+          : `${m.metodoPago || "Efectivo"} · ${normalizarCuentaContable(m.metodoPago || "Efectivo") === "Caja física" ? "Caja" : normalizarCuentaContable(m.metodoPago)}`;
+        const estadoTag = m.estadoPago === "Pendiente" || m.estado === "Por pagar" ? ' <span class="badge badge-warning" style="font-size:.72rem">Por pagar</span>' : "";
+        return `
+          <button type="button" class="contab-reciente-row" data-ver-detalle-cont="${escapeHtml(m.id)}">
+            <div class="contab-reciente-left">
+              <div class="contab-reciente-title">${escapeHtml(m.concepto || m.categoria || m.tipo)}${estadoTag}</div>
+              <div class="contab-reciente-meta">${escapeHtml(fechaTxt)} · ${escapeHtml(cuentaTxt)}</div>
+            </div>
+            <div class="contab-reciente-monto ${cls}">${signo}${formatCOP(montoMostrar)}</div>
+          </button>
+        `;
+      })
+      .join("");
+  }
+
+  function renderCarteraContable() {
+    const tbody = $("#contab-cartera-body");
+    const badgeTotal = $("#contab-cartera-total-badge");
+    const subEl = $("#contab-cartera-sub");
+    if (!tbody) return;
+
+    const ventasPendientes = ventas
+      .filter((v) => v.estado !== "Anulada" && calcularSaldoPendienteVenta(v) > 0)
+      .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+
+    const totalCartera = ventasPendientes.reduce((acc, v) => acc + calcularSaldoPendienteVenta(v), 0);
+    if (badgeTotal) badgeTotal.textContent = `Total por cobrar: ${formatCOP(totalCartera)}`;
+    if (subEl) {
+      subEl.textContent = ventasPendientes.length
+        ? `${ventasPendientes.length} ${ventasPendientes.length === 1 ? "venta activa con saldo pendiente" : "ventas activas con saldo pendiente"}`
+        : "No hay ventas con saldo pendiente por cobrar";
+    }
+
+    if (!ventasPendientes.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-muted" style="text-align:center;padding:1.5rem">No hay clientes con saldo pendiente.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = ventasPendientes
+      .map((v) => {
+        const saldo = calcularSaldoPendienteVenta(v);
+        const abonado = Math.max(0, roundCOP((v.total || 0) - saldo));
+        const cli = v.cliente || {};
+        const docTel = [cli.documento, cli.telefono].filter(Boolean).join(" · ") || "—";
+        return `
+          <tr>
+            <td><b>${escapeHtml(cli.nombre || "Consumidor Final")}</b></td>
+            <td>${escapeHtml(docTel)}</td>
+            <td><b>${escapeHtml(v.numero || v.id)}</b><br><small class="text-muted">${formatShortDate(v.fecha)}</small></td>
+            <td class="num">${formatCOP(v.total || 0)}</td>
+            <td class="num text-success">${formatCOP(abonado)}</td>
+            <td class="num text-danger"><b>${formatCOP(saldo)}</b></td>
+            <td class="text-right" style="white-space:nowrap">
+              <button type="button" class="btn btn-primary btn-xs" data-abono-venta="${escapeHtml(v.id)}">Registrar abono</button>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  function renderCajaYBancos(resGlobal) {
+    const saldos = resGlobal.saldosPorCuenta || {};
+    if ($("#contab-cuenta-caja")) $("#contab-cuenta-caja").textContent = formatCOP(resGlobal.disponibleCaja ?? saldos["Caja física"] ?? 0);
+    if ($("#contab-cuenta-banco")) $("#contab-cuenta-banco").textContent = formatCOP(saldos["Transferencia bancaria"] || 0);
+    if ($("#contab-cuenta-nequi")) $("#contab-cuenta-nequi").textContent = formatCOP(saldos.Nequi || 0);
+    if ($("#contab-cuenta-daviplata")) $("#contab-cuenta-daviplata").textContent = formatCOP(saldos.Daviplata || 0);
+    if ($("#contab-bancos-caja-badge")) {
+      $("#contab-bancos-caja-badge").textContent = cajaAbierta
+        ? `Caja abierta por ${cajaAbierta.usuarioApertura} · Base inicial: ${formatCOP(cajaAbierta.baseInicial || 0)}`
+        : "No hay turno de caja abierto";
+    }
+
+    const tbody = $("#contab-bancos-body");
+    if (!tbody) return;
+    const movsCuentas = [...movimientos]
+      .filter(
+        (m) =>
+          !m.anulado &&
+          m.estado !== "Revertido" &&
+          m.tipo !== TIPOS_CONTABLE.REVERSION &&
+          m.estadoPago !== "Pendiente" &&
+          m.estado !== "Por pagar" &&
+          m.tipo !== TIPOS_CONTABLE.BILLETERA_REDENCION &&
+          m.metodoPago !== "Saldo a favor"
+      )
+      .slice(0, 25);
+
+    tbody.innerHTML = movsCuentas.length
+      ? movsCuentas
+          .map((m) => {
+            const esTras = m.tipo === TIPOS_CONTABLE.TRASLADO;
+            const esIng = m.tipo === TIPOS_CONTABLE.INGRESO;
+            const cuentaTxt = esTras
+              ? `${m.cuentaOrigen || "Caja física"} → ${m.cuentaDestino || "Transferencia bancaria"}`
+              : normalizarCuentaContable(m.metodoPago || "Efectivo");
+            const signo = esIng ? "+ " : esTras ? "⇄ " : "− ";
+            const cls = esIng ? "text-success" : esTras ? "" : "text-danger";
+            const montoVal = m.tipo === TIPOS_CONTABLE.DEVOLUCION ? roundCOP(m.montoReembolsado ?? 0) : roundCOP(m.valor ?? m.monto);
+            return `
+              <tr>
+                <td><b>${formatShortDate(m.fechaEfectiva || m.fecha)}</b></td>
+                <td><span class="badge badge-neutral">${escapeHtml(cuentaTxt)}</span></td>
+                <td>${escapeHtml(m.tipo)}</td>
+                <td>${escapeHtml(m.concepto || "—")}</td>
+                <td class="text-right num ${cls}"><b>${signo}${formatCOP(montoVal)}</b></td>
+                <td class="text-right"><button type="button" class="btn btn-outline btn-xs" data-ver-detalle-cont="${escapeHtml(m.id)}">Ver</button></td>
+              </tr>
+            `;
+          })
+          .join("")
+      : `<tr><td colspan="6" class="text-muted" style="text-align:center;padding:1.5rem">Sin movimientos registrados en cuentas.</td></tr>`;
+  }
+
+  function renderCuentasPorPagar() {
+    const tbody = $("#contab-cxp-body");
+    const badgeTotal = $("#contab-cxp-total-badge");
+    if (!tbody) return;
+    const pendientes = movimientos.filter(
+      (m) =>
+        !m.anulado &&
+        m.estado !== "Revertido" &&
+        m.tipo === TIPOS_CONTABLE.GASTO &&
+        (m.estadoPago === "Pendiente" || m.estado === "Por pagar")
+    );
+    const totalPorPagar = pendientes.reduce((acc, m) => acc + roundCOP(m.valor ?? m.monto), 0);
+    if (badgeTotal) badgeTotal.textContent = `Total por pagar: ${formatCOP(totalPorPagar)}`;
+
+    if (!pendientes.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-muted" style="text-align:center;padding:1.5rem">No hay cuentas por pagar pendientes.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = pendientes
+      .map(
+        (m) => `
+          <tr>
+            <td><b>${formatShortDate(m.fechaEfectiva || m.fecha)}</b></td>
+            <td>${escapeHtml(m.proveedor || "Proveedor no especificado")}</td>
+            <td><b>${escapeHtml(m.concepto || "—")}</b><br><small class="text-muted">${escapeHtml(m.categoria || "—")}</small></td>
+            <td class="num text-danger"><b>${formatCOP(m.valor ?? m.monto)}</b></td>
+            <td><span class="badge badge-warning">Pendiente</span></td>
+            <td class="text-right" style="white-space:nowrap">
+              <button type="button" class="btn btn-primary btn-xs" data-pagar-cxp="${escapeHtml(m.id)}">Registrar pago a proveedor</button>
+            </td>
+          </tr>
+        `
+      )
+      .join("");
+  }
+
   function renderContabilidad() {
     const periodoSel = $("#contab-periodo-resumen")?.value || "todos";
     const desde = $("#contab-filter-desde")?.value || "";
@@ -1187,7 +1745,7 @@ export function mountContabilidadView(root) {
     const resPeriodo = informe.resumen;
 
     if ($("#contab-kpi-ingresos")) {
-      $("#contab-kpi-ingresos").textContent = formatCOP(resPeriodo.ingresos);
+      $("#contab-kpi-ingresos").textContent = formatCOP(resPeriodo.recaudos ?? resPeriodo.ingresos);
     }
     if ($("#contab-kpi-ingresos-sub")) {
       $("#contab-kpi-ingresos-sub").textContent = `${resPeriodo.countIngresos} registros · Efectivo: ${formatCOP(resPeriodo.ingresosEfectivo)} · Bancos: ${formatCOP(resPeriodo.ingresosBancos)}`;
@@ -1197,53 +1755,32 @@ export function mountContabilidadView(root) {
       $("#contab-kpi-gastos").textContent = formatCOP(resPeriodo.gastos);
     }
     if ($("#contab-kpi-gastos-sub")) {
-      $("#contab-kpi-gastos-sub").textContent = `${resPeriodo.countGastos} registros · Gastos del negocio: ${formatCOP(resPeriodo.gastosOperativos)} · Compras material: ${formatCOP(resPeriodo.comprasInventario)}`;
+      $("#contab-kpi-gastos-sub").textContent = `${resPeriodo.countGastos} registros · Gastos: ${formatCOP(resPeriodo.gastosOperativos)} · Compras: ${formatCOP(resPeriodo.comprasInventario)}`;
     }
 
-    if ($("#contab-kpi-resultado")) {
-      const sign = resPeriodo.resultadoPeriodo > 0 ? "+ " : "";
-      $("#contab-kpi-resultado").textContent = `${sign}${formatCOP(resPeriodo.resultadoPeriodo)}`;
-      $("#contab-kpi-resultado").className = `stat-value num ${resPeriodo.resultadoPeriodo >= 0 ? "text-success" : "text-danger"}`;
+    if ($("#contab-kpi-disponible")) {
+      $("#contab-kpi-disponible").textContent = formatCOP(resGlobal.disponibleTotal ?? 0);
     }
-    if ($("#contab-kpi-resultado-badge")) {
-      if (resPeriodo.countIngresos === 0 && resPeriodo.countGastos === 0) {
-        $("#contab-kpi-resultado-badge").textContent = "Sin movimientos";
-        $("#contab-kpi-resultado-badge").className = "badge badge-neutral";
-      } else if (resPeriodo.resultadoPeriodo >= 0) {
-        $("#contab-kpi-resultado-badge").textContent = "Resultado positivo";
-        $("#contab-kpi-resultado-badge").className = "badge badge-success";
-      } else {
-        $("#contab-kpi-resultado-badge").textContent = "Resultado negativo";
-        $("#contab-kpi-resultado-badge").className = "badge badge-danger";
-      }
-    }
-    if ($("#contab-kpi-resultado-sub")) {
-      $("#contab-kpi-resultado-sub").textContent =
-        "Ingresos menos gastos reconocidos (no equivale al efectivo físico en caja)";
+    if ($("#contab-kpi-disponible-sub")) {
+      $("#contab-kpi-disponible-sub").textContent = `Caja: ${formatCOP(resGlobal.disponibleCaja ?? 0)} · Bancos/Digital: ${formatCOP(resGlobal.disponibleBancos ?? 0)}`;
     }
 
-    const arqueo = cajaAbierta ? calcularArqueoCaja(cajaAbierta, ventas) : null;
-    if ($("#contab-kpi-efectivo-caja")) {
-      $("#contab-kpi-efectivo-caja").textContent = arqueo
-        ? formatCOP(arqueo.efectivoEsperado)
-        : "$ 0 (Caja cerrada)";
-    }
-    if ($("#contab-kpi-saldo-bancos")) {
-      $("#contab-kpi-saldo-bancos").textContent = resGlobal.tieneDatosBancarios
-        ? formatCOP(resGlobal.saldoBancos)
-        : "Sin información registrada";
-    }
     if ($("#contab-kpi-por-cobrar")) {
-      $("#contab-kpi-por-cobrar").textContent = formatCOP(resGlobal.cuentasPorCobrar);
+      $("#contab-kpi-por-cobrar").textContent = formatCOP(resGlobal.porCobrar ?? resGlobal.cuentasPorCobrar ?? 0);
     }
-    if ($("#contab-kpi-caja-badge")) {
-      $("#contab-kpi-caja-badge").textContent = arqueo
-        ? `Caja abierta por ${cajaAbierta.usuarioApertura}`
-        : "No hay turno de caja abierto";
-      $("#contab-kpi-caja-badge").className = `badge ${arqueo ? "badge-success" : "badge-neutral"}`;
+    if ($("#contab-kpi-por-cobrar-sub")) {
+      const cntPend = ventas.filter((v) => v.estado !== "Anulada" && calcularSaldoPendienteVenta(v) > 0).length;
+      $("#contab-kpi-por-cobrar-sub").textContent = cntPend > 0
+        ? `${cntPend} ${cntPend === 1 ? "venta con saldo pendiente" : "ventas con saldo pendiente"}`
+        : "Clientes con saldo pendiente";
     }
 
-    // Tabla limpia de 7 columnas (máximo 12 filas en la vista principal)
+    renderMovimientosRecientes();
+    renderCarteraContable();
+    renderCajaYBancos(resGlobal);
+    renderCuentasPorPagar();
+
+    // Tabla limpia de 7 columnas (máximo 12 filas en la vista Movimientos)
     const tbody = $("#contab-table-body");
     if (!tbody) return;
 
@@ -1303,11 +1840,6 @@ export function mountContabilidadView(root) {
   root.querySelectorAll('[data-close-modal="modal-contabilidad-completo"]').forEach((btn) =>
     btn.addEventListener("click", () => $("#modal-contabilidad-completo")?.classList.remove("is-open"))
   );
-  $("#modal-contabilidad-completo")?.addEventListener("click", (e) => {
-    if (e.target.id === "modal-contabilidad-completo") {
-      $("#modal-contabilidad-completo")?.classList.remove("is-open");
-    }
-  });
   $("#buscar-contabilidad-modal")?.addEventListener("input", renderModalContabilidadCompleto);
   ["#modal-contab-desde", "#modal-contab-hasta"].forEach((sel) => {
     $(sel)?.addEventListener("input", renderModalContabilidadCompleto);
@@ -1397,10 +1929,6 @@ export function mountContabilidadView(root) {
     movimientoDetalleActualId = null;
   }
 
-  $("#modal-detalle-contable")?.addEventListener("click", (e) => {
-    if (e.target.id === "modal-detalle-contable") cerrarModalDetalle();
-  });
-
   $("#btn-cerrar-detalle-contable")?.addEventListener("click", cerrarModalDetalle);
   $("#btn-cerrar-detalle-contable-2")?.addEventListener("click", cerrarModalDetalle);
 
@@ -1414,6 +1942,77 @@ export function mountContabilidadView(root) {
   }
   $("#contab-table-body")?.addEventListener("click", manejarClickDetalleContable);
   $("#contab-table-body-modal")?.addEventListener("click", manejarClickDetalleContable);
+  $("#contab-recientes-list")?.addEventListener("click", manejarClickDetalleContable);
+  $("#contab-bancos-body")?.addEventListener("click", manejarClickDetalleContable);
+
+  // Cartera: abrir modal de abono y registrar abono
+  $("#contab-cartera-body")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-abono-venta]");
+    if (!btn) return;
+    const venta = ventas.find((v) => v.id === btn.dataset.abonoVenta);
+    if (!venta) return;
+    const saldo = calcularSaldoPendienteVenta(venta);
+    if ($("#abono-cartera-venta-id")) $("#abono-cartera-venta-id").value = venta.id;
+    if ($("#abono-cartera-monto")) $("#abono-cartera-monto").value = formatMontoInput(saldo);
+    if ($("#abono-cartera-ref")) $("#abono-cartera-ref").value = "";
+    if ($("#abono-cartera-resumen")) {
+      $("#abono-cartera-resumen").innerHTML = `
+        <div><strong>Cliente:</strong> ${escapeHtml(venta.cliente?.nombre || "Consumidor Final")}</div>
+        <div><strong>Venta:</strong> ${escapeHtml(venta.numero || venta.id)}</div>
+        <div><strong>Saldo pendiente:</strong> <b class="text-danger">${formatCOP(saldo)}</b></div>
+      `;
+    }
+    $("#modal-abono-cartera")?.classList.add("is-open");
+  });
+
+  $("#form-abono-cartera")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ventaId = $("#abono-cartera-venta-id")?.value;
+    const monto = parseMontoInput($("#abono-cartera-monto")?.value);
+    const metodoPago = $("#abono-cartera-metodo")?.value || "Efectivo";
+    const referencia = $("#abono-cartera-ref")?.value || "";
+    try {
+      await registrarAbonoVenta({ ventaId, monto, metodoPago, referencia }, getCurrentUser());
+      $("#modal-abono-cartera")?.classList.remove("is-open");
+      showFeedback(`Abono de ${formatCOP(monto)} registrado correctamente.`);
+    } catch (err) {
+      showFeedback(err.message, true);
+    }
+  });
+
+  // Cuentas por pagar: abrir modal de pago a proveedor y liquidar
+  $("#contab-cxp-body")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-pagar-cxp]");
+    if (!btn) return;
+    const mov = movimientos.find((m) => m.id === btn.dataset.pagarCxp);
+    if (!mov) return;
+    if ($("#cxp-mov-id")) $("#cxp-mov-id").value = mov.id;
+    if ($("#cxp-fecha")) $("#cxp-fecha").value = hoyIso;
+    if ($("#cxp-ref")) $("#cxp-ref").value = mov.referencia || "";
+    if ($("#cxp-resumen-box")) {
+      $("#cxp-resumen-box").innerHTML = `
+        <div><strong>Proveedor:</strong> ${escapeHtml(mov.proveedor || "No especificado")}</div>
+        <div><strong>Concepto:</strong> ${escapeHtml(mov.concepto || "—")}</div>
+        <div><strong>Valor a pagar:</strong> <b class="text-danger">${formatCOP(mov.valor ?? mov.monto)}</b></div>
+      `;
+    }
+    $("#modal-pagar-cxp")?.classList.add("is-open");
+  });
+
+  $("#form-pagar-cxp")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const movimientoId = $("#cxp-mov-id")?.value;
+    const metodoPago = $("#cxp-metodo")?.value || "Efectivo";
+    const fecha = $("#cxp-fecha")?.value || hoyIso;
+    const referencia = $("#cxp-ref")?.value || "";
+    try {
+      const pagado = await pagarCuentaPorPagar({ movimientoId, metodoPago, fecha, referencia }, getCurrentUser());
+      $("#modal-pagar-cxp")?.classList.remove("is-open");
+      showFeedback(`Pago a proveedor registrado (${pagado.concepto} por ${formatCOP(pagado.monto)}).`);
+    } catch (err) {
+      showFeedback(err.message, true);
+    }
+  });
 
   $("#btn-confirmar-reversion-contable")?.addEventListener("click", async () => {
     if (!movimientoDetalleActualId) return;
@@ -1479,6 +2078,7 @@ export function mountContabilidadView(root) {
           if ($("#ing-fecha")) $("#ing-fecha").value = hoyIso;
           if ($("#ing-responsable")) $("#ing-responsable").value = currentUser.name || currentUser.email;
           sincronizarVisibilidadCajaEfectivo();
+          $("#modal-nuevo-mov-contable")?.classList.remove("is-open");
           showFeedback(`El ingreso se registró correctamente (${mov.concepto} por ${formatCOP(mov.monto)}).`);
         } catch (err) {
           showFeedback(err.message, true);
@@ -1495,6 +2095,8 @@ export function mountContabilidadView(root) {
     const montoNum = parseMontoInput($("#gas-monto")?.value);
     const fechaEfectiva = $("#gas-fecha")?.value || hoyIso;
     const metodoPago = $("#gas-metodo")?.value || "Efectivo";
+    const estadoPago = $("#gas-estado-pago")?.value || "Pagado";
+    const proveedor = String($("#gas-proveedor")?.value || "").trim();
 
     if (!concepto) {
       showFeedback("Por favor escriba el concepto indicando en qué se gastó el dinero.", true);
@@ -1512,7 +2114,9 @@ export function mountContabilidadView(root) {
       detallesHtml: `
         <div><strong>Concepto del gasto:</strong> ${escapeHtml(concepto)}</div>
         <div><strong>Categoría:</strong> ${escapeHtml(categoria)}</div>
+        <div><strong>Estado del pago:</strong> ${escapeHtml(estadoPago === "Pendiente" ? "Pendiente por pagar (Cuenta por pagar)" : "Pagado")}</div>
         <div><strong>Método de pago:</strong> ${escapeHtml(metodoPago)}</div>
+        ${proveedor ? `<div><strong>Proveedor:</strong> ${escapeHtml(proveedor)}</div>` : ""}
         <div><strong>Fecha:</strong> ${escapeHtml(fechaEfectiva)}</div>
       `,
       textoBoton: "Sí, registrar",
@@ -1527,7 +2131,9 @@ export function mountContabilidadView(root) {
               monto: montoNum,
               fechaEfectiva,
               metodoPago,
-              afectaCajaFisica: Boolean($("#gas-afecta-caja")?.checked),
+              estadoPago,
+              proveedor,
+              afectaCajaFisica: estadoPago === "Pagado" && Boolean($("#gas-afecta-caja")?.checked),
               observaciones: $("#gas-nota")?.value || ""
             },
             getCurrentUser()
@@ -1536,7 +2142,12 @@ export function mountContabilidadView(root) {
           if ($("#gas-fecha")) $("#gas-fecha").value = hoyIso;
           if ($("#gas-responsable")) $("#gas-responsable").value = currentUser.name || currentUser.email;
           sincronizarVisibilidadCajaEfectivo();
-          showFeedback("El gasto se registró correctamente.");
+          $("#modal-nuevo-mov-contable")?.classList.remove("is-open");
+          showFeedback(
+            estadoPago === "Pendiente"
+              ? "Cuenta por pagar a proveedor registrada correctamente."
+              : "El gasto se registró correctamente."
+          );
         } catch (err) {
           showFeedback(err.message, true);
         }
@@ -1586,6 +2197,7 @@ export function mountContabilidadView(root) {
           );
           $("#form-traslado-contable").reset();
           if ($("#tras-fecha")) $("#tras-fecha").value = hoyIso;
+          $("#modal-nuevo-mov-contable")?.classList.remove("is-open");
           showFeedback(`El traslado entre cuentas se registró correctamente (${tr.concepto} por ${formatCOP(tr.monto)}).`);
         } catch (err) {
           showFeedback(err.message, true);
@@ -2423,7 +3035,7 @@ export function mountReportesView(root) {
       if (key) abrirModalReporteCompleto(key);
       return;
     }
-    if (e.target.closest("[data-close-rep-modal]") || e.target.id === "modal-reporte-completo") {
+    if (e.target.closest("[data-close-rep-modal]")) {
       cerrarModalReporteCompleto();
     }
   });

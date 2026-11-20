@@ -431,8 +431,29 @@ export function evaluarPagos({ total, pagos = [], permitirSaldoFavor = true }) {
   // Dinero neto en efectivo que entra y se queda en la caja física (jamás incluye saldo a favor)
   const efectivoNetoCaja = Math.max(0, roundCOP(sumaEfectivoRecibido - cambio));
 
+  // Calcular importeNeto en cada pago normalizado (restando el cambio devuelto en efectivo)
+  let cambioRestante = cambio;
+  const pagosConNeto = pagosNormalizados.map((p) => {
+    if (p.metodo === "Efectivo") {
+      const cambioPorAplicar = Math.min(p.importe, cambioRestante);
+      cambioRestante = roundCOP(cambioRestante - cambioPorAplicar);
+      return {
+        ...p,
+        importeRecibido: p.importe,
+        cambioDevuelto: roundCOP(cambioPorAplicar),
+        importeNeto: Math.max(0, roundCOP(p.importe - cambioPorAplicar))
+      };
+    }
+    return {
+      ...p,
+      importeRecibido: p.importe,
+      cambioDevuelto: 0,
+      importeNeto: p.importe
+    };
+  });
+
   return {
-    pagos: pagosNormalizados,
+    pagos: pagosConNeto,
     totalVenta,
     totalRecibido: roundCOP(totalRecibido),
     sumaEfectivoRecibido: roundCOP(sumaEfectivoRecibido),
@@ -972,6 +993,9 @@ export async function registrarVenta(
             : `Venta ${numeroVenta} · ${cliente.nombre}${evalPago.pagos.length > 1 ? ` (${pago.metodo})` : ""}`,
           monto: montoPagoNeto,
           valor: montoPagoNeto,
+          totalVenta: calculo.total,
+          efectivoRecibido: pago.importeRecibido ?? pago.importe ?? montoPagoNeto,
+          cambioEntregado: pago.cambioDevuelto ?? (pago.metodo === "Efectivo" ? evalPago.cambio : 0),
           metodoPago: pago.metodo,
           afectaCajaFisica: pago.metodo === "Efectivo",
           cajaId: pago.metodo === "Efectivo" ? caja.id : null,

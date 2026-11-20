@@ -16,6 +16,7 @@ import {
 } from "./store.js";
 import { getCurrentUser, assertPermission } from "../auth.js";
 import { roundCOP } from "./inventario-service.js";
+import { calcularSaldoPendienteVenta } from "./clientes-service.js";
 
 export const TIPOS_CONTABLE = {
   INGRESO: "Ingreso",
@@ -203,12 +204,28 @@ export function filtrarMovimientosContables(
   });
 }
 
+export function normalizarCuentaContable(cuenta) {
+  const c = String(cuenta || "").trim();
+  if (!c || c === "Efectivo" || c === "Caja física") return "Caja física";
+  if (c === "Nequi") return "Nequi";
+  if (c === "Daviplata") return "Daviplata";
+  if (
+    c === "Cuenta bancaria" ||
+    c === "Transferencia" ||
+    c === "Transferencia bancaria" ||
+    c.startsWith("Tarjeta")
+  ) {
+    return "Transferencia bancaria";
+  }
+  return "Transferencia bancaria";
+}
+
 // Calcula los 4 indicadores financieros principales y los saldos de efectivo, bancos y cuentas por cobrar (Sección 3 y 11)
 export function calcularResumenContable(
   movimientos = listarMovimientosContables(),
   { cajas = null, ventas = null } = {}
 ) {
-  let ingresos = 0;
+  let recaudos = 0;
   let gastos = 0;
   let totalDevoluciones = 0;
   let totalReembolsos = 0;
@@ -220,13 +237,34 @@ export function calcularResumenContable(
   let ingresosBancos = 0;
   let gastosEfectivo = 0;
   let gastosBancos = 0;
+  let devolucionesEfectivo = 0;
+  let devolucionesBancos = 0;
   let trasladosACaja = 0;
+  let trasladosDesdeCaja = 0;
   let trasladosABancos = 0;
+  let trasladosDesdeBancos = 0;
+  let porPagar = 0;
   let countIngresos = 0;
   let countGastos = 0;
+  let countPorPagar = 0;
   let movimientosBancariosCount = 0;
   let ultimoIngreso = null;
   let ultimoGasto = null;
+
+  const saldosPorCuenta = {
+    "Caja física": 0,
+    "Transferencia bancaria": 0,
+    Nequi: 0,
+    Daviplata: 0
+  };
+
+  const listaVentas = ventas || getCollection(COLLECTIONS.VENTAS);
+  const ventasById = new Map();
+  const ventasByNumero = new Map();
+  for (const v of listaVentas) {
+    if (v.id) ventasById.set(v.id, v);
+    if (v.numero) ventasByNumero.set(String(v.numero).toUpperCase(), v);
+  }
 
   const ordenados = [...movimientos].sort((a, b) =>
     (b.fecha || "").localeCompare(a.fecha || "")
@@ -237,57 +275,87 @@ export function calcularResumenContable(
       continue;
     }
 
-    const monto = roundCOP(m.valor ?? m.monto);
+    let monto = roundCOP(m.valor ?? m.monto);
+    // Saneamiento automático de registros históricos Venta POS que guardaron el billete sin restar el cambio
+    if (m.origen === "Venta POS" && m.tipo === TIPOS_CONTABLE.INGRESO) {
+      const vAsoc =
+        (m.referenciaId && ventasById.get(m.referenciaId)) ||
+        (m.numeroVenta && ventasByNumero.get(String(m.numeroVenta).toUpperCase()));
+      if (vAsoc && monto > roundCOP(vAsoc.total || 0)) {
+        const netoRealVenta = Math.max(0, roundCOP(vAsoc.total || 0) - calcularSaldoPendienteVenta(vAsoc));
+        monto = Math.min(monto, netoRealVenta);
+      }
+    }
+
     const metodo = m.metodoPago || "Efectivo";
     const esEfectivo = metodo === "Efectivo";
+    const cuenta = normalizarCuentaContable(metodo);
 
     if (m.tipo === TIPOS_CONTABLE.TRASLADO) {
       // Un traslado interno entre cuentas propias NO es ingreso ni gasto (Sección 6)
       movimientosBancariosCount++;
-      if (m.cuentaDestino === "Cuenta bancaria") {
-        trasladosABancos += monto;
-      } else if (m.cuentaDestino === "Caja física") {
-        trasladosACaja += monto;
-      }
+      const cOrigen = normalizarCuentaContable(m.cuentaOrigen || "Caja física");
+      const cDestino = normalizarCuentaContable(m.cuentaDestino || "Transferencia bancaria");
+      if (cOrigen in saldosPorCuenta) saldosPorCuenta[cOrigen] = roundCOP(saldosPorCuenta[cOrigen] - monto);
+      if (cDestino in saldosPorCuenta) saldosPorCuenta[cDestino] = roundCOP(saldosPorCuenta[cDestino] + monto);
+
+      if (cOrigen === "Caja física") trasladosDesdeCaja += monto;
+      else trasladosDesdeBancos += monto;
+
+      if (cDestino === "Caja física") trasladosACaja += monto;
+      else trasladosABancos += monto;
       continue;
     }
 
     if (m.tipo === TIPOS_CONTABLE.DEVOLUCION) {
-      // Una devolución no es un gasto operativo: ajusta ingresos por el dinero realmente reembolsado
       const montoDev = roundCOP(m.valor ?? m.monto);
       const reembolsoReal = roundCOP(m.montoReembolsado ?? 0);
       totalDevoluciones += montoDev;
       totalReembolsos += reembolsoReal;
       saldoAFavorGenerado += roundCOP(m.saldoAFavorGenerado ?? 0);
-      if (reembolsoReal > 0) {
-        ingresos = roundCOP(ingresos - reembolsoReal);
+      if (reembolsoReal > 0 && metodo !== "Saldo a favor" && metodo !== "Ajuste / Nota crédito") {
+        gastos = roundCOP(gastos + reembolsoReal);
         if (esEfectivo || m.afectaCajaFisica) {
-          ingresosEfectivo = roundCOP(ingresosEfectivo - reembolsoReal);
+          devolucionesEfectivo = roundCOP(devolucionesEfectivo + reembolsoReal);
+          saldosPorCuenta["Caja física"] = roundCOP(saldosPorCuenta["Caja física"] - reembolsoReal);
         } else {
-          ingresosBancos = roundCOP(ingresosBancos - reembolsoReal);
+          devolucionesBancos = roundCOP(devolucionesBancos + reembolsoReal);
+          if (cuenta in saldosPorCuenta) {
+            saldosPorCuenta[cuenta] = roundCOP(saldosPorCuenta[cuenta] - reembolsoReal);
+          }
           movimientosBancariosCount++;
         }
       }
       continue;
     }
 
-    if (m.tipo === TIPOS_CONTABLE.BILLETERA_REDENCION || m.metodoPago === "Saldo a favor") {
+    if (m.tipo === TIPOS_CONTABLE.BILLETERA_REDENCION || metodo === "Saldo a favor") {
       // Redención de saldo a favor: aplica obligación existente sin crear ingreso de efectivo ni bancos
       saldoAFavorRedimido += monto;
       continue;
     }
 
     if (m.tipo === TIPOS_CONTABLE.INGRESO) {
-      ingresos += monto;
+      recaudos += monto;
       if (esEfectivo) {
         ingresosEfectivo += monto;
+        saldosPorCuenta["Caja física"] = roundCOP(saldosPorCuenta["Caja física"] + monto);
       } else {
         ingresosBancos += monto;
+        if (cuenta in saldosPorCuenta) {
+          saldosPorCuenta[cuenta] = roundCOP(saldosPorCuenta[cuenta] + monto);
+        }
         movimientosBancariosCount++;
       }
       countIngresos++;
       if (!ultimoIngreso) ultimoIngreso = m;
     } else if (m.tipo === TIPOS_CONTABLE.GASTO) {
+      const esPorPagar = m.estadoPago === "Pendiente" || m.estado === "Por pagar";
+      if (esPorPagar) {
+        porPagar = roundCOP(porPagar + monto);
+        countPorPagar++;
+        continue;
+      }
       gastos += monto;
       if (m.categoria === "Compra de mercancía" || m.origen === "Compra de inventario") {
         comprasInventario += monto;
@@ -296,8 +364,12 @@ export function calcularResumenContable(
       }
       if (esEfectivo) {
         gastosEfectivo += monto;
+        saldosPorCuenta["Caja física"] = roundCOP(saldosPorCuenta["Caja física"] - monto);
       } else {
         gastosBancos += monto;
+        if (cuenta in saldosPorCuenta) {
+          saldosPorCuenta[cuenta] = roundCOP(saldosPorCuenta[cuenta] - monto);
+        }
         movimientosBancariosCount++;
       }
       countGastos++;
@@ -305,15 +377,23 @@ export function calcularResumenContable(
     }
   }
 
-  // Saldo en bancos: entradas por transferencia/tarjeta + traslados a bancos − gastos bancarios − traslados desde bancos a caja
-  const saldoBancos = roundCOP(ingresosBancos + trasladosABancos - gastosBancos - trasladosACaja);
+  const listaCajas = cajas !== null ? cajas : getCollection(COLLECTIONS.CAJAS);
+  const cajaAbierta = (listaCajas || []).find((c) => c.estado === "Abierta");
+  const baseCaja = cajaAbierta ? roundCOP(cajaAbierta.baseInicial || 0) : 0;
+  saldosPorCuenta["Caja física"] = roundCOP(baseCaja + saldosPorCuenta["Caja física"]);
+
+  const disponibleCaja = roundCOP(saldosPorCuenta["Caja física"]);
+  const disponibleBancos = roundCOP(
+    saldosPorCuenta["Transferencia bancaria"] + saldosPorCuenta.Nequi + saldosPorCuenta.Daviplata
+  );
+  const disponibleTotal = roundCOP(disponibleCaja + disponibleBancos);
+  const saldoBancos = disponibleBancos;
   const tieneDatosBancarios = movimientosBancariosCount > 0;
 
-  // Calcular cuentas por cobrar (ventas con saldoPendiente + pedidos con anticipo y saldo pendiente aún no facturados)
-  const listaVentas = ventas || getCollection(COLLECTIONS.VENTAS);
+  // Calcular cuentas por cobrar (ventas activas con saldo pendiente + pedidos con anticipo pendiente)
   const saldoVentasCredito = listaVentas
-    .filter((v) => v.estado !== "Anulada" && roundCOP(v.saldoPendiente || 0) > 0)
-    .reduce((acc, v) => acc + roundCOP(v.saldoPendiente || 0), 0);
+    .filter((v) => v.estado !== "Anulada" && calcularSaldoPendienteVenta(v) > 0)
+    .reduce((acc, v) => acc + calcularSaldoPendienteVenta(v), 0);
 
   // Pedidos con anticipo cuyo saldo pendiente aún no se ha facturado en una venta
   const pedidosMap = new Map();
@@ -338,23 +418,37 @@ export function calcularResumenContable(
     saldoPedidosPendientes += Math.max(0, roundCOP(p.totalPedido - p.abonado));
   }
 
+  const porCobrar = roundCOP(saldoVentasCredito + saldoPedidosPendientes);
+
   return {
-    ingresos: roundCOP(ingresos),
+    ingresos: roundCOP(recaudos),
+    recaudos: roundCOP(recaudos),
     gastos: roundCOP(gastos),
     totalDevoluciones: roundCOP(totalDevoluciones),
     totalReembolsos: roundCOP(totalReembolsos),
     gastosOperativos: roundCOP(gastosOperativos),
     comprasInventario: roundCOP(comprasInventario),
-    balance: roundCOP(ingresos - gastos),
-    resultadoPeriodo: roundCOP(ingresos - gastos),
+    balance: roundCOP(recaudos - gastos),
+    resultadoPeriodo: roundCOP(recaudos - gastos),
     ingresosEfectivo: roundCOP(ingresosEfectivo),
     ingresosBancos: roundCOP(ingresosBancos),
     gastosEfectivo: roundCOP(gastosEfectivo),
     gastosBancos: roundCOP(gastosBancos),
+    devolucionesEfectivo: roundCOP(devolucionesEfectivo),
+    devolucionesBancos: roundCOP(devolucionesBancos),
+    trasladosACaja: roundCOP(trasladosACaja),
+    trasladosABancos: roundCOP(trasladosABancos),
+    disponibleTotal,
+    disponibleCaja,
+    disponibleBancos,
+    saldosPorCuenta,
     saldoBancos,
     tieneDatosBancarios,
     movimientosBancariosCount,
-    cuentasPorCobrar: roundCOP(saldoVentasCredito + saldoPedidosPendientes),
+    porCobrar,
+    cuentasPorCobrar: porCobrar,
+    porPagar: roundCOP(porPagar),
+    countPorPagar,
     countIngresos,
     countGastos,
     totalMovimientos: countIngresos + countGastos,
@@ -481,6 +575,7 @@ export async function registrarMovimientoContable(
     observaciones = "",
     afectaCajaFisica = false,
     cajaId = null,
+    estadoPago = "Pagado",
     idempotencyKey = null
   },
   user = getCurrentUser()
@@ -591,8 +686,10 @@ export async function registrarMovimientoContable(
 
     // 5. Regla estricta Efectivo vs. Transferencia/Tarjeta (Sección 5, 6 y 11):
     // Las transferencias y tarjetas NUNCA modifican el efectivo físico de la caja.
+    // Los gastos marcados como "Pendiente" (Cuenta por pagar) tampoco salen de caja/banco hasta ser pagados.
+    const esPorPagar = tipo === TIPOS_CONTABLE.GASTO && estadoPago === "Pendiente";
     const esEfectivo = metodoPago === "Efectivo";
-    const debeAfectarCaja = Boolean(afectaCajaFisica && esEfectivo);
+    const debeAfectarCaja = Boolean(!esPorPagar && afectaCajaFisica && esEfectivo);
     let cajaAsociadaId = null;
 
     if (debeAfectarCaja) {
@@ -663,7 +760,8 @@ export async function registrarMovimientoContable(
       observaciones: obsLimpia,
       responsable: user.name || user.email,
       usuario: user.name || user.email,
-      estado: "Confirmado",
+      estadoPago: esPorPagar ? "Pendiente" : "Pagado",
+      estado: esPorPagar ? "Por pagar" : "Confirmado",
       anulado: false,
       idempotencyKey
     });
@@ -766,6 +864,82 @@ export async function registrarTrasladoInterno(
     });
 
     return traslado;
+  });
+}
+
+// Marca una cuenta por pagar pendiente como pagada desde Caja física o Banco/Digital
+export async function pagarCuentaPorPagar(
+  { movimientoId, metodoPago = "Efectivo", fecha, referencia = "", observaciones = "" },
+  user = getCurrentUser()
+) {
+  assertPermission("contabilidad.gestionar", user);
+  if (!movimientoId) throw new Error("Debe indicar la cuenta por pagar a liquidar.");
+
+  return runAtomicTransaction(async (tx) => {
+    const mov = tx.get(COLLECTIONS.MOV_CONTABLES, movimientoId);
+    if (!mov) throw new Error("Cuenta por pagar no encontrada.");
+    if (mov.anulado || mov.estado === "Revertido") {
+      throw new Error("Este movimiento fue revertido y no puede pagarse.");
+    }
+    if (mov.estadoPago !== "Pendiente" && mov.estado !== "Por pagar") {
+      throw new Error("Esta cuenta ya figura como pagada.");
+    }
+
+    const importe = roundCOP(mov.valor ?? mov.monto);
+    const ahora = new Date().toISOString();
+    const fechaPago = String(fecha || ahora.slice(0, 10)).slice(0, 10);
+    const esEfectivo = metodoPago === "Efectivo";
+    let cajaAsociadaId = null;
+
+    if (esEfectivo) {
+      const abierta = tx.getAll(COLLECTIONS.CAJAS).find((c) => c.estado === "Abierta");
+      if (!abierta) {
+        throw new Error("Debe haber una caja abierta para registrar el pago en efectivo a proveedor.");
+      }
+      cajaAsociadaId = abierta.id;
+      const movCaja = {
+        id: `mc-cxp-${Date.now()}`,
+        tipo: "Salida",
+        monto: importe,
+        concepto: `Pago a proveedor: ${mov.concepto}${mov.proveedor ? ` (${mov.proveedor})` : ""}`,
+        usuario: user.name || user.email,
+        fecha: ahora
+      };
+      const lista = Array.isArray(abierta.movimientosEfectivoExtra)
+        ? [...abierta.movimientosEfectivoExtra, movCaja]
+        : [movCaja];
+      tx.update(COLLECTIONS.CAJAS, abierta.id, { movimientosEfectivoExtra: lista });
+    }
+
+    const refFinal = String(referencia || mov.referencia || "").trim();
+    const obsFinal = [mov.observaciones || mov.nota, observaciones].filter(Boolean).join(" · ");
+
+    const actualizado = tx.update(COLLECTIONS.MOV_CONTABLES, mov.id, {
+      estadoPago: "Pagado",
+      estado: "Confirmado",
+      metodoPago,
+      cuentaOrigen: normalizarCuentaContable(metodoPago),
+      afectaCajaFisica: esEfectivo,
+      cajaId: cajaAsociadaId,
+      fechaEfectiva: fechaPago,
+      fechaPago,
+      referencia: refFinal,
+      soporteReferencia: refFinal,
+      observaciones: obsFinal,
+      nota: obsFinal,
+      pagadoPor: user.name || user.email
+    });
+
+    tx.insert(COLLECTIONS.AUDITORIA, {
+      accion: "CONTABLE_PAGO_PROVEEDOR",
+      movimientoId: mov.id,
+      monto: importe,
+      metodoPago,
+      usuario: user.name || user.email,
+      fecha: ahora
+    });
+
+    return actualizado;
   });
 }
 

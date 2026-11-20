@@ -127,15 +127,26 @@ function closeAllModals() {
 
 function setupEventDelegation() {
   if (loginForm) {
+    const loginErrEl = document.getElementById("login-error");
+    const ocultarErrorLogin = () => {
+      if (loginErrEl) loginErrEl.classList.add("hidden");
+    };
+    loginForm.email?.addEventListener("input", ocultarErrorLogin);
+    loginForm.password?.addEventListener("input", ocultarErrorLogin);
+
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+      ocultarErrorLogin();
       try {
         const email = loginForm.email?.value || "admin@elcarmen.com";
         const password = loginForm.password?.value || "123456";
         const user = await autenticarUsuario({ email, password });
         await showDashboardView(user, DEFAULT_ROUTE);
       } catch (err) {
-        alert(err.message);
+        if (loginErrEl) {
+          loginErrEl.textContent = err.message || "No se pudo iniciar sesión.";
+          loginErrEl.classList.remove("hidden");
+        }
       }
     });
   }
@@ -145,11 +156,6 @@ function setupEventDelegation() {
     if (printBtn) {
       e.preventDefault();
       window.print();
-      return;
-    }
-
-    if (e.target.classList.contains("modal-overlay")) {
-      e.target.classList.remove("is-open");
       return;
     }
 

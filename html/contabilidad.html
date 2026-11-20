@@ -68,92 +68,322 @@
 
     <main id="app-root">
       <div class="view contab-accessible" data-view="contabilidad">
-        <!-- BLOQUE 1: Encabezado y 4 tarjetas de resumen financiero -->
+        <!-- Encabezado y controles globales -->
         <div class="page-header">
           <div>
             <h2>Contabilidad</h2>
-            <p>Control sencillo de ingresos, gastos, traslados y dinero disponible</p>
+            <p class="text-muted" style="margin:.15rem 0 0;font-size:.92rem">Control financiero del negocio</p>
           </div>
           <div class="flex gap-2 items-center" style="flex-wrap:wrap">
             <label for="contab-periodo-resumen" class="text-sm" style="font-weight:700">Período:</label>
             <select class="select" id="contab-periodo-resumen" style="width:auto;min-width:175px;min-height:42px;font-weight:600">
+              <option value="todos" selected>Todo el historial</option>
               <option value="hoy">Hoy</option>
               <option value="semana">Esta semana</option>
               <option value="mes">Este mes</option>
               <option value="anio">Este año</option>
-              <option value="todos" selected>Todo el historial</option>
             </select>
             <button type="button" class="btn btn-outline" id="btn-exportar-contable-csv" style="min-height:42px">Exportar CSV</button>
             <button type="button" class="btn btn-outline" id="btn-imprimir-contable" style="min-height:42px">Imprimir</button>
           </div>
         </div>
 
-        <div id="contab-feedback-banner" class="alert mb-3" style="display:none;font-size:1rem;padding:.85rem 1rem"></div>
+        <div id="contab-feedback-banner" class="alert mb-3" style="display:none;font-size:.98rem;padding:.85rem 1rem"></div>
 
-        <div class="contab-kpis">
-          <article class="card stat income contab-stat-card">
-            <div class="stat-label">Dinero que entró (Ingresos)</div>
-            <p class="stat-value num text-success" id="contab-kpi-ingresos">$ 0</p>
-            <div class="stat-sub" id="contab-kpi-ingresos-sub">0 registros</div>
-          </article>
+        <!-- Barra de pestañas tipo píldora -->
+        <nav class="contab-tabs-nav" aria-label="Vistas de contabilidad">
+          <button type="button" class="contab-tab-pill active" data-contab-view="resumen">Resumen</button>
+          <button type="button" class="contab-tab-pill" data-contab-view="movimientos">Movimientos</button>
+          <button type="button" class="contab-tab-pill" data-contab-view="cartera">Cartera (Por cobrar)</button>
+          <button type="button" class="contab-tab-pill" data-contab-view="bancos">Caja y Bancos</button>
+          <button type="button" class="contab-tab-pill" data-contab-view="por_pagar">Cuentas por pagar</button>
+        </nav>
 
-          <article class="card stat expense contab-stat-card">
-            <div class="stat-label">Dinero que salió (Gastos)</div>
-            <p class="stat-value num text-danger" id="contab-kpi-gastos">$ 0</p>
-            <div class="stat-sub" id="contab-kpi-gastos-sub">0 registros</div>
-          </article>
-
-          <article class="card stat contab-stat-card">
-            <div class="flex justify-between items-center gap-2">
-              <div class="stat-label">Resultado del período</div>
-              <span class="badge badge-neutral" id="contab-kpi-resultado-badge">Sin movimientos</span>
-            </div>
-            <p class="stat-value num" id="contab-kpi-resultado">$ 0</p>
-            <div class="stat-sub" id="contab-kpi-resultado-sub">Ingresos menos gastos reconocidos</div>
-          </article>
-
-          <article class="card stat contab-stat-card" style="border-left-color:var(--accent)">
-            <div class="stat-label">Disponible (Caja y Bancos)</div>
-            <div style="margin-top:.35rem;display:grid;gap:.3rem">
-              <div class="flex justify-between items-center gap-2">
-                <span class="text-sm text-muted">Caja física:</span>
-                <strong class="num" id="contab-kpi-efectivo-caja">$ 0</strong>
+        <!-- VISTA 1: RESUMEN -->
+        <section id="contab-view-resumen" class="contab-tab-section">
+          <div class="contab-kpis-modern">
+            <article class="contab-kpi-card">
+              <div class="contab-kpi-top">
+                <span class="contab-kpi-title">Recaudos</span>
+                <span class="contab-kpi-icon is-in" aria-hidden="true">↙</span>
               </div>
-              <div class="flex justify-between items-center gap-2">
-                <span class="text-sm text-muted">Bancos:</span>
-                <strong class="num" id="contab-kpi-saldo-bancos">Sin datos</strong>
-              </div>
-              <div class="flex justify-between items-center gap-2" style="border-top:1px dashed var(--border-color);padding-top:.25rem">
-                <span class="text-xs text-muted">Por cobrar:</span>
-                <strong class="num text-sm" style="color:var(--warning)" id="contab-kpi-por-cobrar">$ 0</strong>
-              </div>
-            </div>
-            <div class="stat-sub mt-1">
-              <span class="badge badge-neutral" id="contab-kpi-caja-badge">Comprobando caja...</span>
-            </div>
-          </article>
-        </div>
+              <p class="contab-kpi-val num" id="contab-kpi-ingresos">$ 0</p>
+              <p class="contab-kpi-sub" id="contab-kpi-ingresos-sub">Ventas cobradas, abonos y anticipos</p>
+            </article>
 
-        <!-- BLOQUE 2: 3 Botones grandes + Formulario corto y puntual -->
-        <section id="contab-pane-registrar" class="mb-4">
-          <div class="contab-big-actions" role="tablist" aria-label="Tipo de movimiento contable">
-            <button type="button" class="contab-action-btn action-income active" id="tab-btn-ingreso">
-              <span class="action-head">＋ Registrar ingreso</span>
-              <span class="action-desc">Anticipos, abonos de instalación u otros ingresos</span>
-            </button>
-            <button type="button" class="contab-action-btn action-expense" id="tab-btn-gasto">
-              <span class="action-head">－ Registrar gasto</span>
-              <span class="action-desc">Servicios, arriendo, transporte, nómina o compras</span>
-            </button>
-            <button type="button" class="contab-action-btn action-transfer" id="tab-btn-traslado">
-              <span class="action-head">⇄ Traslado caja / banco</span>
-              <span class="action-desc">Consignar efectivo al banco o retirar para caja</span>
-            </button>
+            <article class="contab-kpi-card">
+              <div class="contab-kpi-top">
+                <span class="contab-kpi-title">Gastos</span>
+                <span class="contab-kpi-icon is-out" aria-hidden="true">↗</span>
+              </div>
+              <p class="contab-kpi-val num" id="contab-kpi-gastos">$ 0</p>
+              <p class="contab-kpi-sub" id="contab-kpi-gastos-sub">Gastos pagados y devoluciones</p>
+            </article>
+
+            <article class="contab-kpi-card">
+              <div class="contab-kpi-top">
+                <span class="contab-kpi-title">Disponible</span>
+                <span class="contab-kpi-icon is-wallet" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+                </span>
+              </div>
+              <p class="contab-kpi-val num" id="contab-kpi-disponible">$ 0</p>
+              <p class="contab-kpi-sub" id="contab-kpi-disponible-sub">Caja: $ 0 · Bancos/Digital: $ 0</p>
+            </article>
+
+            <article class="contab-kpi-card">
+              <div class="contab-kpi-top">
+                <span class="contab-kpi-title">Por cobrar</span>
+                <span class="contab-kpi-icon is-clock" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </span>
+              </div>
+              <p class="contab-kpi-val num" id="contab-kpi-por-cobrar">$ 0</p>
+              <p class="contab-kpi-sub" id="contab-kpi-por-cobrar-sub">Clientes con saldo pendiente</p>
+            </article>
           </div>
 
-          <div class="card contab-form-accessible" id="contab-form-card">
-            <div class="card-body">
-              <!-- PANEL 1: INGRESO (5 campos) -->
+          <div class="contab-recientes-card card">
+            <div class="contab-recientes-head">
+              <div>
+                <h3 style="margin:0;font-size:1.1rem">Movimientos recientes</h3>
+                <span class="text-xs text-muted" id="contab-recientes-sub">Últimos movimientos financieros registrados</span>
+              </div>
+              <div class="flex gap-2 items-center" style="flex-wrap:wrap">
+                <button type="button" class="btn btn-primary" id="btn-abrir-nuevo-mov-contable">+ Nuevo movimiento</button>
+                <button type="button" class="btn btn-outline" id="btn-ir-a-movimientos">Ver todos</button>
+              </div>
+            </div>
+            <div class="contab-recientes-list" id="contab-recientes-list">
+              <div class="text-muted" style="text-align:center;padding:1.5rem">Aún no hay movimientos contables registrados.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VISTA 2: MOVIMIENTOS -->
+        <section id="contab-view-movimientos" class="contab-tab-section hidden">
+          <article class="card" id="seccion-historial-contable">
+            <div class="card-header" style="flex-wrap:wrap;gap:.75rem">
+              <div>
+                <h3 style="margin:0">Historial de movimientos</h3>
+                <span class="text-xs text-muted" id="contab-history-count">0 movimientos encontrados</span>
+              </div>
+              <div class="flex gap-2 items-center" style="flex-wrap:wrap">
+                <button type="button" class="btn btn-primary" id="btn-abrir-nuevo-mov-contable-2">+ Nuevo movimiento</button>
+                <button type="button" class="btn btn-outline" id="btn-ver-todo-contabilidad">Ver todos (<span id="contab-ver-todo-count">0</span>)</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding: 1.25rem 1.25rem 1.35rem;">
+              <input type="hidden" id="contab-filter-tipo" value="Todos">
+              <input type="hidden" id="contab-filter-metodo" value="Todos">
+
+              <div class="contab-history-toolbar">
+                <div class="contab-quick-filters" id="contab-quick-filter-bar">
+                  <button type="button" class="contab-pill-btn active" data-qfilter="Todos">Todos</button>
+                  <button type="button" class="contab-pill-btn" data-qfilter="Ingresos">Ingresos</button>
+                  <button type="button" class="contab-pill-btn" data-qfilter="Gastos">Gastos</button>
+                  <button type="button" class="contab-pill-btn" data-qfilter="Efectivo">Efectivo</button>
+                  <button type="button" class="contab-pill-btn" data-qfilter="Transferencias">Transferencias</button>
+                </div>
+              </div>
+
+              <div class="contab-search-wrap" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: .85rem; margin-top:.75rem;">
+                <div class="field" style="flex: 2 1 280px; margin-bottom: 0;">
+                  <label for="contab-search" class="label">Buscar movimiento</label>
+                  <input class="input" id="contab-search" type="search" placeholder="Buscar por concepto, categoría, referencia o método...">
+                </div>
+                <div class="field" style="flex: 1 1 160px; margin-bottom: 0;">
+                  <label for="contab-filter-desde" class="label">Desde fecha</label>
+                  <input class="input" id="contab-filter-desde" type="date">
+                </div>
+                <div class="field" style="flex: 1 1 160px; margin-bottom: 0;">
+                  <label for="contab-filter-hasta" class="label">Hasta fecha</label>
+                  <input class="input" id="contab-filter-hasta" type="date">
+                </div>
+                <div style="flex: 0 0 auto;">
+                  <button type="button" class="btn btn-outline" id="btn-limpiar-filtros-contable" style="min-height:46px">Limpiar</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table contab-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Concepto</th>
+                    <th>Categoría</th>
+                    <th>Método</th>
+                    <th class="text-right">Valor</th>
+                    <th class="text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="contab-table-body"></tbody>
+              </table>
+            </div>
+            <div id="contab-tabla-footer" class="card-footer hidden" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.85rem 1.25rem;border-top:1px solid var(--border-color)">
+              <span class="text-sm text-muted" id="contab-tabla-footer-texto">Mostrando 12 de 0 movimientos</span>
+              <button type="button" class="btn btn-outline btn-sm" id="btn-ver-contabilidad-inferior">Ver todos (<span id="contab-inferior-count">0</span>)</button>
+            </div>
+          </article>
+        </section>
+
+        <!-- VISTA 3: CARTERA (POR COBRAR) -->
+        <section id="contab-view-cartera" class="contab-tab-section hidden">
+          <article class="card">
+            <div class="card-header" style="flex-wrap:wrap;gap:.75rem">
+              <div>
+                <h3 style="margin:0">Cartera de clientes (Por cobrar)</h3>
+                <span class="text-xs text-muted" id="contab-cartera-sub">Ventas activas con saldo pendiente por cobrar</span>
+              </div>
+              <span class="badge badge-warning" id="contab-cartera-total-badge" style="font-size:.92rem">Total por cobrar: $ 0</span>
+            </div>
+            <div class="table-wrap">
+              <table class="table" id="tabla-cartera-clientes">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Documento / Teléfono</th>
+                    <th>Venta(s) pendiente(s)</th>
+                    <th class="num">Total venta</th>
+                    <th class="num">Abonado</th>
+                    <th class="num">Saldo pendiente</th>
+                    <th class="text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="contab-cartera-body">
+                  <tr><td colspan="7" class="text-muted" style="text-align:center;padding:1.5rem">No hay clientes con saldo pendiente.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- VISTA 4: CAJA Y BANCOS -->
+        <section id="contab-view-bancos" class="contab-tab-section hidden">
+          <div class="contab-bancos-head">
+            <div>
+              <h3 style="margin:0">Saldos por cuenta</h3>
+              <span class="text-xs text-muted" id="contab-bancos-caja-badge">Comprobando estado de caja...</span>
+            </div>
+            <button type="button" class="btn btn-primary" id="btn-nuevo-traslado-bancos">⇄ Nuevo traslado entre cuentas</button>
+          </div>
+
+          <div class="contab-cuentas-grid">
+            <article class="contab-kpi-card">
+              <div class="contab-kpi-top">
+                <span class="contab-kpi-title">1. Caja física (Efectivo)</span>
+              </div>
+              <p class="contab-kpi-val num" id="contab-cuenta-caja">$ 0</p>
+              <p class="contab-kpi-sub">Base de caja + entradas netas − salidas en efectivo</p>
+            </article>
+            <article class="contab-kpi-card">
+              <div class="contab-kpi-top">
+                <span class="contab-kpi-title">2. Transferencia bancaria</span>
+              </div>
+              <p class="contab-kpi-val num" id="contab-cuenta-banco">$ 0</p>
+              <p class="contab-kpi-sub">Entradas, traslados y pagos bancarios</p>
+            </article>
+            <article class="contab-kpi-card">
+              <div class="contab-kpi-top">
+                <span class="contab-kpi-title">3. Nequi</span>
+              </div>
+              <p class="contab-kpi-val num" id="contab-cuenta-nequi">$ 0</p>
+              <p class="contab-kpi-sub">Recaudos, traslados y pagos por Nequi</p>
+            </article>
+            <article class="contab-kpi-card">
+              <div class="contab-kpi-top">
+                <span class="contab-kpi-title">4. Daviplata</span>
+              </div>
+              <p class="contab-kpi-val num" id="contab-cuenta-daviplata">$ 0</p>
+              <p class="contab-kpi-sub">Recaudos, traslados y pagos por Daviplata</p>
+            </article>
+          </div>
+
+          <article class="card" style="margin-top:1rem">
+            <div class="card-header">
+              <h3 style="margin:0">Movimientos por cuenta</h3>
+            </div>
+            <div class="table-wrap">
+              <table class="table contab-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Cuenta</th>
+                    <th>Tipo</th>
+                    <th>Concepto</th>
+                    <th class="text-right">Valor</th>
+                    <th class="text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="contab-bancos-body">
+                  <tr><td colspan="6" class="text-muted" style="text-align:center;padding:1.5rem">Sin movimientos registrados.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- VISTA 5: CUENTAS POR PAGAR -->
+        <section id="contab-view-por_pagar" class="contab-tab-section hidden">
+          <article class="card">
+            <div class="card-header" style="flex-wrap:wrap;gap:.75rem">
+              <div>
+                <h3 style="margin:0">Cuentas por pagar a proveedores</h3>
+                <span class="text-xs text-muted">Gastos o compras registradas con pago pendiente</span>
+              </div>
+              <div class="flex gap-2 items-center" style="flex-wrap:wrap">
+                <span class="badge badge-danger" id="contab-cxp-total-badge" style="font-size:.92rem">Total por pagar: $ 0</span>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-nueva-cxp">+ Registrar cuenta por pagar</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="table" id="tabla-cuentas-por-pagar">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Proveedor</th>
+                    <th>Concepto / Categoría</th>
+                    <th class="num">Valor pendiente</th>
+                    <th>Estado</th>
+                    <th class="text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="contab-cxp-body">
+                  <tr><td colspan="6" class="text-muted" style="text-align:center;padding:1.5rem">No hay cuentas por pagar pendientes.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <p class="contab-legal-note">Contabilidad Básica es una herramienta de control financiero y administrativo interno. No reemplaza la contabilidad formal de partida doble ni constituye facturación electrónica validada ante la DIAN.</p>
+
+        <!-- MODAL: + NUEVO MOVIMIENTO (Ingreso, Gasto, Traslado) -->
+        <div class="modal-overlay" id="modal-nuevo-mov-contable" role="dialog" aria-modal="true" aria-labelledby="titulo-nuevo-mov-contable" style="z-index: 1080">
+          <div class="modal" style="max-width:740px">
+            <div class="modal-header">
+              <h3 id="titulo-nuevo-mov-contable">Nuevo movimiento contable</h3>
+              <button type="button" class="modal-close" data-close-modal="modal-nuevo-mov-contable" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="contab-big-actions" role="tablist" aria-label="Tipo de movimiento contable" style="margin-bottom:1rem">
+                <button type="button" class="contab-action-btn action-income active" id="tab-btn-ingreso">
+                  <span class="action-head">＋ Registrar ingreso</span>
+                  <span class="action-desc">Anticipos, abonos o ingresos</span>
+                </button>
+                <button type="button" class="contab-action-btn action-expense" id="tab-btn-gasto">
+                  <span class="action-head">－ Registrar gasto</span>
+                  <span class="action-desc">Servicios, compras o nómina</span>
+                </button>
+                <button type="button" class="contab-action-btn action-transfer" id="tab-btn-traslado">
+                  <span class="action-head">⇄ Traslado caja / banco</span>
+                  <span class="action-desc">Mover entre cuentas propias</span>
+                </button>
+              </div>
+
+              <!-- PANEL 1: INGRESO -->
               <div id="panel-ingreso" class="tab-panel" style="display:block">
                 <form id="form-ingreso-contable" novalidate>
                   <div class="contab-form-grid">
@@ -201,13 +431,14 @@
                     </div>
                     <input type="hidden" id="ing-responsable">
                   </div>
-                  <div class="mt-3 flex justify-end">
+                  <div class="mt-3 flex justify-end gap-2">
+                    <button type="button" class="btn btn-outline" data-close-modal="modal-nuevo-mov-contable">Cancelar</button>
                     <button type="submit" class="btn btn-success contab-submit-btn">Registrar ingreso</button>
                   </div>
                 </form>
               </div>
 
-              <!-- PANEL 2: GASTO (5 campos) -->
+              <!-- PANEL 2: GASTO -->
               <div id="panel-gasto" class="tab-panel" style="display:none">
                 <form id="form-gasto-contable" novalidate>
                   <div class="contab-form-grid">
@@ -223,18 +454,22 @@
                         <option value="Transporte">Transporte</option>
                         <option value="Nómina">Nómina</option>
                         <option value="Mantenimiento">Mantenimiento</option>
+                        <option value="Compra de mercancía">Compra de mercancía</option>
                         <option value="Gastos administrativos">Gastos administrativos</option>
                         <option value="Publicidad">Publicidad</option>
                         <option value="Otros gastos">Otros gastos</option>
                       </select>
                     </div>
                     <div class="field">
-                      <label for="gas-monto">Valor pagado ($) <span class="text-danger">*</span></label>
+                      <label for="gas-monto">Valor ($) <span class="text-danger">*</span></label>
                       <input class="input num" id="gas-monto" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 85,000" required>
                     </div>
                     <div class="field">
-                      <label for="gas-fecha">Fecha <span class="text-danger">*</span></label>
-                      <input class="input" id="gas-fecha" type="date" required>
+                      <label for="gas-estado-pago">Estado del pago <span class="text-danger">*</span></label>
+                      <select class="select" id="gas-estado-pago">
+                        <option value="Pagado">Pagado</option>
+                        <option value="Pendiente">Pendiente por pagar (Cuenta por pagar a proveedor)</option>
+                      </select>
                     </div>
                     <div class="field">
                       <label for="gas-metodo">Método de pago <span class="text-danger">*</span></label>
@@ -245,6 +480,14 @@
                         <option value="Daviplata">Daviplata</option>
                       </select>
                     </div>
+                    <div class="field">
+                      <label for="gas-fecha">Fecha <span class="text-danger">*</span></label>
+                      <input class="input" id="gas-fecha" type="date" required>
+                    </div>
+                    <div class="field">
+                      <label for="gas-proveedor">Proveedor (opcional)</label>
+                      <input class="input" id="gas-proveedor" type="text" placeholder="Ej: Vitral S.A.">
+                    </div>
                     <div class="field span-2 contab-afecta-box" id="gas-wrap-afecta-caja">
                       <label class="contab-afecta-check">
                         <input type="checkbox" id="gas-afecta-caja" checked>
@@ -253,18 +496,19 @@
                       <p class="text-xs text-muted mt-1" id="gas-afecta-caja-help" style="margin-bottom:0">Si se pagó con billetes de la caja, déjela marcada para descontarlo del cierre.</p>
                     </div>
                     <div class="field span-2">
-                      <label for="gas-nota">Proveedor u observación (opcional)</label>
-                      <input class="input" id="gas-nota" type="text" placeholder="Nombre del proveedor o nota breve">
+                      <label for="gas-nota">Observación (opcional)</label>
+                      <input class="input" id="gas-nota" type="text" placeholder="Factura, soporte o nota breve">
                     </div>
                     <input type="hidden" id="gas-responsable">
                   </div>
-                  <div class="mt-3 flex justify-end">
+                  <div class="mt-3 flex justify-end gap-2">
+                    <button type="button" class="btn btn-outline" data-close-modal="modal-nuevo-mov-contable">Cancelar</button>
                     <button type="submit" class="btn btn-danger contab-submit-btn">Registrar gasto</button>
                   </div>
                 </form>
               </div>
 
-              <!-- PANEL 3: TRASLADO (5 campos) -->
+              <!-- PANEL 3: TRASLADO -->
               <div id="panel-traslado" class="tab-panel" style="display:none">
                 <form id="form-traslado-contable" novalidate>
                   <div class="contab-form-grid">
@@ -272,14 +516,18 @@
                       <label for="tras-origen">Sale de <span class="text-danger">*</span></label>
                       <select class="select" id="tras-origen" required>
                         <option value="Caja física">Caja física (Efectivo)</option>
-                        <option value="Cuenta bancaria">Cuenta bancaria</option>
+                        <option value="Transferencia bancaria">Transferencia bancaria</option>
+                        <option value="Nequi">Nequi</option>
+                        <option value="Daviplata">Daviplata</option>
                       </select>
                     </div>
                     <div class="field">
                       <label for="tras-destino">Entra a <span class="text-danger">*</span></label>
                       <select class="select" id="tras-destino" required>
-                        <option value="Cuenta bancaria">Cuenta bancaria</option>
+                        <option value="Transferencia bancaria">Transferencia bancaria</option>
                         <option value="Caja física">Caja física (Efectivo)</option>
+                        <option value="Nequi">Nequi</option>
+                        <option value="Daviplata">Daviplata</option>
                       </select>
                     </div>
                     <div class="field">
@@ -295,80 +543,89 @@
                       <input class="input" id="tras-nota" type="text" placeholder="Detalle del traslado">
                     </div>
                   </div>
-                  <div class="mt-3 flex justify-end">
+                  <div class="mt-3 flex justify-end gap-2">
+                    <button type="button" class="btn btn-outline" data-close-modal="modal-nuevo-mov-contable">Cancelar</button>
                     <button type="submit" class="btn btn-primary contab-submit-btn">Registrar traslado</button>
                   </div>
                 </form>
               </div>
             </div>
           </div>
-        </section>
+        </div>
 
-        <!-- BLOQUE 3: Historial de movimientos con buscador sencillo y botón "Ver todos" -->
-        <section id="contab-pane-movimientos">
-          <article class="card" id="seccion-historial-contable">
-            <div class="card-header">
-              <div>
-                <h3>Historial de movimientos</h3>
-                <span class="text-xs text-muted" id="contab-history-count">0 movimientos encontrados</span>
-              </div>
-              <button type="button" class="btn btn-primary" id="btn-ver-todo-contabilidad">Ver todos (<span id="contab-ver-todo-count">0</span>)</button>
+        <!-- MODAL: REGISTRAR ABONO DE CARTERA -->
+        <div class="modal-overlay" id="modal-abono-cartera" role="dialog" aria-modal="true" aria-labelledby="titulo-abono-cartera" style="z-index: 1120">
+          <div class="modal" style="max-width:480px">
+            <div class="modal-header">
+              <h3 id="titulo-abono-cartera">Registrar abono de cartera</h3>
+              <button type="button" class="modal-close" data-close-modal="modal-abono-cartera" aria-label="Cerrar">&times;</button>
             </div>
-            <div class="card-body" style="padding: 1.25rem 1.25rem 1.35rem;">
-              <input type="hidden" id="contab-filter-tipo" value="Todos">
-              <input type="hidden" id="contab-filter-metodo" value="Todos">
-
-              <div class="contab-history-toolbar">
-                <div class="contab-quick-filters" id="contab-quick-filter-bar">
-                  <button type="button" class="contab-pill-btn active" data-qfilter="Todos">Todos</button>
-                  <button type="button" class="contab-pill-btn" data-qfilter="Ingresos">Ingresos</button>
-                  <button type="button" class="contab-pill-btn" data-qfilter="Gastos">Gastos</button>
-                  <button type="button" class="contab-pill-btn" data-qfilter="Efectivo">Efectivo</button>
-                  <button type="button" class="contab-pill-btn" data-qfilter="Transferencias">Transferencias</button>
+            <form id="form-abono-cartera">
+              <input type="hidden" id="abono-cartera-venta-id">
+              <div class="modal-body" style="display:grid;gap:.85rem">
+                <div id="abono-cartera-resumen" style="background:var(--bg-subtle);padding:.85rem 1rem;border-radius:var(--radius-sm);border:1px solid var(--border-color);display:grid;gap:.35rem"></div>
+                <div class="field">
+                  <label class="label" for="abono-cartera-monto">Valor a abonar (COP) *</label>
+                  <input class="input num" id="abono-cartera-monto" type="text" inputmode="numeric" data-money-input="1" required>
                 </div>
-              </div>
-
-              <div class="contab-search-wrap" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: .85rem;">
-                <div class="field" style="flex: 2 1 280px; margin-bottom: 0;">
-                  <label for="contab-search" class="label">Buscar movimiento</label>
-                  <input class="input" id="contab-search" type="search" placeholder="Buscar por concepto, categoría o método...">
+                <div class="field">
+                  <label class="label" for="abono-cartera-metodo">Método de pago *</label>
+                  <select class="select" id="abono-cartera-metodo">
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Transferencia bancaria">Transferencia bancaria</option>
+                    <option value="Nequi">Nequi</option>
+                    <option value="Daviplata">Daviplata</option>
+                  </select>
                 </div>
-                <div class="field" style="flex: 1 1 160px; margin-bottom: 0;">
-                  <label for="contab-filter-desde" class="label">Desde fecha</label>
-                  <input class="input" id="contab-filter-desde" type="date">
-                </div>
-                <div class="field" style="flex: 1 1 160px; margin-bottom: 0;">
-                  <label for="contab-filter-hasta" class="label">Hasta fecha</label>
-                  <input class="input" id="contab-filter-hasta" type="date">
-                </div>
-                <div style="flex: 0 0 auto;">
-                  <button type="button" class="btn btn-outline" id="btn-limpiar-filtros-contable" style="min-height:46px">Limpiar</button>
+                <div class="field">
+                  <label class="label" for="abono-cartera-ref">Referencia / Observación (opcional)</label>
+                  <input class="input" id="abono-cartera-ref" type="text" placeholder="N° comprobante o nota">
                 </div>
               </div>
-            </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-close-modal="modal-abono-cartera">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar abono</button>
+              </div>
+            </form>
+          </div>
+        </div>
 
-            <div class="table-wrap">
-              <table class="table contab-table">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Concepto</th>
-                    <th>Categoría</th>
-                    <th>Método</th>
-                    <th class="text-right">Valor</th>
-                    <th class="text-right">Acción</th>
-                  </tr>
-                </thead>
-                <tbody id="contab-table-body"></tbody>
-              </table>
+        <!-- MODAL: REGISTRAR PAGO A PROVEEDOR (CUENTAS POR PAGAR) -->
+        <div class="modal-overlay" id="modal-pagar-cxp" role="dialog" aria-modal="true" aria-labelledby="titulo-pagar-cxp" style="z-index: 1120">
+          <div class="modal" style="max-width:460px">
+            <div class="modal-header">
+              <h3 id="titulo-pagar-cxp">Registrar pago a proveedor</h3>
+              <button type="button" class="modal-close" data-close-modal="modal-pagar-cxp" aria-label="Cerrar">&times;</button>
             </div>
-            <div id="contab-tabla-footer" class="card-footer hidden" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.85rem 1.25rem;border-top:1px solid var(--border-color)">
-              <span class="text-sm text-muted" id="contab-tabla-footer-texto">Mostrando 12 de 0 movimientos</span>
-              <button type="button" class="btn btn-outline btn-sm" id="btn-ver-contabilidad-inferior">Ver todos (<span id="contab-inferior-count">0</span>)</button>
-            </div>
-          </article>
-        </section>
+            <form id="form-pagar-cxp">
+              <input type="hidden" id="cxp-mov-id">
+              <div class="modal-body" style="display:grid;gap:.85rem">
+                <div id="cxp-resumen-box" style="background:var(--bg-subtle);padding:.85rem 1rem;border-radius:var(--radius-sm);border:1px solid var(--border-color);display:grid;gap:.35rem"></div>
+                <div class="field">
+                  <label class="label" for="cxp-metodo">Pagar desde *</label>
+                  <select class="select" id="cxp-metodo">
+                    <option value="Efectivo">Caja física (Efectivo)</option>
+                    <option value="Transferencia bancaria">Transferencia bancaria</option>
+                    <option value="Nequi">Nequi</option>
+                    <option value="Daviplata">Daviplata</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="cxp-fecha">Fecha de pago *</label>
+                  <input class="input" id="cxp-fecha" type="date" required>
+                </div>
+                <div class="field">
+                  <label class="label" for="cxp-ref">Comprobante / Referencia (opcional)</label>
+                  <input class="input" id="cxp-ref" type="text" placeholder="N° transferencia o recibo">
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-close-modal="modal-pagar-cxp">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar pago</button>
+              </div>
+            </form>
+          </div>
+        </div>
 
         <!-- MODAL: HISTORIAL COMPLETO DE MOVIMIENTOS -->
         <div class="modal-overlay" id="modal-contabilidad-completo" role="dialog" aria-modal="true" aria-labelledby="modal-contab-titulo">
@@ -444,7 +701,7 @@
         </div>
 
         <!-- MODAL DE CONFIRMACIÓN -->
-        <div class="modal-overlay" id="modal-confirmar-contable" role="dialog" aria-modal="true" aria-labelledby="modal-confirmar-contable-title">
+        <div class="modal-overlay" id="modal-confirmar-contable" role="dialog" aria-modal="true" aria-labelledby="modal-confirmar-contable-title" style="z-index: 1200">
           <div class="modal" style="max-width:480px">
             <div class="modal-header">
               <h3 id="modal-confirmar-contable-title">Confirmar registro</h3>
@@ -462,7 +719,7 @@
         </div>
 
         <!-- MODAL DE DETALLE Y REVERSIÓN -->
-        <div class="modal-overlay" id="modal-detalle-contable" role="dialog" aria-modal="true" aria-labelledby="modal-detalle-contable-title">
+        <div class="modal-overlay" id="modal-detalle-contable" role="dialog" aria-modal="true" aria-labelledby="modal-detalle-contable-title" style="z-index: 1150">
           <div class="modal" style="max-width:560px">
             <div class="modal-header">
               <h3 id="modal-detalle-contable-title">Detalle del movimiento</h3>

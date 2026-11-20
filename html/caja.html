@@ -145,89 +145,97 @@
           </section>
 
           <!-- Columna 2: carrito de compra (Punto de Venta) -->
-          <aside class="card cart" aria-label="Carrito de compra">
-            <div class="card-header">
+          <aside class="card cart cart-modern" aria-label="Carrito de compra">
+            <!-- 1. Cabecera superior de Venta actual -->
+            <div class="card-header cart-modern-header">
               <h3>Venta actual</h3>
-              <button type="button" class="btn btn-outline" id="btn-vaciar">Vaciar</button>
-            </div>
-
-            <!-- Selección de cliente y referencia de pedido/cotización -->
-            <div style="padding:.85rem 1.25rem; border-bottom:1px solid var(--border); background:var(--navy-50)">
-              <div class="field" style="margin-bottom:.5rem; position:relative">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem; margin-bottom:.35rem">
-                  <label class="label" style="margin:0">Cliente</label>
-                  <div style="display:flex; gap:.4rem; align-items:center; flex-wrap:wrap">
-                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-cambiar-cliente">Cambiar cliente</button>
-                    <a class="btn btn-outline btn-xs" href="#modal-cliente-pos">+ Nuevo cliente</a>
-                  </div>
-                </div>
-                <input type="hidden" id="pos-cliente" value="">
-                <div id="pos-cliente-aviso" class="alert alert-info" style="padding:.5rem .7rem; font-size:.86rem; margin-bottom:.45rem">
-                  <b>Ningún cliente seleccionado</b> — Busque o registre un cliente para comenzar.
-                </div>
-                <div id="pos-cliente-seleccionado" class="hidden" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem; padding:.5rem .7rem; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:var(--radius-sm); font-size:.9rem">
-                  <div>
-                    <strong id="pos-cli-nombre">—</strong>
-                    <span class="text-muted" id="pos-cli-doc"></span>
-                    <span class="badge badge-warning hidden" id="pos-cli-saldo-badge" style="margin-left:.35rem">Saldo: $ 0</span>
-                  </div>
-                  <div style="display:flex; gap:.35rem; flex-wrap:wrap">
-                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-ver-historial-cliente">Ver productos / Historial</button>
-                    <button type="button" class="btn btn-outline btn-xs hidden" id="btn-limpiar-cliente" title="Quitar cliente seleccionado">Quitar</button>
-                  </div>
-                </div>
-                <div id="box-buscar-cliente" style="margin-top:.45rem">
-                  <div style="display:flex; gap:.4rem">
-                    <input class="input" type="search" id="pos-cliente-buscar" placeholder="Buscar por nombre, cédula o teléfono..." autocomplete="off" style="flex:1">
-                    <button type="button" class="btn btn-outline btn-xs" id="btn-cerrar-buscar-cliente">Cancelar</button>
-                  </div>
-                  <div id="pos-cliente-resultados" class="hidden" style="max-height:170px; overflow:auto; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-surface); margin-top:.3rem"></div>
-                </div>
+              <div class="cart-header-actions">
+                <span class="cart-status-pill" id="cart-status-badge">Nueva venta</span>
+                <button type="button" class="btn-link-danger hidden" id="btn-vaciar">Vaciar</button>
               </div>
             </div>
 
-            <!-- Líneas de productos de la venta actual -->
-            <ul class="cart-list" id="cart-items"></ul>
-            <p class="cart-empty" id="cart-empty">1. Seleccione o registre un cliente arriba. 2. Luego agregue los productos con el botón + Agregar.</p>
+            <!-- 2. Bloque de Cliente -->
+            <div class="cart-client-block">
+              <div class="cart-client-top">
+                <span class="cart-section-label">Cliente</span>
+                <div class="cart-client-links">
+                  <button type="button" class="btn-link hidden" id="btn-cambiar-cliente">Cambiar cliente</button>
+                  <span class="cart-link-sep hidden" id="sep-cambiar-cliente">·</span>
+                  <a class="btn-link" href="#modal-cliente-pos">+ Nuevo cliente</a>
+                </div>
+              </div>
+              <input type="hidden" id="pos-cliente" value="">
+              <div id="pos-cliente-aviso" class="alert alert-info" style="padding:.5rem .7rem; font-size:.86rem; margin-bottom:.45rem">
+                <b>Ningún cliente seleccionado</b> — Busque o registre un cliente para comenzar.
+              </div>
+              <div id="pos-cliente-seleccionado" class="cart-client-selected hidden">
+                <div>
+                  <div class="cart-client-name-row">
+                    <strong class="cart-client-name" id="pos-cli-nombre">—</strong>
+                    <span class="cart-client-check">✓ Seleccionado</span>
+                  </div>
+                  <div class="cart-client-meta">
+                    <span id="pos-cli-doc"></span>
+                    <span class="badge badge-warning hidden" id="pos-cli-saldo-badge" style="margin-left:.35rem">Saldo: $ 0</span>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-outline btn-xs hidden" id="btn-limpiar-cliente" title="Quitar cliente seleccionado">Quitar</button>
+              </div>
+              <div id="box-buscar-cliente" style="margin-top:.45rem">
+                <div style="display:flex; gap:.4rem">
+                  <input class="input" type="search" id="pos-cliente-buscar" placeholder="Buscar por nombre, cédula o teléfono..." autocomplete="off" style="flex:1">
+                  <button type="button" class="btn btn-outline btn-xs" id="btn-cerrar-buscar-cliente">Cancelar</button>
+                </div>
+                <div id="pos-cliente-resultados" class="hidden" style="max-height:170px; overflow:auto; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-surface); margin-top:.3rem"></div>
+              </div>
+            </div>
 
-            <div class="cart-footer">
-              <!-- Modalidad de cobro (Completo / Parcial / Crédito) -->
-              <div class="field" style="margin-bottom:.65rem">
-                <span class="label">Modalidad de cobro</span>
+            <!-- 3. Encabezado y Contenedor de Productos de la venta (X) -->
+            <div class="cart-products-section">
+              <div class="cart-products-head">
+                <span class="cart-section-label">Productos de la venta (<span id="cart-count-num">0</span>)</span>
+                <button type="button" class="btn-link hidden" id="btn-ver-historial-cliente">Ver productos / Historial</button>
+              </div>
+              <div class="cart-products-box">
+                <ul class="cart-list" id="cart-items"></ul>
+                <p class="cart-empty" id="cart-empty">1. Seleccione o registre un cliente arriba. 2. Luego agregue los productos con el botón + Agregar.</p>
+              </div>
+            </div>
+
+            <!-- 4. Contenedor inferior de Cobro y Resumen de facturación -->
+            <div class="cart-footer cart-checkout-box">
+              <!-- Forma de cobro -->
+              <div class="field" style="margin-bottom:.75rem">
+                <span class="label">Forma de cobro</span>
                 <input type="hidden" id="modalidad-cobro" value="completo">
-                <div class="modalidad-toggle" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem">
+                <div class="modalidad-toggle" style="display:grid; grid-template-columns:1fr 1fr; gap:.6rem">
                   <button type="button" class="btn btn-primary" data-modalidad-btn="completo" aria-pressed="true">Pago completo</button>
                   <button type="button" class="btn btn-outline" data-modalidad-btn="parcial" aria-pressed="false">Abono inicial</button>
                 </div>
                 <small class="text-muted hidden" id="cobro-credito-hint" style="display:block; margin-top:.25rem"></small>
               </div>
 
-              <!-- Descuento autorizado (opcional) -->
-              <div class="form-grid cart-pay-grid" style="margin-bottom:.65rem">
-                <div class="field">
-                  <label class="label" for="cart-descuento-input">Descuento general</label>
-                  <div class="flex" style="gap:.35rem">
-                    <input class="input num" id="cart-descuento-input" type="text" inputmode="numeric" data-money-input="1" value="0" style="flex:1">
-                    <select class="select" id="cart-descuento-tipo" aria-label="Tipo de descuento" style="width:78px">
-                      <option value="COP">COP</option>
-                      <option value="%">%</option>
-                    </select>
-                  </div>
-                </div>
-                <div class="field" id="field-metodo-pago">
-                  <label class="label" for="metodo-pago">Método de pago</label>
-                  <select class="select" id="metodo-pago">
-                    <option value="Efectivo">Efectivo</option>
-                    <option value="Transferencia">Transferencia bancaria</option>
-                    <option value="Nequi">Nequi</option>
-                    <option value="Daviplata">Daviplata</option>
-                    <option value="Saldo a favor" id="opt-metodo-saldo-favor" disabled>Saldo a favor (Billetera cliente)</option>
-                    <option value="Mixto">Pago dividido (Mixto)</option>
-                  </select>
-                </div>
+              <!-- Método de pago a ancho completo -->
+              <div class="field" id="field-metodo-pago" style="margin-bottom:.75rem">
+                <label class="label" for="metodo-pago">Método de pago</label>
+                <select class="select" id="metodo-pago" style="width:100%">
+                  <option value="Efectivo">Efectivo</option>
+                  <option value="Transferencia">Transferencia bancaria</option>
+                  <option value="Nequi">Nequi</option>
+                  <option value="Daviplata">Daviplata</option>
+                  <option value="Saldo a favor" id="opt-metodo-saldo-favor" disabled>Saldo a favor (Billetera cliente)</option>
+                  <option value="Mixto">Pago dividido (Mixto)</option>
+                </select>
               </div>
 
-              <!-- Billetera de saldo a favor del cliente (visible solo si el cliente identificado tiene saldo disponible) -->
+              <!-- Campo para pago en Efectivo / Abono a ancho completo -->
+              <div id="box-pago-efectivo" class="field" style="margin-bottom:.75rem">
+                <label class="label" for="recibido">Valor recibido (COP)</label>
+                <input class="input num" id="recibido" type="text" inputmode="numeric" data-money-input="1" placeholder="0" style="width:100%">
+              </div>
+
+              <!-- Billetera de saldo a favor del cliente -->
               <div id="box-saldo-favor" class="saldo-favor-box hidden">
                 <div class="flex justify-between items-center" style="gap:.5rem; margin-bottom:.4rem; flex-wrap:wrap">
                   <span style="font-size:.86rem; font-weight:650; color:var(--success)">Billetera · Saldo a favor disponible: <strong id="pos-billetera-disponible" class="num">$ 0</strong></span>
@@ -237,26 +245,20 @@
                   <label class="label" for="pago-saldo-favor">Aplicar saldo a favor en esta venta (COP)</label>
                   <input class="input num" id="pago-saldo-favor" type="text" inputmode="numeric" data-money-input="1" value="0">
                 </div>
-                <div class="flex justify-between" style="font-size:.78rem; color:#166534; gap:.5rem; flex-wrap:wrap">
+                <div class="flex justify-between" style="font-size:.78rem; color:var(--success); gap:.5rem; flex-wrap:wrap">
                   <span>Otros medios de pago: <strong id="pos-billetera-otros" class="num">$ 0</strong></span>
                   <span>Saldo restante de billetera: <strong id="pos-billetera-restante" class="num">$ 0</strong></span>
                 </div>
               </div>
 
-              <!-- Campo para pago en Efectivo -->
-              <div id="box-pago-efectivo" class="field" style="margin-bottom:.75rem">
-                <label class="label" for="recibido">Valor recibido en efectivo (COP)</label>
-                <input class="input num" id="recibido" type="text" inputmode="numeric" data-money-input="1" placeholder="0">
-              </div>
-
-              <!-- Campo para pagos electrónicos (Transferencia / Tarjetas) -->
+              <!-- Campo para pagos electrónicos -->
               <div id="box-pago-electronico" class="field hidden" style="margin-bottom:.75rem">
                 <label class="label" for="referencia-pago">Referencia / comprobante de transacción</label>
-                <input class="input" id="referencia-pago" type="text" placeholder="Ej: Nequi #84920 o voucher datáfono">
+                <input class="input" id="referencia-pago" type="text" placeholder="Ej: Nequi #84920 o ref. transferencia">
               </div>
 
               <!-- Campos para pago dividido (Mixto) -->
-              <div id="box-pago-mixto" class="hidden" style="margin-bottom:.75rem; padding:.65rem; background:var(--white); border:1px solid var(--border); border-radius:var(--radius-sm)">
+              <div id="box-pago-mixto" class="hidden" style="margin-bottom:.75rem; padding:.65rem; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:var(--radius-sm)">
                 <div class="form-grid cart-pay-grid" style="margin-bottom:.5rem">
                   <div class="field">
                     <label class="label" for="mixto-efectivo">Efectivo (COP)</label>
@@ -283,17 +285,45 @@
                 </div>
               </div>
 
-              <div class="summary">
-                <div class="summary-row"><span>Subtotal</span><span class="num" id="cart-subtotal">$ 0</span></div>
-                <div class="summary-row hidden" id="row-descuento"><span>Descuento</span><span class="num text-expense" id="cart-descuento">− $ 0</span></div>
-                <div class="summary-row total"><span>Total a pagar</span><span class="num" id="cart-total">$ 0</span></div>
+              <!-- Descuento general autorizado (opcional) -->
+              <div class="field" style="margin-bottom:.75rem">
+                <label class="label" for="cart-descuento-input">Descuento general (opcional)</label>
+                <div class="flex" style="gap:.35rem">
+                  <input class="input num" id="cart-descuento-input" type="text" inputmode="numeric" data-money-input="1" value="0" style="flex:1">
+                  <select class="select" id="cart-descuento-tipo" aria-label="Tipo de descuento" style="width:78px">
+                    <option value="COP">COP</option>
+                    <option value="%">%</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Resumen de facturación -->
+              <div class="cart-billing-summary">
+                <div class="cart-billing-title">Resumen de facturación</div>
+                <div class="summary-row">
+                  <span class="text-muted">Subtotal sin descuentos</span>
+                  <span class="num" id="cart-subtotal">$ 0</span>
+                </div>
+                <div class="summary-row" id="row-descuento">
+                  <span class="text-muted">Descuentos en productos</span>
+                  <span class="num text-expense" id="cart-descuento">$ 0</span>
+                </div>
+                <div class="cart-billing-divider"></div>
+                <div class="summary-row cart-billing-total">
+                  <span>TOTAL A PAGAR</span>
+                  <span class="num" id="cart-total">$ 0</span>
+                </div>
+                <div class="summary-row">
+                  <span class="text-muted">Valor recibido</span>
+                  <b class="num" id="cart-valor-recibido-resumen">$ 0</b>
+                </div>
                 <div class="summary-row hidden" id="row-saldo-pendiente">
-                  <span>Saldo pendiente (Por cobrar)</span>
+                  <span class="text-muted">Saldo pendiente (Por cobrar)</span>
                   <b class="num text-expense" id="cart-saldo-pendiente">$ 0</b>
                 </div>
                 <div class="summary-row" id="row-cambio">
-                  <span id="label-cambio-faltante">Cambio</span>
-                  <b class="num" id="cart-cambio">$ 0</b>
+                  <strong id="label-cambio-faltante">Cambio a devolver</strong>
+                  <b class="num cart-cambio-amount" id="cart-cambio">$ 0</b>
                 </div>
               </div>
 
@@ -344,38 +374,86 @@
 
         <!-- Modal 1: Cerrar caja -->
         <div class="modal-overlay" id="modal-cierre" role="dialog" aria-modal="true" aria-labelledby="titulo-cierre">
-          <div class="modal">
-            <div class="modal-header"><h3 id="titulo-cierre">Cerrar caja</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
+          <div class="modal modal-cierre-modern">
+            <div class="modal-header">
+              <div>
+                <h3 id="titulo-cierre" style="font-size:1.15rem; font-weight:800; margin:0">Cierre de caja</h3>
+                <div class="cierre-subtitle" id="cierre-subtitulo-fecha">Resumen del turno</div>
+              </div>
+              <div class="cierre-header-right">
+                <span class="cierre-status-pill">Por cerrar</span>
+                <a class="modal-close" href="#" aria-label="Cerrar">×</a>
+              </div>
+            </div>
             <form id="form-cierre">
               <div class="modal-body">
-                <div class="summary" id="cierre-resumen-box">
-                  <div class="summary-row"><span>Base inicial (efectivo)</span><b class="num" id="cierre-base">$ 0</b></div>
-                  <div class="summary-row"><span>Efectivo del turno (ventas y movimientos en efectivo)</span><b class="num" id="cierre-efectivo-ventas">$ 0</b></div>
-                  <div class="summary-row"><span>Transferencias / Nequi / Daviplata (en banco)</span><b class="num" id="cierre-transferencia">$ 0</b></div>
-                  <div style="margin-top:.5rem; padding:.85rem 1rem; background:var(--bg-subtle); border:1px solid var(--border-strong); border-radius:var(--radius-sm); display:flex; justify-content:space-between; align-items:center; gap:1rem">
-                    <span style="font-weight:700">Efectivo esperado en caja</span>
-                    <b class="num" id="cierre-esperado" style="font-size:1.35rem; font-weight:800">$ 0</b>
+                <!-- 1. Resumen del turno -->
+                <div class="cierre-section" id="cierre-resumen-box">
+                  <div class="cierre-sec-title">1. RESUMEN DEL TURNO</div>
+                  <div class="cierre-turn-list">
+                    <div class="cierre-turn-row">
+                      <div>
+                        <div class="cierre-turn-label">Base inicial</div>
+                        <div class="cierre-turn-sub">Dinero con el que inició la caja</div>
+                      </div>
+                      <b class="cierre-turn-val num" id="cierre-base">$ 0</b>
+                    </div>
+                    <div class="cierre-turn-row">
+                      <div>
+                        <div class="cierre-turn-label">Movimientos netos en efectivo</div>
+                        <div class="cierre-turn-sub">Ventas, abonos, ingresos y egresos</div>
+                      </div>
+                      <b class="cierre-turn-val num" id="cierre-efectivo-ventas">+$ 0</b>
+                    </div>
+                    <div class="cierre-turn-row">
+                      <div>
+                        <div class="cierre-turn-label">Transferencias y pagos digitales</div>
+                        <div class="cierre-turn-sub">Nequi, Daviplata y bancos</div>
+                      </div>
+                      <b class="cierre-turn-val num" id="cierre-transferencia">$ 0</b>
+                    </div>
                   </div>
                 </div>
-                <div class="form-grid">
-                  <div class="field">
-                    <label class="label" for="efectivo-contado">Efectivo contado (COP) *</label>
-                    <input class="input num" id="efectivo-contado" type="text" inputmode="numeric" data-money-input="1" placeholder="Ej: 200,000" required>
+
+                <!-- Bloque destacado EFECTIVO ESPERADO EN CAJA -->
+                <div class="cierre-expected-block">
+                  <div class="cierre-expected-label">EFECTIVO ESPERADO EN CAJA</div>
+                  <div class="cierre-expected-amount num" id="cierre-esperado">$ 0</div>
+                  <div class="cierre-expected-sub">Base inicial + movimientos netos en efectivo</div>
+                </div>
+
+                <!-- 2. Conteo físico del dinero -->
+                <div class="cierre-section">
+                  <div class="cierre-sec-title" style="margin-bottom:.25rem">2. CONTEO FÍSICO DEL DINERO</div>
+                  <p class="cierre-sec-desc">Ingrese el dinero que realmente tiene en la caja.</p>
+                  <div class="cierre-contado-box">
+                    <label for="efectivo-contado">EFECTIVO CONTADO (COP) *</label>
+                    <input class="cierre-contado-input num" id="efectivo-contado" type="text" inputmode="numeric" data-money-input="1" placeholder="0" required>
                   </div>
-                  <div class="field">
-                    <label class="label">Diferencia</label>
-                    <div class="input" id="cierre-diferencia" style="background:var(--bg-subtle); font-weight:700; display:flex; align-items:center">Digite el efectivo contado</div>
-                  </div>
-                  <div class="field full">
-                    <label class="label" for="obs-cierre">Nota u observación (solo si hay diferencia)</label>
-                    <input class="input" id="obs-cierre" type="text" placeholder="Ej: Faltante por cambio o gasto menor">
+                  <div class="cierre-diff-block">
+                    <div class="cierre-diff-top">
+                      <span class="cierre-diff-title">Diferencia de caja</span>
+                      <span class="cierre-diff-val is-neutral num" id="cierre-diferencia">$ 0</span>
+                    </div>
+                    <div style="margin-top:.35rem">
+                      <span class="badge badge-neutral" id="cierre-diferencia-badge">Pendiente de conteo</span>
+                    </div>
+                    <p class="cierre-diff-help" id="cierre-diferencia-help">Ingrese arriba el efectivo contado para calcular si hay diferencia.</p>
                   </div>
                 </div>
+
+                <!-- 3. Observaciones -->
+                <div class="cierre-section" style="margin-bottom:0">
+                  <div class="cierre-sec-title" style="margin-bottom:.5rem">3. OBSERVACIONES</div>
+                  <input class="input" id="obs-cierre" type="text" placeholder="Describa el motivo de la diferencia...">
+                  <p class="cierre-obs-help" id="cierre-obs-help">La observación es obligatoria cuando existe una diferencia.</p>
+                </div>
+
                 <p id="cierre-error" class="error-text hidden" style="margin:.6rem 0 0"></p>
               </div>
-              <div class="modal-footer">
-                <a class="btn btn-outline" href="#">Cancelar</a>
-                <button type="submit" class="btn btn-primary" id="btn-confirmar-cierre">Confirmar cierre definitivo</button>
+              <div class="modal-footer cierre-modal-footer">
+                <a class="btn btn-outline" href="#" style="width:100%">Cancelar</a>
+                <button type="submit" class="btn btn-primary" id="btn-confirmar-cierre" style="width:100%">Confirmar cierre</button>
               </div>
             </form>
           </div>
@@ -383,7 +461,7 @@
 
         <!-- Modal 2: Comprobante de venta e impresión (Sección 10) -->
         <div class="modal-overlay" id="modal-comprobante" role="dialog" aria-modal="true" aria-labelledby="titulo-comprobante">
-          <div class="modal">
+          <div class="modal modal-receipt">
             <div class="modal-header"><h3 id="titulo-comprobante">Comprobante interno de venta</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
             <div class="modal-body" id="comprobante-body"></div>
             <div class="modal-footer">

@@ -64,6 +64,19 @@ function formatDateTime(iso) {
   }
 }
 
+function formatShortDate(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("es-CO", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+  } catch {
+    return String(iso).slice(0, 10);
+  }
+}
+
 export function mountCajaView(root) {
   const $ = (sel) => root.querySelector(sel);
 
@@ -193,10 +206,14 @@ export function mountCajaView(root) {
         (arqueo.pagosPorMetodo?.Nequi || 0) +
         (arqueo.pagosPorMetodo?.Daviplata || 0)
     );
+    setTxt(
+      "#cierre-subtitulo-fecha",
+      `Resumen del turno · ${formatShortDate(cajaAbierta?.fechaApertura || new Date().toISOString())}`
+    );
     setTxt("#cierre-base", formatCOP(arqueo.montoInicial));
     setTxt(
       "#cierre-efectivo-ventas",
-      `${efectivoTurno >= 0 ? "+ " : "− "}${formatCOP(Math.abs(efectivoTurno))}`
+      `${efectivoTurno >= 0 ? "+" : "−"}${formatCOP(Math.abs(efectivoTurno))}`
     );
     setTxt("#cierre-transferencia", formatCOP(digitalBanco));
     setTxt("#cierre-esperado", formatCOP(arqueo.efectivoEsperado));
@@ -208,25 +225,56 @@ export function mountCajaView(root) {
     const arqueo = calcularArqueoCaja(cajaAbierta, ventas);
     const contadoEl = $("#efectivo-contado");
     const difEl = $("#cierre-diferencia");
+    const badgeEl = $("#cierre-diferencia-badge");
+    const helpEl = $("#cierre-diferencia-help");
     if (!contadoEl || !difEl || !arqueo) return;
 
     const raw = contadoEl.value.trim();
     if (raw === "") {
-      difEl.textContent = "Digite el efectivo contado";
-      difEl.className = "input text-muted";
+      difEl.textContent = "$ 0";
+      difEl.className = "cierre-diff-val is-neutral num";
+      if (badgeEl) {
+        badgeEl.textContent = "Pendiente de conteo";
+        badgeEl.className = "badge badge-neutral";
+      }
+      if (helpEl) {
+        helpEl.textContent = "Ingrese arriba el efectivo contado para calcular si hay diferencia.";
+      }
       return;
     }
+
     const contado = parseMontoInput(raw);
     const dif = roundCOP(contado - arqueo.efectivoEsperado);
     if (dif === 0) {
-      difEl.textContent = "$ 0 (Cuadre exacto)";
-      difEl.className = "input num text-income";
+      difEl.textContent = "$ 0";
+      difEl.className = "cierre-diff-val is-exact num";
+      if (badgeEl) {
+        badgeEl.textContent = "Cuadre exacto";
+        badgeEl.className = "badge badge-success";
+      }
+      if (helpEl) {
+        helpEl.textContent = "El dinero contado coincide exactamente con el efectivo esperado.";
+      }
     } else if (dif < 0) {
-      difEl.textContent = `Faltante: − ${formatCOP(Math.abs(dif))}`;
-      difEl.className = "input num text-expense";
+      difEl.textContent = `−${formatCOP(Math.abs(dif))}`;
+      difEl.className = "cierre-diff-val is-short num";
+      if (badgeEl) {
+        badgeEl.textContent = "Faltante de efectivo";
+        badgeEl.className = "badge badge-danger";
+      }
+      if (helpEl) {
+        helpEl.textContent = "El dinero contado es inferior al efectivo esperado.";
+      }
     } else {
-      difEl.textContent = `Sobrante: + ${formatCOP(dif)}`;
-      difEl.className = "input num text-income";
+      difEl.textContent = `+${formatCOP(dif)}`;
+      difEl.className = "cierre-diff-val is-over num";
+      if (badgeEl) {
+        badgeEl.textContent = "Sobrante de efectivo";
+        badgeEl.className = "badge badge-warning";
+      }
+      if (helpEl) {
+        helpEl.textContent = "El dinero contado es superior al efectivo esperado.";
+      }
     }
   }
 
@@ -630,6 +678,16 @@ export function mountCajaView(root) {
     if (!listEl || !emptyEl) return;
     const user = getCurrentUser();
 
+    const statusBadge = $("#cart-status-badge");
+    const btnVaciar = $("#btn-vaciar");
+    const countNumEl = $("#cart-count-num");
+    if (countNumEl) countNumEl.textContent = String(cart.length);
+    if (statusBadge) {
+      statusBadge.textContent = cart.length > 0 ? "En proceso" : "Nueva venta";
+      statusBadge.classList.toggle("is-active", cart.length > 0);
+    }
+    if (btnVaciar) btnVaciar.classList.toggle("hidden", cart.length === 0);
+
     if (cart.length === 0) {
       listEl.innerHTML = "";
       emptyEl.textContent = tieneClienteSeleccionado()
@@ -644,7 +702,8 @@ export function mountCajaView(root) {
           const esTemporal = Boolean(item.esTemporal);
           const precioMaterial = roundCOP(item.precioMaterial ?? item.precioUnitario * item.cantidad);
           const costosAdic = roundCOP(item.costosAdicionales || 0);
-          const subtotal = roundCOP(item.subtotal ?? precioMaterial + costosAdic);
+          const descLinea = roundCOP(item.descuentoLinea || 0);
+          const subtotal = roundCOP(item.subtotal ?? Math.max(0, precioMaterial + costosAdic - descLinea));
           const step = esMedida ? "1" : item.permiteDecimal ? "0.01" : "1";
           const inputVal = esMedida ? item.dimensiones.piezas : item.cantidad;
           const puedeEditarPrecio = esTemporal && hasPermission("ventas.modificar_precio", user);
@@ -658,59 +717,69 @@ export function mountCajaView(root) {
             const areaPza = d.areaPorPieza ?? roundQty(item.cantidad / (d.piezas || 1));
             const adicStr =
               costosAdic > 0
-                ? `<br><span class="unit">Material: ${formatCOP(precioMaterial)} + Adic.: ${formatCOP(costosAdic)}${item.conceptoAdicional ? ` (${escapeHtml(item.conceptoAdicional)})` : ""}</span>`
+                ? `<div class="cart-item-meta">Material: ${formatCOP(precioMaterial)} + Adic.: ${formatCOP(costosAdic)}${item.conceptoAdicional ? ` (${escapeHtml(item.conceptoAdicional)})` : ""}</div>`
                 : "";
-            dimText = `<br><span class="unit">Medida: <b>${anchoVis} × ${largoVis} ${escapeHtml(uDim)}</b> · ${d.piezas} pza (${areaPza} m²/pza = <b>${item.cantidad} m²</b>)</span>${adicStr}`;
+            dimText = `<div class="cart-item-meta">Medida: ${anchoVis} × ${largoVis} ${escapeHtml(uDim)} · ${d.piezas} ${d.piezas === 1 ? "pieza" : "piezas"} (${areaPza} m²/pza = <b>${item.cantidad} m²</b>)</div>${adicStr}`;
           }
 
-          const badgeHtml = esTemporal
-            ? ` <span class="badge-temp">SOLO ESTA VENTA</span>`
-            : ` <small class="text-muted">(${escapeHtml(item.codigo)})</small>`;
+          const titleHtml = esTemporal
+            ? `${escapeHtml(item.nombre)} <span class="badge-temp">SOLO ESTA VENTA</span>`
+            : `${escapeHtml(item.nombre)}${item.codigo ? ` (${escapeHtml(item.codigo)})` : ""}`;
 
           const unitPriceHtml = puedeEditarPrecio
-            ? `<span class="unit num">$ <input type="number" min="0" step="100" value="${item.precioUnitario}" data-price-input="${escapeHtml(item.lineId)}" aria-label="Precio unitario de ${escapeHtml(item.nombre)}" style="width:82px; padding:1px 4px; border:1px solid var(--border); border-radius:4px; font-size:.78rem">${item.unidad ? ` / ${escapeHtml(item.unidad)}` : ""}</span>`
-            : `<span class="unit num">${formatCOP(item.precioUnitario)}${item.unidad ? ` / ${escapeHtml(item.unidad)}` : ""}</span>`;
+            ? `$ <input type="number" min="0" step="100" value="${item.precioUnitario}" data-price-input="${escapeHtml(item.lineId)}" aria-label="Precio unitario de ${escapeHtml(item.nombre)}" style="width:82px; padding:1px 4px; border:1px solid var(--border-color); border-radius:4px; font-size:.82rem; background:var(--bg-input); color:var(--text-primary)">${item.unidad ? ` / ${escapeHtml(item.unidad)}` : ""}`
+            : `${formatCOP(item.precioUnitario)}${item.unidad ? ` / ${escapeHtml(item.unidad)}` : ""}`;
 
           const puedeDescLinea = hasPermission("ventas.descuento", user);
           const descLineaHtml = puedeDescLinea
-            ? `<span class="unit num" style="margin-left:.45rem">Desc: $ <input type="number" min="0" step="100" value="${roundCOP(item.descuentoLinea || 0)}" data-line-desc-input="${escapeHtml(item.lineId)}" aria-label="Descuento de ${escapeHtml(item.nombre)}" style="width:68px; padding:1px 4px; border:1px solid var(--border); border-radius:4px; font-size:.76rem"></span>`
-            : roundCOP(item.descuentoLinea || 0) > 0
-              ? `<span class="unit num text-expense" style="margin-left:.45rem">Desc: −${formatCOP(item.descuentoLinea)}</span>`
+            ? ` · Desc: $ <input type="number" min="0" step="100" value="${descLinea}" data-line-desc-input="${escapeHtml(item.lineId)}" aria-label="Descuento de ${escapeHtml(item.nombre)}" style="width:68px; padding:1px 4px; border:1px solid var(--border-color); border-radius:4px; font-size:.8rem; background:var(--bg-input); color:var(--text-primary)">`
+            : descLinea > 0
+              ? ` · Desc. ${formatCOP(descLinea)}`
               : "";
 
           const obsHtml = esTemporal
-            ? `<br><input type="text" maxlength="140" value="${escapeHtml(item.observacion || "")}" placeholder="Observación opcional..." data-obs-input="${escapeHtml(item.lineId)}" aria-label="Observación de ${escapeHtml(item.nombre)}" style="width:100%; max-width:240px; margin-top:3px; padding:2px 6px; border:1px solid var(--border); border-radius:4px; font-size:.76rem; color:var(--text-muted)">`
+            ? `<input type="text" maxlength="140" value="${escapeHtml(item.observacion || "")}" placeholder="Observación opcional..." data-obs-input="${escapeHtml(item.lineId)}" aria-label="Observación de ${escapeHtml(item.nombre)}" style="width:100%; max-width:260px; margin-top:.35rem; padding:3px 7px; border:1px solid var(--border-color); border-radius:4px; font-size:.8rem; background:var(--bg-input); color:var(--text-primary)">`
             : "";
 
           return `
             <li class="cart-item" data-line="${escapeHtml(item.lineId)}">
-              <span class="name">
-                ${escapeHtml(item.nombre)}${badgeHtml}
-                <br>${unitPriceHtml}${descLineaHtml}
-                ${dimText}
-                ${obsHtml}
-              </span>
-              <span class="sub num">${formatCOP(subtotal)}</span>
-              <span class="qty" title="${esMedida ? "Cantidad de piezas de esta medida" : "Cantidad"}">
-                <button type="button" data-qty-dec="${escapeHtml(item.lineId)}" aria-label="Disminuir">−</button>
-                <input
-                  type="number"
-                  min="${step}"
-                  step="${step}"
-                  value="${inputVal}"
-                  data-qty-input="${escapeHtml(item.lineId)}"
-                  aria-label="Cantidad de ${escapeHtml(item.nombre)}"
-                  style="width:54px; text-align:center; border:0; font-weight:600; font-size:.86rem"
-                >
-                <button type="button" data-qty-inc="${escapeHtml(item.lineId)}" aria-label="Aumentar">+</button>
-              </span>
-              <button
-                type="button"
-                data-line-del="${escapeHtml(item.lineId)}"
-                title="Quitar producto"
-                aria-label="Quitar producto"
-                style="justify-self:end; min-width:38px; min-height:38px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-surface); color:var(--danger); font-weight:700; font-size:1.1rem; cursor:pointer; padding:.2rem .5rem"
-              >×</button>
+              <div class="cart-item-title">${titleHtml}</div>
+              <div class="cart-item-subtotal num">${formatCOP(subtotal)}</div>
+              <div class="cart-item-meta num">${unitPriceHtml}${descLineaHtml}</div>
+              ${dimText}
+              ${obsHtml}
+              <div class="cart-item-bottom">
+                <span class="cart-item-qty-label">Cantidad: ${inputVal}</span>
+                <div class="cart-item-actions">
+                  <div class="cart-qty-controls" title="${esMedida ? "Cantidad de piezas de esta medida" : "Cantidad"}">
+                    <button type="button" class="cart-qty-btn" data-qty-dec="${escapeHtml(item.lineId)}" aria-label="Disminuir">−</button>
+                    <input
+                      type="number"
+                      class="cart-qty-pill"
+                      min="${step}"
+                      step="${step}"
+                      value="${inputVal}"
+                      data-qty-input="${escapeHtml(item.lineId)}"
+                      aria-label="Cantidad de ${escapeHtml(item.nombre)}"
+                    >
+                    <button type="button" class="cart-qty-btn" data-qty-inc="${escapeHtml(item.lineId)}" aria-label="Aumentar">+</button>
+                  </div>
+                  <button
+                    type="button"
+                    class="cart-del-btn"
+                    data-line-del="${escapeHtml(item.lineId)}"
+                    title="Quitar producto"
+                    aria-label="Quitar producto"
+                  >
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                      <path d="M10 11v6M14 11v6"/>
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </li>
           `;
         })
@@ -916,14 +985,18 @@ export function mountCajaView(root) {
     }
 
     const subEl = $("#cart-subtotal");
-    const rowDesc = $("#row-descuento");
     const descEl = $("#cart-descuento");
     const totEl = $("#cart-total");
 
-    if (subEl) subEl.textContent = formatCOP(calculo.subtotal);
-    if (rowDesc && descEl) {
-      rowDesc.classList.toggle("hidden", calculo.descuento <= 0);
-      descEl.textContent = `− ${formatCOP(calculo.descuento)}`;
+    const descLineas = Array.isArray(calculo.lineas)
+      ? calculo.lineas.reduce((acc, l) => acc + roundCOP(l.descuentoLinea || 0), 0)
+      : 0;
+    const subtotalSinDesc = roundCOP(calculo.subtotal + descLineas);
+    const totalDescuentos = roundCOP(calculo.descuento + descLineas);
+
+    if (subEl) subEl.textContent = formatCOP(subtotalSinDesc);
+    if (descEl) {
+      descEl.textContent = totalDescuentos > 0 ? `− ${formatCOP(totalDescuentos)}` : "$ 0";
     }
     if (totEl) totEl.textContent = formatCOP(calculo.total);
 
@@ -1021,6 +1094,7 @@ export function mountCajaView(root) {
     const btnCobrar = $("#btn-cobrar");
     const labelCambio = $("#label-cambio-faltante");
     const cambioEl = $("#cart-cambio");
+    const recibidoResumenEl = $("#cart-valor-recibido-resumen");
     const rowSaldo = $("#row-saldo-pendiente");
     const saldoEl = $("#cart-saldo-pendiente");
     const errEl = $("#cart-error");
@@ -1038,10 +1112,11 @@ export function mountCajaView(root) {
 
     if (!cajaAbierta || !tieneClienteSeleccionado() || cart.length === 0 || !(total > 0) || isProcessingSale) {
       btnCobrar.disabled = true;
-      if (labelCambio) labelCambio.textContent = "Cambio";
+      if (recibidoResumenEl) recibidoResumenEl.textContent = "$ 0";
+      if (labelCambio) labelCambio.textContent = "Cambio a devolver";
       if (cambioEl) {
         cambioEl.textContent = "$ 0";
-        cambioEl.className = "num";
+        cambioEl.className = "num cart-cambio-amount";
       }
       if (rowSaldo) rowSaldo.classList.add("hidden");
       return;
@@ -1049,6 +1124,7 @@ export function mountCajaView(root) {
 
     const modalidad = $("#modalidad-cobro")?.value || "completo";
     if (modalidad === "credito") {
+      if (recibidoResumenEl) recibidoResumenEl.textContent = "$ 0";
       if (rowSaldo) rowSaldo.classList.remove("hidden");
       if (saldoEl) saldoEl.textContent = formatCOP(total);
       btnCobrar.disabled = false;
@@ -1061,13 +1137,14 @@ export function mountCajaView(root) {
     try {
       const pagos = obtenerPagosFormulario(total);
       const ev = evaluarPagos({ total, pagos });
+      if (recibidoResumenEl) recibidoResumenEl.textContent = formatCOP(ev.totalRecibido);
       if (modalidad === "parcial") {
         if (rowSaldo) rowSaldo.classList.remove("hidden");
         if (saldoEl) saldoEl.textContent = formatCOP(ev.faltante);
-        if (labelCambio) labelCambio.textContent = "Cambio";
+        if (labelCambio) labelCambio.textContent = "Cambio a devolver";
         if (cambioEl) {
           cambioEl.textContent = formatCOP(ev.cambio);
-          cambioEl.className = "num text-income";
+          cambioEl.className = "num cart-cambio-amount";
         }
         btnCobrar.disabled = ev.totalRecibido <= 0 || ev.faltante <= 0;
       } else {
@@ -1080,15 +1157,16 @@ export function mountCajaView(root) {
           }
           btnCobrar.disabled = true;
         } else {
-          if (labelCambio) labelCambio.textContent = "Cambio";
+          if (labelCambio) labelCambio.textContent = "Cambio a devolver";
           if (cambioEl) {
             cambioEl.textContent = formatCOP(ev.cambio);
-            cambioEl.className = "num text-income";
+            cambioEl.className = "num cart-cambio-amount";
           }
           btnCobrar.disabled = false;
         }
       }
     } catch {
+      if (recibidoResumenEl) recibidoResumenEl.textContent = "$ 0";
       if (rowSaldo) rowSaldo.classList.add("hidden");
       if (labelCambio) labelCambio.textContent = "Faltante";
       if (cambioEl) {
@@ -1122,6 +1200,7 @@ export function mountCajaView(root) {
     const selCard = $("#pos-cliente-seleccionado");
     const boxBuscar = $("#box-buscar-cliente");
     const btnCambiar = $("#btn-cambiar-cliente");
+    const sepCambiar = $("#sep-cambiar-cliente");
     const nomEl = $("#pos-cli-nombre");
     const docEl = $("#pos-cli-doc");
     const saldoBadge = $("#pos-cli-saldo-badge");
@@ -1134,6 +1213,7 @@ export function mountCajaView(root) {
       if (selCard) selCard.classList.add("hidden");
       if (boxBuscar) boxBuscar.classList.remove("hidden");
       if (btnCambiar) btnCambiar.classList.add("hidden");
+      if (sepCambiar) sepCambiar.classList.add("hidden");
       if (btnHist) btnHist.classList.add("hidden");
       if (btnLimpiar) btnLimpiar.classList.add("hidden");
       if (saldoBadge) saldoBadge.classList.add("hidden");
@@ -1146,10 +1226,17 @@ export function mountCajaView(root) {
     if (avisoEl) avisoEl.classList.add("hidden");
     if (selCard) selCard.classList.remove("hidden");
     if (boxBuscar) boxBuscar.classList.add("hidden");
+    const resBuscar = $("#pos-cliente-resultados");
+    if (resBuscar) {
+      resBuscar.innerHTML = "";
+      resBuscar.classList.add("hidden");
+    }
+    if ($("#pos-cliente-buscar")) $("#pos-cliente-buscar").value = "";
     if (btnCambiar) btnCambiar.classList.remove("hidden");
+    if (sepCambiar) sepCambiar.classList.remove("hidden");
     if (nomEl) nomEl.textContent = cli.nombre;
     if (docEl) {
-      docEl.textContent = `· ${cli.documento}${cli.telefono ? ` · ${cli.telefono}` : ""}`;
+      docEl.textContent = `${cli.documento}${cli.telefono ? ` · ${cli.telefono}` : ""}`;
     }
 
     const hist = obtenerHistorialCliente(cli.id, { ventas });
@@ -1566,9 +1653,15 @@ export function mountCajaView(root) {
     const modal = $("#modal-comprobante");
     if (!body || !modal) return;
 
-    const filasProd = comp.items
+    const formatearCantUnidad = (cant, unidad) => {
+      if (unidad === "u") return Number(cant) === 1 ? "1 unidad" : `${cant} unidades`;
+      if (unidad) return `${cant} ${escapeHtml(unidad)}`;
+      return `${cant}`;
+    };
+
+    const itemsHtml = comp.items
       .map((i) => {
-        let detalleMedida = "";
+        let extras = "";
         if (i.dimensiones) {
           const d = i.dimensiones;
           const uDim = d.unidadDimension || "cm";
@@ -1577,51 +1670,51 @@ export function mountCajaView(root) {
           const areaPza = d.areaPorPieza ?? roundQty(i.cantidad / (d.piezas || 1));
           const adic =
             roundCOP(i.costosAdicionales || 0) > 0
-              ? `<br><small class="text-muted">Material: ${formatCOP(i.precioMaterial ?? i.precioUnitario * i.cantidad)} + Adic.: ${formatCOP(i.costosAdicionales)}${i.conceptoAdicional ? ` (${escapeHtml(i.conceptoAdicional)})` : ""}</small>`
+              ? ` · Material: ${formatCOP(i.precioMaterial ?? i.precioUnitario * i.cantidad)} + Adic.: ${formatCOP(i.costosAdicionales)}${i.conceptoAdicional ? ` (${escapeHtml(i.conceptoAdicional)})` : ""}`
               : "";
-          detalleMedida = `<br><small class="text-muted">Medida: ${anchoVis} × ${largoVis} ${escapeHtml(uDim)} · ${d.piezas} pza (${areaPza} m²/pza · Total: ${i.cantidad} m²)</small>${adic}`;
+          extras += `<div class="receipt-item-extra">Medida: ${anchoVis} × ${largoVis} ${escapeHtml(uDim)} · ${d.piezas} pza (${areaPza} m²/pza)${adic}</div>`;
         }
-        const obsLine = i.esTemporal && i.observacion
-          ? `<br><small class="text-muted">${escapeHtml(i.observacion)}</small>`
-          : "";
-        const descLine = roundCOP(i.descuentoLinea || 0) > 0
-          ? `<br><small class="text-expense">Descuento línea: −${formatCOP(i.descuentoLinea)}</small>`
-          : "";
+        if (i.esTemporal && i.observacion) {
+          extras += `<div class="receipt-item-extra">${escapeHtml(i.observacion)}</div>`;
+        }
+        if (roundCOP(i.descuentoLinea || 0) > 0) {
+          extras += `<div class="receipt-item-extra text-expense">Descuento línea: −${formatCOP(i.descuentoLinea)}</div>`;
+        }
+
         const btnConvertir =
           i.esTemporal && hasPermission("inventario.gestionar", getCurrentUser())
             ? ` <button type="button" class="btn btn-outline btn-xs" data-convert-temp-nombre="${escapeHtml(i.nombre)}" data-convert-temp-unidad="${escapeHtml(i.unidad || "")}" data-convert-temp-precio="${roundCOP(i.precioUnitario || 0)}">Convertir a producto</button>`
             : "";
-        const labelHtml = i.esTemporal
-          ? `${escapeHtml(i.nombre)} <span class="badge-temp">SOLO ESTA VENTA</span>${btnConvertir}${obsLine}${descLine}`
-          : `${escapeHtml(i.nombre)} <small class="text-muted">(${escapeHtml(i.codigo)})</small>${detalleMedida}${descLine}`;
-        return `
-          <tr>
-            <td>${labelHtml}</td>
-            <td class="num">${i.cantidad}${i.unidad ? ` ${escapeHtml(i.unidad)}` : ""}</td>
-            <td class="num">${formatCOP(i.precioUnitario)}</td>
-            <td class="num">${formatCOP(i.subtotal)}</td>
-          </tr>
-        `;
-      })
-      .join("");
 
-    const filasPagos = comp.pagos
-      .map((p) => {
-        const tipoEtq = p.tipoPago === "Abono" ? "Abono" : "Pago inicial";
-        const fechaEtq = p.fecha ? ` · ${formatDateTime(p.fecha)}` : "";
-        return `<div class="summary-row"><span>${tipoEtq} (${escapeHtml(p.metodo)}${p.referencia ? ` · Ref: ${escapeHtml(p.referencia)}` : ""}${fechaEtq})</span><span class="num">${formatCOP(p.importe)}</span></div>`;
+        const nombreHtml = i.esTemporal
+          ? `${escapeHtml(i.nombre)} <span class="badge-temp">SOLO ESTA VENTA</span>${btnConvertir}`
+          : escapeHtml(i.nombre);
+
+        return `
+          <div class="receipt-item">
+            <div class="receipt-item-top">
+              <span>${nombreHtml}</span>
+              <span class="num">${formatearCantUnidad(i.cantidad, i.unidad)}</span>
+            </div>
+            <div class="receipt-item-sub">
+              <span>Referencia: ${escapeHtml(i.codigo || "Sin ref.")}</span>
+              <span class="num"><b>${formatCOP(i.subtotal)}</b></span>
+            </div>
+            ${extras}
+          </div>
+        `;
       })
       .join("");
 
     const devolucionesHtml =
       Array.isArray(comp.devoluciones) && comp.devoluciones.length > 0
         ? `
-          <div style="margin-top:.75rem; padding-top:.65rem; border-top:1px dashed var(--border)">
-            <b style="font-size:.82rem">Devoluciones registradas (${comp.devoluciones.length} · Total: ${formatCOP(comp.totalDevueltoAcumulado)})</b>
+          <div class="receipt-section">
+            <div class="receipt-section-title">DEVOLUCIONES REGISTRADAS (${comp.devoluciones.length} · ${formatCOP(comp.totalDevueltoAcumulado)})</div>
             ${comp.devoluciones
               .map(
                 (d) => `
-                <div style="font-size:.78rem; margin-top:.35rem; padding:.35rem .5rem; background:var(--navy-50); border-radius:4px">
+                <div class="receipt-dev-box">
                   <div><b>${formatDateTime(d.fecha)}</b> · ${escapeHtml(d.tipoReembolso || "Reembolso")}: <b class="num">${formatCOP(d.totalDevuelto)}</b> · <i>${escapeHtml(d.motivo)}</i></div>
                   <div class="text-muted">${(d.items || []).map((it) => `${escapeHtml(it.nombre)} × ${it.cantidad}${it.unidad ? ` ${escapeHtml(it.unidad)}` : ""}`).join(", ")}</div>
                 </div>`
@@ -1631,37 +1724,168 @@ export function mountCajaView(root) {
         `
         : "";
 
+    let estadoClass = "is-completed";
+    let estadoTexto = "VENTA COMPLETADA";
+    if (comp.estado === "Anulada") {
+      estadoClass = "is-voided";
+      estadoTexto = "VENTA ANULADA";
+    } else if (comp.estado === "Devuelta") {
+      estadoClass = "is-voided";
+      estadoTexto = "VENTA DEVUELTA";
+    } else if (comp.saldoPendiente > 0) {
+      estadoClass = "is-partial";
+      estadoTexto = "PAGO PARCIAL · SALDO PENDIENTE";
+    }
+
+    const metodosUsados = [...new Set((comp.pagos || []).map((p) => p.metodo).filter(Boolean))];
+    const metodoResumen =
+      metodosUsados.length > 1
+        ? `Pago mixto (${metodosUsados.join(" + ")})`
+        : metodosUsados[0] || venta.metodoPago || "Efectivo";
+
+    const docCli = comp.cliente?.documento && comp.cliente.documento !== "222222222222"
+      ? ` (${escapeHtml(comp.cliente.documento)})`
+      : "";
+    const clienteDisplay = `${escapeHtml(comp.cliente?.nombre || "Cliente")}${docCli}`;
+
+    const valorRecibido = roundCOP(
+      comp.totalRecibido ?? comp.valorRecibido ?? comp.importePagado + (comp.cambio || 0)
+    );
+    const tieneAbonos = Array.isArray(comp.pagos) && comp.pagos.some((p) => p.tipoPago === "Abono");
+    const esPagoParcialOHistorial = comp.saldoPendiente > 0 || tieneAbonos;
+
+    let pagosHtml = "";
+    if (esPagoParcialOHistorial) {
+      const listaPagos = Array.isArray(comp.pagos) ? comp.pagos : [];
+      const filasAbonos =
+        listaPagos.length === 1 && !tieneAbonos
+          ? `<div class="receipt-row"><span class="receipt-row-label">Abono inicial recibido (${escapeHtml(listaPagos[0].metodo || "Efectivo")})</span><b class="receipt-row-val num">${formatCOP(listaPagos[0].importe)}</b></div>`
+          : listaPagos
+              .map((p, idx) => {
+                const fechaEtq = p.fecha ? ` · ${formatShortDate(p.fecha)}` : "";
+                return `<div class="receipt-row"><span class="receipt-row-label">Abono ${idx + 1} (${escapeHtml(p.metodo || "Efectivo")}${fechaEtq})</span><b class="receipt-row-val num">${formatCOP(p.importe)}</b></div>`;
+              })
+              .join("");
+
+      pagosHtml = `
+        ${comp.anticipoAplicado > 0 ? `<div class="receipt-row"><span class="receipt-row-label">Anticipo aplicado</span><b class="receipt-row-val num">${formatCOP(comp.anticipoAplicado)}</b></div>` : ""}
+        ${filasAbonos}
+        <div class="receipt-row">
+          <span class="receipt-row-label">Total abonado a la fecha</span>
+          <b class="receipt-applied-amount num">${formatCOP(comp.importePagado)}</b>
+        </div>
+        ${
+          comp.saldoPendiente > 0
+            ? `<div class="receipt-row receipt-pending-row">
+                <span class="receipt-pending-label">Saldo pendiente por pagar</span>
+                <span class="receipt-pending-amount num">${formatCOP(comp.saldoPendiente)}</span>
+              </div>`
+            : `<div class="receipt-row receipt-change-row">
+                <span class="receipt-change-label">Cambio entregado</span>
+                <span class="receipt-change-amount num">${formatCOP(comp.cambio || 0)}</span>
+              </div>`
+        }
+      `;
+    } else {
+      pagosHtml = `
+        <div class="receipt-row">
+          <span class="receipt-row-label">Valor recibido</span>
+          <b class="receipt-row-val num">${formatCOP(valorRecibido)}</b>
+        </div>
+        <div class="receipt-row">
+          <span class="receipt-row-label">Valor aplicado</span>
+          <b class="receipt-row-val num">${formatCOP(comp.importePagado)}</b>
+        </div>
+        <div class="receipt-row receipt-change-row">
+          <span class="receipt-change-label">Cambio entregado</span>
+          <span class="receipt-change-amount num">${formatCOP(comp.cambio || 0)}</span>
+        </div>
+      `;
+    }
+
     body.innerHTML = `
-      <div style="border:1px solid var(--border); border-radius:var(--radius-sm); padding:1rem">
-        <div style="text-align:center; border-bottom:1px dashed var(--border); padding-bottom:.75rem; margin-bottom:.75rem">
-          <h4 style="margin:0">${escapeHtml(comp.establecimiento)}</h4>
-          <p class="text-muted" style="margin:.15rem 0; font-size:.82rem">${escapeHtml(comp.tipoDocumento)} · <b>${escapeHtml(comp.numero)}</b></p>
-          <span class="badge ${comp.estado === "Completada" ? "badge-success" : comp.estado === "Devuelta" ? "badge-warning" : "badge-danger"}">${escapeHtml(comp.estado)}</span>
+      <div class="receipt-modern">
+        <!-- 1. Encabezado centrado con icono de tienda y estado inteligente -->
+        <div class="receipt-header">
+          <div class="receipt-store-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l1-5h16l1 5"/>
+              <path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/>
+              <path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/>
+              <path d="M9 21v-6h6v6"/>
+            </svg>
+          </div>
+          <div class="receipt-brand">${escapeHtml(String(comp.establecimiento || "VIDRIOS Y ALUMINIOS EL CARMEN").toUpperCase())}</div>
+          <div class="receipt-subtitle">${escapeHtml(comp.tipoDocumento || "Comprobante interno de venta")}</div>
+          <span class="receipt-status-badge ${estadoClass}">${estadoTexto}</span>
+          <div class="receipt-number num">${escapeHtml(comp.numero)}</div>
         </div>
-        <div class="summary" style="font-size:.84rem">
-          <div class="summary-row"><span>Fecha y hora:</span><span>${formatDateTime(comp.fecha)}</span></div>
-          <div class="summary-row"><span>Atendido por:</span><span>${escapeHtml(comp.vendedor)}</span></div>
-          <div class="summary-row"><span>Cliente:</span><span>${escapeHtml(comp.cliente.nombre)} (${escapeHtml(comp.cliente.documento)})</span></div>
-          ${comp.ordenReferencia ? `<div class="summary-row"><span>Referencia pedido:</span><span>${escapeHtml(comp.ordenReferencia)}</span></div>` : ""}
+
+        <!-- 2. Información de la venta -->
+        <div class="receipt-section">
+          <div class="receipt-section-title">INFORMACIÓN DE LA VENTA</div>
+          <div class="receipt-row">
+            <span class="receipt-row-label">Fecha</span>
+            <b class="receipt-row-val">${escapeHtml(formatDateTime(comp.fecha))}</b>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-row-label">Atendido por</span>
+            <b class="receipt-row-val">${escapeHtml(comp.vendedor)}</b>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-row-label">Cliente</span>
+            <b class="receipt-row-val">${clienteDisplay}</b>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-row-label">Método de pago</span>
+            <b class="receipt-row-val">${escapeHtml(metodoResumen)}</b>
+          </div>
+          ${
+            comp.ordenReferencia
+              ? `<div class="receipt-row"><span class="receipt-row-label">Referencia pedido</span><b class="receipt-row-val">${escapeHtml(comp.ordenReferencia)}</b></div>`
+              : ""
+          }
         </div>
-        <div class="table-wrap" style="margin:.75rem 0">
-          <table class="table" style="font-size:.82rem">
-            <thead><tr><th>Producto</th><th class="num">Cant.</th><th class="num">Unitario</th><th class="num">Subtotal</th></tr></thead>
-            <tbody>${filasProd}</tbody>
-          </table>
+
+        <!-- 3. Detalle de productos (sin tabla azul) -->
+        <div class="receipt-section">
+          <div class="receipt-section-title">DETALLE DE PRODUCTOS</div>
+          <div class="receipt-items-list">${itemsHtml}</div>
+          <div class="receipt-subtotals">
+            <div class="receipt-row">
+              <span class="receipt-row-label">Subtotal</span>
+              <b class="receipt-row-val num">${formatCOP(comp.subtotal)}</b>
+            </div>
+            ${
+              comp.descuento > 0
+                ? `<div class="receipt-row"><span class="receipt-row-label">Descuento</span><b class="receipt-row-val num text-expense">− ${formatCOP(comp.descuento)}</b></div>`
+                : ""
+            }
+          </div>
         </div>
-        <div class="summary">
-          <div class="summary-row"><span>Subtotal</span><span class="num">${formatCOP(comp.subtotal)}</span></div>
-          ${comp.descuento > 0 ? `<div class="summary-row"><span>Descuento</span><span class="num text-expense">− ${formatCOP(comp.descuento)}</span></div>` : ""}
-          <div class="summary-row total"><span>Total venta</span><span class="num">${formatCOP(comp.total)}</span></div>
-          ${comp.anticipoAplicado > 0 ? `<div class="summary-row"><span>Anticipo aplicado</span><span class="num">${formatCOP(comp.anticipoAplicado)}</span></div>` : ""}
-          ${filasPagos}
-          <div class="summary-row"><span>Total pagado / abonado</span><span class="num">${formatCOP(comp.importePagado)}</span></div>
-          ${comp.cambio > 0 ? `<div class="summary-row"><span>Cambio entregado</span><b class="num">${formatCOP(comp.cambio)}</b></div>` : ""}
-          ${comp.saldoPendiente > 0 ? `<div class="summary-row"><span>Saldo pendiente</span><b class="num text-expense">${formatCOP(comp.saldoPendiente)}</b></div>` : ""}
+
+        <!-- 4. Bloque destacado TOTAL DE LA VENTA -->
+        <div class="receipt-total-block">
+          <div class="receipt-total-label">TOTAL DE LA VENTA</div>
+          <div class="receipt-total-amount num">${formatCOP(comp.total)}</div>
         </div>
+
+        <!-- 5. Bloque dinámico de pagos (Pago completo vs Abono inicial / Saldo pendiente) -->
+        <div class="receipt-payments">
+          ${pagosHtml}
+        </div>
+
         ${devolucionesHtml}
-        <p class="text-muted" style="margin:.75rem 0 0; font-size:.74rem; text-align:center">${escapeHtml(comp.leyendaLegal)}</p>
+
+        <!-- 6. Pie del comprobante centrado -->
+        <div class="receipt-footer">
+          <svg class="receipt-footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 2v20l3-2 3 2 2-2 2 2 3-2 3 2V2H4z"/>
+            <path d="M8 7h8M8 11h8M8 15h5"/>
+          </svg>
+          <p class="receipt-thanks">Gracias por su compra.</p>
+          <p class="receipt-legal">Documento de control interno. No constituye factura electrónica validada ante la DIAN.</p>
+        </div>
       </div>
     `;
     modal.classList.add("is-open");
@@ -2140,6 +2364,12 @@ export function mountCajaView(root) {
   });
 
   // Arqueo y Cierre de Caja
+  $("#btn-abrir-cierre")?.addEventListener("click", () => {
+    if (cajaAbierta) {
+      renderResumenModalCierre(calcularArqueoCaja(cajaAbierta, ventas));
+    }
+  });
+
   $("#efectivo-contado")?.addEventListener("input", actualizarDiferenciaCierre);
 
   $("#form-cierre")?.addEventListener("submit", async (e) => {
@@ -2450,7 +2680,6 @@ export function mountCajaView(root) {
       return;
     }
     if (prod.unidad === "m²") {
-      $("#modal-catalogo-completo")?.classList.remove("is-open");
       abrirModalMedidas(prod.id);
       return;
     }

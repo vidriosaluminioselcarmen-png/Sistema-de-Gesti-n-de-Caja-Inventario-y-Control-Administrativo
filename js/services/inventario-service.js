@@ -667,12 +667,22 @@ export async function registrarMovimientoBodega(
     }
 
     const ahora = fecha ? new Date(fecha).toISOString() : new Date().toISOString();
+    const precioCompraNum =
+      tipo === "Entrada" && precioCompra !== null && precioCompra !== "" && Number(precioCompra) >= 0
+        ? roundCOP(precioCompra)
+        : null;
+    const costoTotalNum =
+      tipo === "Entrada" && costoTotalCompra !== null && costoTotalCompra !== "" && Number(costoTotalCompra) >= 0
+        ? roundCOP(costoTotalCompra)
+        : precioCompraNum !== null
+          ? roundCOP(precioCompraNum * cantValida)
+          : null;
     const updateProd = {
       stock: stockNuevo,
       actualizadoEn: new Date().toISOString()
     };
-    if (tipo === "Entrada" && precioCompra !== null && precioCompra !== "" && Number(precioCompra) >= 0) {
-      updateProd.precioCompra = roundCOP(precioCompra);
+    if (precioCompraNum !== null) {
+      updateProd.precioCompra = precioCompraNum;
     }
     tx.update(COLLECTIONS.PRODUCTOS, productoId, updateProd);
 
@@ -686,6 +696,8 @@ export async function registrarMovimientoBodega(
       cantidad: cantValida,
       stockAnterior: stockActual,
       stockNuevo,
+      ...(precioCompraNum !== null ? { precioCompra: precioCompraNum } : {}),
+      ...(costoTotalNum !== null ? { costoTotal: costoTotalNum } : {}),
       proveedor: String(proveedor || "").trim(),
       motivo: motivoLimpio,
       usuario: user.name || user.email,
