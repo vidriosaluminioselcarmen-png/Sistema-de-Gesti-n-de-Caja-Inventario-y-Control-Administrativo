@@ -129,11 +129,6 @@
           </article>
         </div>
 
-        <div id="inv-filtro-estado-activo" class="alert alert-info hidden" role="status" style="margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap">
-          <span id="inv-filtro-estado-texto"></span>
-          <button type="button" class="btn btn-outline btn-sm" id="inv-quitar-filtro-estado">Quitar filtro</button>
-        </div>
-
         <div class="toolbar" id="inv-sec-productos">
           <input class="input" type="search" id="buscar-inventario" placeholder="Buscar producto por nombre, código o descripción...">
           <select class="select" id="inv-filtro-categoria" aria-label="Filtrar por categoría">
@@ -163,7 +158,6 @@
                   <th>Código</th>
                   <th>Producto</th>
                   <th>Categoría</th>
-                  <th>Modalidad / Unidad</th>
                   <th class="num">Costo compra</th>
                   <th class="num">Precio venta</th>
                   <th class="num">Stock</th>
@@ -173,13 +167,12 @@
                 </tr>
               </thead>
               <tbody>
-                <tr><td colspan="10" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
+                <tr><td colspan="9" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
               </tbody>
             </table>
           </div>
           <div id="inv-tabla-footer" class="hidden" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.75rem; padding:1rem 1.25rem; border-top:1px solid var(--border-color); background:var(--bg-subtle)">
-            <span id="inv-tabla-footer-texto" class="text-muted">Mostrando 12 de 0 productos</span>
-            <button type="button" class="btn btn-outline" id="btn-ver-inventario-inferior">Ver inventario completo (<span id="inv-inferior-count">0</span> productos)</button>
+            <span id="inv-tabla-footer-texto" class="text-muted">Mostrando 8 de 0 productos</span>
           </div>
         </section>
 
@@ -195,6 +188,19 @@
             </div>
             <div class="cat-modal-searchbar">
               <input class="input" type="search" id="buscar-inventario-modal" placeholder="Buscar por nombre, código, categoría o estado...">
+              <select class="select" id="modal-inv-filtro-categoria" aria-label="Filtrar por categoría">
+                <option value="Todos">Todas las categorías</option>
+                <option value="Vidrios">Vidrios</option>
+                <option value="Perfiles">Perfiles</option>
+                <option value="Accesorios">Accesorios</option>
+                <option value="Insumos">Insumos</option>
+              </select>
+              <select class="select" id="modal-inv-filtro-modalidad" aria-label="Filtrar por modalidad">
+                <option value="Todas">Todas las modalidades</option>
+                <option value="unidades">Unidades (u)</option>
+                <option value="m2">Metros cuadrados (m²)</option>
+                <option value="m">Metros lineales (m)</option>
+              </select>
               <div class="chips" style="margin:0" role="tablist" aria-label="Filtrar por estado">
                 <button type="button" class="chip active" data-modal-inv-estado="todos">Todos</button>
                 <button type="button" class="chip" data-modal-inv-estado="disponible">Disponibles</button>
@@ -212,7 +218,6 @@
                         <th>Código</th>
                         <th>Producto</th>
                         <th>Categoría</th>
-                        <th>Modalidad / Unidad</th>
                         <th class="num">Costo compra</th>
                         <th class="num">Precio venta</th>
                         <th class="num">Stock</th>
@@ -222,7 +227,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td colspan="10" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
+                      <tr><td colspan="9" class="text-muted" style="text-align:center; padding:1.5rem">No hay productos disponibles.</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -267,11 +272,9 @@
             </div>
             <div class="kardex-filter-bar">
               <div class="kardex-quick-bar" id="kardex-quick-bar" role="tablist" aria-label="Filtro rápido de movimientos">
-                <button type="button" class="chip active" data-kardex-q="Todos">Todos</button>
-                <button type="button" class="chip" data-kardex-q="Entrada">+ Entradas (Compras / Ajustes)</button>
-                <button type="button" class="chip" data-kardex-q="Salida">− Salidas (Ventas / Bajas)</button>
-                <button type="button" class="chip" data-kardex-q="Venta">Ventas de Caja</button>
-                <button type="button" class="chip" data-kardex-q="Baja">Bajas o Daños</button>
+                <button type="button" class="chip active" data-kardex-q="Todos">Todos los movimientos</button>
+                <button type="button" class="chip" data-kardex-q="Entrada">+ Solo Entradas</button>
+                <button type="button" class="chip" data-kardex-q="Salida">− Solo Salidas</button>
               </div>
               <div class="kardex-filter-row">
                 <div class="kardex-filter-field kardex-filter-prod">
@@ -305,16 +308,13 @@
                       <tr>
                         <th>Fecha y hora</th>
                         <th>Producto</th>
-                        <th>Tipo / Origen</th>
-                        <th class="num">Stock anterior</th>
-                        <th class="num">Movimiento (Cant.)</th>
-                        <th class="num">Saldo resultante</th>
-                        <th class="num">Costo / Valor</th>
-                        <th>Motivo / Referencia y Usuario</th>
+                        <th>Qué pasó (Operación y motivo)</th>
+                        <th class="num">Cantidad</th>
+                        <th class="num">Cómo quedó el stock (Antes → Ahora)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td colspan="8" class="text-muted" style="text-align:center; padding:1.5rem">No hay movimientos de inventario registrados.</td></tr>
+                      <tr><td colspan="5" class="text-muted" style="text-align:center; padding:1.5rem">No hay movimientos de inventario registrados.</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -458,15 +458,6 @@
                 <button type="submit" class="btn btn-danger">Confirmar salida</button>
               </div>
             </form>
-          </div>
-        </div>
-
-        <!-- Modal: detalle de producto y sus últimos movimientos -->
-        <div class="modal-overlay" id="modal-detalle-producto-inv" role="dialog" aria-modal="true" aria-labelledby="titulo-detalle-inv">
-          <div class="modal" style="max-width:680px">
-            <div class="modal-header"><h3 id="titulo-detalle-inv">Detalle del producto</h3><a class="modal-close" href="#" aria-label="Cerrar">×</a></div>
-            <div class="modal-body" id="detalle-producto-inv-body"></div>
-            <div class="modal-footer"><a class="btn btn-outline" href="#">Cerrar</a></div>
           </div>
         </div>
 

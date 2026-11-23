@@ -18,6 +18,7 @@ import {
 } from "../auth.js";
 import { isFirebaseConfigured, getFirebaseClients } from "../firebase-config.js";
 import { traducirErrorFirebase } from "./firebase-service.js";
+import { ordenarMasRecientesPrimero } from "./inventario-service.js";
 
 export const ROLES_UI = [
   ROLES.EMPLEADO,
@@ -32,13 +33,23 @@ export const ROLES_DISPONIBLES = [
   ROLES.EMPLEADO
 ];
 
+const desempateUsuarioPorNombre = (a, b) => (a.nombre || "").localeCompare(b.nombre || "", "es");
+
 export function listarUsuarios() {
-  return getCollection(COLLECTIONS.USUARIOS);
+  return ordenarMasRecientesPrimero(
+    getCollection(COLLECTIONS.USUARIOS),
+    ["creadoEn", "fechaCreacion"],
+    desempateUsuarioPorNombre
+  );
 }
 
 export function watchUsuarios(callback) {
   return subscribeCollection(COLLECTIONS.USUARIOS, (items) => {
-    const sorted = [...items].sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+    const sorted = ordenarMasRecientesPrimero(
+      items,
+      ["creadoEn", "fechaCreacion"],
+      desempateUsuarioPorNombre
+    );
     callback(sorted);
   });
 }

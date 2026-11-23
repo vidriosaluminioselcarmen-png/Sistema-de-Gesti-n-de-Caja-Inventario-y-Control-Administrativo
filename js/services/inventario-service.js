@@ -363,8 +363,53 @@ export function calcularResumenInventario(
   };
 }
 
+export function ordenarMasRecientesPrimero(
+  lista,
+  camposFecha = ["creadoEn", "fechaCreacion", "actualizadoEn", "fecha"],
+  desempate = null
+) {
+  const obtenerValorFecha = (item) => {
+    for (const campo of camposFecha) {
+      const val = item?.[campo];
+      if (val !== undefined && val !== null && String(val).trim() !== "") {
+        return String(val).trim();
+      }
+    }
+    return "";
+  };
+
+  return [...(Array.isArray(lista) ? lista : [])].sort((a, b) => {
+    const aFecha = obtenerValorFecha(a);
+    const bFecha = obtenerValorFecha(b);
+    if (!aFecha && !bFecha) return desempate ? desempate(a, b) : 0;
+    if (!aFecha) return 1;
+    if (!bFecha) return -1;
+
+    const ta = Date.parse(aFecha);
+    const tb = Date.parse(bFecha);
+    if (Number.isFinite(ta) && Number.isFinite(tb) && tb !== ta) {
+      return tb - ta;
+    }
+    const cmpStr = bFecha.localeCompare(aFecha);
+    if (cmpStr !== 0) return cmpStr;
+
+    return desempate ? desempate(a, b) : String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
+}
+
+function desempateMovimientosKardex(a, b) {
+  if (a?.productoId && a.productoId === b?.productoId) {
+    if (b.stockAnterior === a.stockNuevo) return -1;
+    if (a.stockAnterior === b.stockNuevo) return 1;
+  }
+  return String(b?.id || "").localeCompare(String(a?.id || ""));
+}
+
 export function listarProductos({ incluirInactivos = false } = {}) {
-  const todos = getCollection(COLLECTIONS.PRODUCTOS);
+  const todos = ordenarMasRecientesPrimero(
+    getCollection(COLLECTIONS.PRODUCTOS),
+    ["creadoEn", "fechaCreacion", "actualizadoEn"]
+  );
   return incluirInactivos ? todos : todos.filter((p) => p.activo !== false);
 }
 
@@ -374,13 +419,14 @@ export function obtenerProducto(id) {
 
 export function watchProductos(callback, { incluirInactivos = false } = {}) {
   return subscribeCollection(COLLECTIONS.PRODUCTOS, (items) => {
-    callback(incluirInactivos ? items : items.filter((p) => p.activo !== false));
+    const ordenados = ordenarMasRecientesPrimero(items, ["creadoEn", "fechaCreacion", "actualizadoEn"]);
+    callback(incluirInactivos ? ordenados : ordenados.filter((p) => p.activo !== false));
   });
 }
 
 export function watchMovimientosInventario(callback) {
   return subscribeCollection(COLLECTIONS.MOV_INVENTARIO, (items) => {
-    const sorted = [...items].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+    const sorted = ordenarMasRecientesPrimero(items, ["fecha"], desempateMovimientosKardex);
     callback(sorted);
   });
 }
@@ -666,7 +712,31 @@ export async function registrarMovimientoBodega(
       );
     }
 
-    const ahora = fecha ? new Date(fecha).toISOString() : new Date().toISOString();
+    const nowDate = new Date();
+    const hoyLocal = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}-${String(nowDate.getDate()).padStart(2, "0")}`;
+    let ahora;
+    if (!fecha) {
+      ahora = nowDate.toISOString();
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(String(fecha).trim())) {
+      const fStr = String(fecha).trim();
+      if (fStr === hoyLocal || fStr === nowDate.toISOString().slice(0, 10)) {
+        ahora = nowDate.toISOString();
+      } else {
+        const [yy, mm, dd] = fStr.split("-").map(Number);
+        const combinada = new Date(
+          yy,
+          mm - 1,
+          dd,
+          nowDate.getHours(),
+          nowDate.getMinutes(),
+          nowDate.getSeconds(),
+          nowDate.getMilliseconds()
+        );
+        ahora = combinada.toISOString();
+      }
+    } else {
+      ahora = new Date(fecha).toISOString();
+    }
     const precioCompraNum =
       tipo === "Entrada" && precioCompra !== null && precioCompra !== "" && Number(precioCompra) >= 0
         ? roundCOP(precioCompra)

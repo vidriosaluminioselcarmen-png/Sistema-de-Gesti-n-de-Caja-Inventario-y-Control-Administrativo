@@ -8,6 +8,7 @@ import {
   runAtomicTransaction
 } from "./store.js";
 import { getCurrentUser, assertPermission } from "../auth.js";
+import { ordenarMasRecientesPrimero } from "./inventario-service.js";
 
 export function listarMovimientosBilletera() {
   const list = getCollection(COLLECTIONS.MOV_BILLETERA);
@@ -80,12 +81,20 @@ export function obtenerResumenBilleteraCliente(
   };
 }
 
+const desempateClientePorNombre = (a, b) => String(a.nombre || "").localeCompare(String(b.nombre || ""), "es");
+
 export function listarClientes() {
-  return getCollection(COLLECTIONS.CLIENTES);
+  return ordenarMasRecientesPrimero(
+    getCollection(COLLECTIONS.CLIENTES),
+    ["creadoEn", "fechaCreacion"],
+    desempateClientePorNombre
+  );
 }
 
 export function watchClientes(callback) {
-  return subscribeCollection(COLLECTIONS.CLIENTES, callback);
+  return subscribeCollection(COLLECTIONS.CLIENTES, (items) => {
+    callback(ordenarMasRecientesPrimero(items, ["creadoEn", "fechaCreacion"], desempateClientePorNombre));
+  });
 }
 
 export function buscarClientes(termino = "", lista = null) {
@@ -122,6 +131,7 @@ export async function crearCliente(
     if (actuales.some((c) => String(c.documento || "").trim().toLowerCase() === docId.toLowerCase())) {
       throw new Error(`Ya existe un cliente registrado con el documento ${docId}.`);
     }
+    const ahora = new Date().toISOString();
     return tx.insert(COLLECTIONS.CLIENTES, {
       nombre: nom,
       documento: docId,
@@ -134,7 +144,7 @@ export async function crearCliente(
       ultimoMovimientoBilletera: null,
       ultimoMovimientoBilleteraId: null,
       creadoPor: user.name || user.email,
-      creadoEn: new Date().toISOString()
+      creadoEn: ahora
     });
   });
 }

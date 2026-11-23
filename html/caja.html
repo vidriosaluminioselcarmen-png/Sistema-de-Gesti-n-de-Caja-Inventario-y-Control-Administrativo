@@ -141,7 +141,6 @@
 
             <!-- Cuadrícula de productos obtenida en tiempo real desde el módulo de Inventario -->
             <div class="product-grid" id="product-grid"></div>
-            <div id="box-ver-mas-catalogo" class="hidden" style="margin-top:1rem"><button type="button" class="btn btn-outline btn-block" id="btn-ver-catalogo-inferior">Ver catálogo completo (<span id="catalogo-inferior-count">0</span> productos)</button></div>
           </section>
 
           <!-- Columna 2: carrito de compra (Punto de Venta) -->
@@ -209,7 +208,7 @@
               <div class="field" style="margin-bottom:.75rem">
                 <span class="label">Forma de cobro</span>
                 <input type="hidden" id="modalidad-cobro" value="completo">
-                <div class="modalidad-toggle" style="display:grid; grid-template-columns:1fr 1fr; gap:.6rem">
+                <div class="modalidad-toggle">
                   <button type="button" class="btn btn-primary" data-modalidad-btn="completo" aria-pressed="true">Pago completo</button>
                   <button type="button" class="btn btn-outline" data-modalidad-btn="parcial" aria-pressed="false">Abono inicial</button>
                 </div>
@@ -331,6 +330,13 @@
               <button type="button" class="btn btn-primary btn-block" id="btn-cobrar" disabled>Cobrar venta</button>
             </div>
           </aside>
+        </div>
+
+        <div id="pos-mobile-cart-bar" class="pos-mobile-cart-bar hidden" aria-live="polite">
+          <div class="pos-mobile-cart-info">
+            <span id="pos-mobile-cart-summary">0 productos · Total $ 0</span>
+          </div>
+          <button type="button" class="btn btn-primary pos-mobile-cart-btn" id="btn-pos-ir-cobrar">Ir a cobrar ↓</button>
         </div>
 
         <!-- Modal: Historial y consulta de ventas del turno (fuera de la pantalla principal de cobro) -->
@@ -504,7 +510,7 @@
                   </div>
                   <div class="field">
                     <label class="label" for="med-precio-m2">Precio por m² (COP)</label>
-                    <input class="input num" id="med-precio-m2" type="number" min="0" step="1" required>
+                    <input class="input num" id="med-precio-m2" type="number" min="0" step="1" readonly style="background:var(--bg-subtle); cursor:not-allowed; font-weight:700" required>
                     <span class="help" id="med-precio-help">Precio oficial del inventario</span>
                   </div>
                   <div class="field">

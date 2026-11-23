@@ -32,6 +32,9 @@ import {
   registrarTrasladoInterno,
   revertirMovimientoContable,
   pagarCuentaPorPagar,
+  obtenerSaldosInicialesCuentas,
+  guardarSaldosInicialesCuentas,
+  watchSaldosInicialesCuentas,
   normalizarCuentaContable,
   exportarContabilidadCSV,
   TIPOS_CONTABLE
@@ -52,6 +55,14 @@ import {
   crearUsuario,
   actualizarUsuario
 } from "../services/usuarios-service.js";
+import {
+  obtenerPerfilNegocio,
+  guardarPerfilNegocio,
+  watchPerfilNegocio,
+  exportarRespaldoJSON,
+  validarRespaldoJSON,
+  restaurarRespaldoJSON
+} from "../services/store.js";
 
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (ch) =>
@@ -75,6 +86,111 @@ function formatShortTime(iso) {
   } catch {
     return iso;
   }
+}
+
+function formatCompactCOP(val) {
+  const n = Math.round(Number(val) || 0);
+  if (Math.abs(n) >= 1000000) return `$ ${(n / 1000000).toFixed(1).replace(".", ",")}M`;
+  if (Math.abs(n) >= 1000) return `$ ${Math.round(n / 1000)}k`;
+  return `$ ${n}`;
+}
+
+function renderSvgBarsHTML({
+  items = [],
+  labelA = "Serie A",
+  colorA = "var(--success)",
+  labelB = "",
+  colorB = "var(--danger)",
+  ariaLabel = "Gráfico comparativo",
+  emptyMsg = "Aún no hay datos para graficar en el período."
+}) {
+  if (!items.length || items.every((it) => (Number(it.valA) || 0) === 0 && (Number(it.valB) || 0) === 0)) {
+    return `<div class="chart-empty-state">${escapeHtml(emptyMsg)}</div>`;
+  }
+  const hasB = Boolean(labelB);
+  const maxVal = Math.max(1, ...items.flatMap((it) => [Math.max(0, Number(it.valA) || 0), hasB ? Math.max(0, Number(it.valB) || 0) : 0]));
+  const W = 560;
+  const H = 228;
+  const padL = 62;
+  const padR = 16;
+  const padT = 16;
+  const padB = 34;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const groupW = chartW / items.length;
+  const barW = hasB ? Math.min(24, Math.max(10, groupW / 2.9)) : Math.min(38, Math.max(14, groupW * 0.48));
+
+  const gridLines = [0, 0.5, 1]
+    .map((f) => {
+      const y = padT + chartH * (1 - f);
+      return `<line class="chart-grid-line" x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}"/><text x="${padL - 8}" y="${y + 4}" text-anchor="end">${escapeHtml(formatCompactCOP(maxVal * f))}</text>`;
+    })
+    .join("");
+
+  const bars = items
+    .map((it, idx) => {
+      const cx = padL + groupW * idx + groupW / 2;
+      const vA = Math.max(0, Number(it.valA) || 0);
+      const hA = (vA / maxVal) * chartH;
+      const yA = padT + chartH - hA;
+      if (!hasB) {
+        return `
+          <rect x="${cx - barW / 2}" y="${yA}" width="${barW}" height="${hA}" rx="5" fill="${colorA}">
+            <title>${escapeHtml(it.label)} · ${escapeHtml(labelA)}: ${formatCOP(vA)}</title>
+          </rect>
+          <text x="${cx}" y="${H - 10}" text-anchor="middle">${escapeHtml(it.shortLabel || it.label)}</text>
+        `;
+      }
+      const vB = Math.max(0, Number(it.valB) || 0);
+      const hB = (vB / maxVal) * chartH;
+      const yB = padT + chartH - hB;
+      return `
+        <rect x="${cx - barW - 2}" y="${yA}" width="${barW}" height="${hA}" rx="4" fill="${colorA}">
+          <title>${escapeHtml(it.label)} · ${escapeHtml(labelA)}: ${formatCOP(vA)}</title>
+        </rect>
+        <rect x="${cx + 2}" y="${yB}" width="${barW}" height="${hB}" rx="4" fill="${colorB}">
+          <title>${escapeHtml(it.label)} · ${escapeHtml(labelB)}: ${formatCOP(vB)}</title>
+        </rect>
+        <text x="${cx}" y="${H - 10}" text-anchor="middle">${escapeHtml(it.shortLabel || it.label)}</text>
+      `;
+    })
+    .join("");
+
+  return `
+    <svg class="chart-svg-responsive" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(ariaLabel)}">
+      ${gridLines}
+      <line class="chart-axis" x1="${padL}" x2="${W - padR}" y1="${padT + chartH}" y2="${padT + chartH}"/>
+      ${bars}
+    </svg>
+  `;
+}
+
+function renderHorizontalBarsHTML(items = [], { emptyMsg = "No hay datos suficientes para graficar." } = {}) {
+  if (!items.length) {
+    return `<div class="chart-empty-state">${escapeHtml(emptyMsg)}</div>`;
+  }
+  const maxVal = Math.max(1, ...items.map((it) => Math.max(0, Number(it.value) || 0)));
+  return `
+    <div class="hbar-list">
+      ${items
+        .map((it) => {
+          const val = Math.max(0, Number(it.value) || 0);
+          const pct = Math.min(100, Math.round((val / maxVal) * 100));
+          return `
+            <div class="hbar-item">
+              <div class="hbar-head">
+                <span><b>${escapeHtml(it.label)}</b>${it.sub ? ` <small class="text-muted">${escapeHtml(it.sub)}</small>` : ""}</span>
+                <span class="num"><b>${escapeHtml(it.valueLabel || formatCOP(val))}</b></span>
+              </div>
+              <div class="hbar-track" aria-hidden="true">
+                <div class="hbar-fill" style="width:${pct}%; background:${it.color || "var(--accent)"}"></div>
+              </div>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
 function formatDateTime(iso) {
@@ -212,13 +328,6 @@ export function mountInventarioView(root) {
 
   bindMoneyInputs(root);
 
-  const ETIQUETAS_ESTADO = {
-    disponible: "Disponibles",
-    bajo: "Stock bajo",
-    agotado: "Agotados",
-    inactivo: "Inactivos"
-  };
-
   // Presentación del estado en Inventario: inactivo en gris (no altera getEstadoStock usado por Caja)
   function presentarEstado(p) {
     const est = getEstadoStock(p);
@@ -239,31 +348,31 @@ export function mountInventarioView(root) {
   function renderFilaProductoHTML(p, puedeGestionar) {
     const est = presentarEstado(p);
     const esActivo = p.activo !== false;
-    const mod = inferirModalidadProducto(p);
     return `
-      <tr class="${est.claseFila}" data-detalle-prod="${escapeHtml(p.id)}" title="Haga clic para ver el detalle">
-        <td><b>${escapeHtml(p.codigo)}</b></td>
+      <tr class="${est.claseFila}">
+        <td style="white-space:nowrap"><b>${escapeHtml(p.codigo)}</b></td>
         <td>
-          ${escapeHtml(p.nombre)}
+          <b>${escapeHtml(p.nombre)}</b>
           ${p.descripcion ? `<br><small class="text-muted">${escapeHtml(p.descripcion)}</small>` : ""}
         </td>
         <td>${escapeHtml(p.categoria)}</td>
-        <td>${escapeHtml(etiquetaModalidad(mod))}${p.unidad ? ` · <b>${escapeHtml(p.unidad)}</b>` : ""}</td>
         <td class="num">${formatCOP(p.precioCompra || 0)}</td>
         <td class="num"><b>${formatCOP(p.precio)}</b>${p.unidad ? ` / ${escapeHtml(p.unidad)}` : ""}</td>
         <td class="num"><b>${p.stock}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""}</b></td>
         <td class="num">${p.stockMinimo}${p.unidad ? ` ${escapeHtml(p.unidad)}` : ""}</td>
         <td><span class="badge ${est.claseBadge}">${est.etiqueta}</span></td>
         <td class="text-right" style="white-space:nowrap">
-          <button type="button" class="btn btn-outline btn-xs" data-kardex-prod="${escapeHtml(p.id)}">Kardex</button>
-          ${
-            puedeGestionar
-              ? `
-                <button type="button" class="btn btn-outline btn-xs" data-edit-prod="${escapeHtml(p.id)}">Editar</button>
-                <button type="button" class="btn btn-outline btn-xs" data-toggle-prod="${escapeHtml(p.id)}">${esActivo ? "Desactivar" : "Activar"}</button>
-              `
-              : ""
-          }
+          <div class="inv-acciones-row">
+            <button type="button" class="btn btn-outline btn-xs" data-kardex-prod="${escapeHtml(p.id)}">Kardex</button>
+            ${
+              puedeGestionar
+                ? `
+                  <button type="button" class="btn btn-outline btn-xs" data-edit-prod="${escapeHtml(p.id)}">Editar</button>
+                  <button type="button" class="btn btn-outline btn-xs" data-toggle-prod="${escapeHtml(p.id)}">${esActivo ? "Desactivar" : "Activar"}</button>
+                `
+                : ""
+            }
+          </div>
         </td>
       </tr>
     `;
@@ -298,19 +407,23 @@ export function mountInventarioView(root) {
       return matchQ && matchBajo && matchKpi;
     });
 
-    const visibles = !q && filtrados.length > 12 ? filtrados.slice(0, 12) : filtrados;
+    const LIMITE_TABLA_INV = 8;
+    const hayMasDeOchoSinBusqueda = !q && filtrados.length > LIMITE_TABLA_INV;
+    const visibles = hayMasDeOchoSinBusqueda ? filtrados.slice(0, LIMITE_TABLA_INV) : filtrados;
     const footerEl = $("#inv-tabla-footer");
     if (footerEl) {
-      footerEl.classList.toggle("hidden", Boolean(q) || filtrados.length <= 12);
+      footerEl.classList.toggle("hidden", filtrados.length === 0);
       if ($("#inv-tabla-footer-texto")) {
-        $("#inv-tabla-footer-texto").textContent = `Mostrando ${visibles.length} de ${filtrados.length} productos`;
+        $("#inv-tabla-footer-texto").textContent = hayMasDeOchoSinBusqueda
+          ? `Mostrando ${LIMITE_TABLA_INV} de ${filtrados.length} productos (usa «Ver todos» o el buscador para ver el resto)`
+          : `Mostrando ${visibles.length} de ${filtrados.length} productos`;
       }
       if ($("#inv-inferior-count")) $("#inv-inferior-count").textContent = String(filtrados.length);
     }
 
     tbody.innerHTML = visibles.length
       ? visibles.map((p) => renderFilaProductoHTML(p, puedeGestionar)).join("")
-      : `<tr><td colspan="10" style="text-align:center; padding:1.5rem" class="text-muted">No hay productos disponibles.</td></tr>`;
+      : `<tr><td colspan="9" style="text-align:center; padding:1.5rem" class="text-muted">No hay productos disponibles.</td></tr>`;
 
     // Poblar selects de entrada y salida solo con productos activos
     const activos = productos.filter((p) => p.activo !== false);
@@ -519,8 +632,6 @@ export function mountInventarioView(root) {
   }
 
   function actualizarIndicadorFiltroEstado() {
-    const box = $("#inv-filtro-estado-activo");
-    const txt = $("#inv-filtro-estado-texto");
     root.querySelectorAll("[data-inv-kpi]").forEach((b) => {
       const activo = b.dataset.invKpi === estadoFiltroKpi;
       b.classList.toggle("active", activo);
@@ -530,13 +641,6 @@ export function mountInventarioView(root) {
       b.textContent = activo ? "Viendo ✓" : "Ver";
       b.closest(".inv-kpi")?.classList.toggle("is-active", activo);
     });
-    if (!box) return;
-    if (estadoFiltroKpi === "todos") {
-      box.classList.add("hidden");
-      return;
-    }
-    if (txt) txt.textContent = `Mostrando solo productos en estado: ${ETIQUETAS_ESTADO[estadoFiltroKpi] || estadoFiltroKpi}.`;
-    box.classList.remove("hidden");
   }
 
   function renderDashboardInventario() {
@@ -566,47 +670,6 @@ export function mountInventarioView(root) {
     actualizarIndicadorFiltroEstado();
     renderTablaInventario();
     irATablaProductos();
-  }
-
-  function abrirDetalleProducto(prodId) {
-    const prod = productos.find((p) => p.id === prodId);
-    const body = $("#detalle-producto-inv-body");
-    if (!prod || !body) return;
-    const est = presentarEstado(prod);
-    const unidad = prod.unidad ? ` ${escapeHtml(prod.unidad)}` : "";
-    const movs = kardex.filter((m) => m.productoId === prod.id).slice(0, 10);
-    const titulo = $("#titulo-detalle-inv");
-    if (titulo) titulo.textContent = `${prod.nombre} · ${prod.codigo}`;
-    body.innerHTML = `
-      <div class="inv-detalle-grid">
-        <div><span>Estado</span><b><span class="badge ${est.claseBadge}">${escapeHtml(est.etiqueta)}</span></b></div>
-        <div><span>Categoría</span><b>${escapeHtml(prod.categoria || "—")}</b></div>
-        <div><span>Modalidad</span><b>${escapeHtml(etiquetaModalidad(inferirModalidadProducto(prod)))}</b></div>
-        <div><span>Existencia actual</span><b class="num">${prod.stock}${unidad}</b></div>
-        <div><span>Stock mínimo</span><b class="num">${prod.stockMinimo}${unidad}</b></div>
-        <div><span>Precio de venta</span><b class="num">${formatCOP(prod.precio)}</b></div>
-        <div><span>Precio de compra</span><b class="num">${formatCOP(prod.precioCompra || 0)}</b></div>
-        <div><span>Descripción</span><b>${escapeHtml(prod.descripcion || "—")}</b></div>
-      </div>
-      <h4 style="margin:.5rem 0">Últimos movimientos</h4>
-      ${
-        movs.length
-          ? `<div class="table-wrap"><table class="table">
-              <thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Cantidad</th><th class="num">Stock nuevo</th><th>Motivo</th></tr></thead>
-              <tbody>${movs
-                .map(
-                  (m) => `<tr>
-                    <td>${formatDateTime(m.fecha)}</td>
-                    <td><span class="badge ${m.tipo === "Entrada" ? "badge-success" : "badge-warning"}">${escapeHtml(m.tipo)}</span></td>
-                    <td class="num">${m.tipo === "Entrada" ? "+" : "−"} ${m.cantidad}${unidad}</td>
-                    <td class="num">${m.stockNuevo ?? "—"}</td>
-                    <td>${escapeHtml(m.motivo || m.origen || "—")}</td>
-                  </tr>`
-                )
-                .join("")}</tbody></table></div>`
-          : `<p class="text-muted">Este producto todavía no tiene movimientos registrados.</p>`
-      }`;
-    $("#modal-detalle-producto-inv")?.classList.add("is-open");
   }
 
   function syncDimensionesMovimiento(prefijo) {
@@ -706,23 +769,34 @@ export function mountInventarioView(root) {
       );
     });
 
-    kardexUltimosFiltrados = listaFiltrada;
+    const ordenadosCrono = [...listaFiltrada].sort((a, b) => {
+      const tb = Date.parse(b.fecha || "") || 0;
+      const ta = Date.parse(a.fecha || "") || 0;
+      if (tb !== ta) return tb - ta;
+      if (a.productoId && a.productoId === b.productoId) {
+        if (b.stockAnterior === a.stockNuevo) return -1;
+        if (a.stockAnterior === b.stockNuevo) return 1;
+      }
+      return String(b.id || "").localeCompare(String(a.id || ""));
+    });
+
+    kardexUltimosFiltrados = ordenadosCrono;
     if (countEl) {
       countEl.textContent =
-        listaFiltrada.length === 1
+        ordenadosCrono.length === 1
           ? "1 movimiento encontrado"
-          : `${listaFiltrada.length} movimientos encontrados`;
+          : `${ordenadosCrono.length} movimientos encontrados`;
     }
 
     let totalEntradas = 0;
     let totalSalidas = 0;
-    for (const m of listaFiltrada) {
+    for (const m of ordenadosCrono) {
       const c = Number(m.cantidad) || 0;
       if (m.tipo === "Entrada") totalEntradas += c;
       else if (m.tipo === "Salida") totalSalidas += c;
     }
     const unitSuffix = prodSel?.unidad ? ` ${prodSel.unidad}` : "";
-    if ($("#kardex-res-total")) $("#kardex-res-total").textContent = String(listaFiltrada.length);
+    if ($("#kardex-res-total")) $("#kardex-res-total").textContent = String(ordenadosCrono.length);
     if ($("#kardex-res-entradas")) {
       $("#kardex-res-entradas").textContent = `+ ${formatCantidadKardex(totalEntradas)}${unitSuffix}`;
     }
@@ -759,45 +833,62 @@ export function mountInventarioView(root) {
 
     if (!tbody) return;
 
-    tbody.innerHTML = listaFiltrada.length
-      ? listaFiltrada
+    tbody.innerHTML = ordenadosCrono.length
+      ? ordenadosCrono
           .map((m) => {
             const esEntrada = m.tipo === "Entrada";
             const u = m.unidad ? ` ${escapeHtml(m.unidad)}` : "";
-            const costoVal =
-              m.costoTotal != null && m.costoTotal !== ""
-                ? formatCOP(m.costoTotal)
-                : m.precioCompra != null && m.precioCompra !== ""
-                  ? formatCOP(m.precioCompra)
-                  : "—";
-            const refPart = m.referenciaId ? ` · Ref: <b>${escapeHtml(m.referenciaId)}</b>` : "";
-            const provPart = m.proveedor ? ` · Prov: ${escapeHtml(m.proveedor)}` : "";
+            const fechaCorta = formatShortDate(m.fecha);
+            let horaSolo = "—";
+            try {
+              if (m.fecha) {
+                horaSolo = new Date(m.fecha).toLocaleTimeString("es-CO", {
+                  hour: "numeric",
+                  minute: "2-digit"
+                });
+              }
+            } catch {
+              horaSolo = "—";
+            }
+            const origenTxt =
+              m.origen === "Venta POS" && m.referenciaId
+                ? `Venta ${m.referenciaId}`
+                : m.origen || (esEntrada ? "Entrada" : "Salida");
+            const detalles = [];
+            if (m.motivo && m.motivo !== origenTxt) detalles.push(`Motivo: ${escapeHtml(m.motivo)}`);
+            if (m.proveedor) detalles.push(`Prov: ${escapeHtml(m.proveedor)}`);
+            if (m.usuario) detalles.push(`Por: ${escapeHtml(m.usuario)}`);
+            const detalleHtml = detalles.length ? detalles.join(" · ") : "—";
+            const stockAnt = m.stockAnterior ?? "—";
+            const stockNvo = m.stockNuevo ?? "—";
             return `
               <tr data-dia="${escapeHtml(String(m.fecha || "").slice(0, 10))}">
-                <td style="white-space:nowrap">${formatDateTime(m.fecha)}</td>
+                <td style="white-space:nowrap">
+                  <b>${escapeHtml(fechaCorta)}</b>
+                  <br><small class="text-muted">${escapeHtml(horaSolo)}</small>
+                </td>
                 <td>
                   <b>${escapeHtml(m.productoNombre || "—")}</b>
-                  <br><small class="text-muted">${escapeHtml(m.codigo || "—")}</small>
+                  <br><small class="text-muted">Cód: ${escapeHtml(m.codigo || "—")}</small>
                 </td>
                 <td>
-                  <div class="kardex-tipo-stack">
+                  <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-bottom:.2rem">
                     <span class="badge ${esEntrada ? "badge-success" : "badge-danger"}">${esEntrada ? "+ Entrada" : "− Salida"}</span>
-                    <span class="kardex-origen-txt">${escapeHtml(m.origen || "—")}</span>
+                    <b>${escapeHtml(origenTxt)}</b>
                   </div>
+                  <small class="text-muted">${detalleHtml}</small>
                 </td>
-                <td class="num">${m.stockAnterior ?? "—"}${m.stockAnterior != null ? u : ""}</td>
-                <td class="num ${esEntrada ? "text-income" : "text-expense"}"><b>${esEntrada ? "+ " : "− "}${m.cantidad}${u}</b></td>
-                <td class="num"><b>${m.stockNuevo ?? "—"}${m.stockNuevo != null ? u : ""}</b></td>
-                <td class="num">${costoVal}</td>
-                <td>
-                  <span>${escapeHtml(m.motivo || "—")}${refPart}${provPart}</span>
-                  <br><small class="text-muted">${escapeHtml(m.usuario || "—")}</small>
+                <td class="num" style="white-space:nowrap">
+                  <span style="font-size:1.05rem;font-weight:800;color:${esEntrada ? "var(--success)" : "var(--danger)"}">${esEntrada ? "+ " : "− "}${m.cantidad}${u}</span>
+                </td>
+                <td class="num" style="white-space:nowrap">
+                  <span class="text-muted">Tenía ${stockAnt}${m.stockAnterior != null ? u : ""}</span> → <b style="font-size:1.05rem;color:var(--text-primary)">Quedó en ${stockNvo}${m.stockNuevo != null ? u : ""}</b>
                 </td>
               </tr>
             `;
           })
           .join("")
-      : `<tr><td colspan="8" style="text-align:center; padding:1.5rem" class="text-muted">No hay movimientos de inventario que coincidan con los filtros.</td></tr>`;
+      : `<tr><td colspan="5" style="text-align:center; padding:1.5rem" class="text-muted">No hay movimientos de inventario que coincidan con los filtros.</td></tr>`;
   }
 
   function abrirModalKardex(productoId = "Todos") {
@@ -809,9 +900,14 @@ export function mountInventarioView(root) {
   }
 
   function exportarKardexCSV() {
-    const csvCell = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
+    const csvCell = (val) => {
+      const s = String(val ?? "");
+      return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const numCell = (val) => (val !== null && val !== undefined && val !== "" && Number.isFinite(Number(val)) ? Number(val) : "");
     const headers = [
       "Fecha",
+      "Hora",
       "Código",
       "Producto",
       "Tipo",
@@ -825,27 +921,40 @@ export function mountInventarioView(root) {
       "Usuario"
     ];
     const rows = kardexUltimosFiltrados.map((m) => {
+      const fechaStr = m.fecha ? formatShortDate(m.fecha) : "";
+      let horaStr = "";
+      try {
+        if (m.fecha) {
+          horaStr = new Date(m.fecha).toLocaleTimeString("es-CO", {
+            hour: "numeric",
+            minute: "2-digit"
+          });
+        }
+      } catch {
+        horaStr = "";
+      }
       const motivoProv = [m.motivo, m.referenciaId ? `Ref: ${m.referenciaId}` : "", m.proveedor ? `Prov: ${m.proveedor}` : ""]
         .filter(Boolean)
         .join(" | ");
       return [
-        formatDateTime(m.fecha),
+        fechaStr,
+        horaStr,
         m.codigo || "",
         m.productoNombre || "",
         m.tipo || "",
         m.origen || "",
-        m.stockAnterior ?? "",
-        m.cantidad ?? "",
+        numCell(m.stockAnterior),
+        numCell(m.cantidad),
         m.unidad || "",
-        m.stockNuevo ?? "",
-        m.precioCompra ?? m.costoTotal ?? "",
+        numCell(m.stockNuevo),
+        numCell(m.precioCompra ?? m.costoTotal),
         motivoProv,
         m.usuario || ""
       ]
         .map(csvCell)
-        .join(",");
+        .join(";");
     });
-    const csvContent = "\uFEFF" + [headers.map(csvCell).join(","), ...rows].join("\r\n");
+    const csvContent = "\uFEFF" + [headers.map(csvCell).join(";"), ...rows].join("\r\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -909,11 +1018,16 @@ export function mountInventarioView(root) {
     if (!tbody) return;
 
     const q = ($("#buscar-inventario-modal")?.value || "").trim().toLowerCase();
+    const catFiltro = $("#modal-inv-filtro-categoria")?.value || "Todos";
+    const modFiltro = $("#modal-inv-filtro-modalidad")?.value || "Todas";
     const puedeGestionar = hasPermission("inventario.gestionar", getCurrentUser());
 
     const filtrados = productos.filter((p) => {
       const est = getEstadoStock(p);
       if (modalEstadoFiltro !== "todos" && est.codigo !== modalEstadoFiltro) return false;
+      if (catFiltro !== "Todos" && p.categoria !== catFiltro) return false;
+      const mod = inferirModalidadProducto(p);
+      if (modFiltro !== "Todas" && mod !== modFiltro) return false;
       if (!q) return true;
       return (
         String(p.nombre || "").toLowerCase().includes(q) ||
@@ -926,7 +1040,7 @@ export function mountInventarioView(root) {
     if (countEl) countEl.textContent = `Mostrando ${filtrados.length} productos`;
     tbody.innerHTML = filtrados.length
       ? filtrados.map((p) => renderFilaProductoHTML(p, puedeGestionar)).join("")
-      : `<tr><td colspan="10" style="text-align:center; padding:1.5rem" class="text-muted">No hay productos que coincidan con la búsqueda.</td></tr>`;
+      : `<tr><td colspan="9" style="text-align:center; padding:1.5rem" class="text-muted">No hay productos que coincidan con la búsqueda.</td></tr>`;
 
     let disp = 0;
     let bajo = 0;
@@ -956,7 +1070,15 @@ export function mountInventarioView(root) {
     setTxt("#modal-inv-res-venta", formatCOP(valVenta));
   }
 
+  function sincronizarChipsEstadoModal() {
+    root.querySelectorAll("[data-modal-inv-estado]").forEach((b) =>
+      b.classList.toggle("active", b.dataset.modalInvEstado === modalEstadoFiltro)
+    );
+  }
+
   function abrirModalInventarioCompleto() {
+    modalEstadoFiltro = estadoFiltroKpi || "todos";
+    sincronizarChipsEstadoModal();
     renderInventarioModal();
     $("#modal-inventario-completo")?.classList.add("is-open");
     setTimeout(() => $("#buscar-inventario-modal")?.focus(), 40);
@@ -966,14 +1088,13 @@ export function mountInventarioView(root) {
   $("#btn-abrir-entrada")?.addEventListener("click", () => $("#modal-entrada-inv")?.classList.add("is-open"));
   $("#btn-abrir-salida")?.addEventListener("click", () => $("#modal-salida-inv")?.classList.add("is-open"));
   $("#btn-ver-todo-inventario")?.addEventListener("click", abrirModalInventarioCompleto);
-  $("#btn-ver-inventario-inferior")?.addEventListener("click", abrirModalInventarioCompleto);
   $("#buscar-inventario-modal")?.addEventListener("input", renderInventarioModal);
+  $("#modal-inv-filtro-categoria")?.addEventListener("change", renderInventarioModal);
+  $("#modal-inv-filtro-modalidad")?.addEventListener("change", renderInventarioModal);
   root.querySelectorAll("[data-modal-inv-estado]").forEach((btn) => {
     btn.addEventListener("click", () => {
       modalEstadoFiltro = btn.dataset.modalInvEstado || "todos";
-      root.querySelectorAll("[data-modal-inv-estado]").forEach((b) =>
-        b.classList.toggle("active", b.dataset.modalInvEstado === modalEstadoFiltro)
-      );
+      sincronizarChipsEstadoModal();
       renderInventarioModal();
     });
   });
@@ -1044,7 +1165,6 @@ export function mountInventarioView(root) {
   root.querySelectorAll("[data-inv-kpi]").forEach((btn) =>
     btn.addEventListener("click", () => aplicarFiltroEstado(btn.dataset.invKpi))
   );
-  $("#inv-quitar-filtro-estado")?.addEventListener("click", () => aplicarFiltroEstado("todos"));
   actualizarIndicadorFiltroEstado();
 
   const hoyIso = new Date().toISOString().slice(0, 10);
@@ -1123,11 +1243,6 @@ export function mountInventarioView(root) {
         showFeedback(err.message, true);
       }
       return;
-    }
-    // Clic en cualquier otra parte de la fila: mostrar detalle del producto
-    const fila = e.target.closest("[data-detalle-prod]");
-    if (fila && !e.target.closest("button, a, input, select")) {
-      abrirDetalleProducto(fila.dataset.detalleProd);
     }
   }
 
@@ -1319,18 +1434,19 @@ export function mountContabilidadView(root) {
   if ($("#gas-responsable")) $("#gas-responsable").value = currentUser.name || currentUser.email;
 
   // Pestañas principales de Contabilidad (Resumen, Movimientos, Cartera, Caja y Bancos, Cuentas por pagar)
+  let pestanaContabActiva = "resumen";
   function cambiarPestanaContable(tabName = "resumen") {
+    pestanaContabActiva = tabName || "resumen";
     root.querySelectorAll("[data-contab-view]").forEach((btn) =>
-      btn.classList.toggle("active", btn.dataset.contabView === tabName)
+      btn.classList.toggle("active", btn.dataset.contabView === pestanaContabActiva)
     );
     ["resumen", "movimientos", "cartera", "bancos", "por_pagar"].forEach((name) => {
-      $(`#contab-view-${name}`)?.classList.toggle("hidden", name !== tabName);
+      $(`#contab-view-${name}`)?.classList.toggle("hidden", name !== pestanaContabActiva);
     });
   }
   root.querySelectorAll("[data-contab-view]").forEach((btn) =>
     btn.addEventListener("click", () => cambiarPestanaContable(btn.dataset.contabView || "resumen"))
   );
-  $("#btn-ir-a-movimientos")?.addEventListener("click", () => cambiarPestanaContable("movimientos"));
 
   // Cambio entre los 3 botones grandes dentro del modal + Nuevo movimiento
   const tabBtns = [
@@ -1358,10 +1474,15 @@ export function mountContabilidadView(root) {
     sincronizarVisibilidadCajaEfectivo();
     $("#modal-nuevo-mov-contable")?.classList.add("is-open");
   }
-  $("#btn-abrir-nuevo-mov-contable")?.addEventListener("click", () => abrirModalNuevoMov("ingreso"));
-  $("#btn-abrir-nuevo-mov-contable-2")?.addEventListener("click", () => abrirModalNuevoMov("ingreso"));
-  $("#btn-nuevo-traslado-bancos")?.addEventListener("click", () => abrirModalNuevoMov("traslado"));
-  $("#btn-nueva-cxp")?.addEventListener("click", () => abrirModalNuevoMov("gasto", { gastoPendiente: true }));
+  $("#btn-abrir-nuevo-mov-contable")?.addEventListener("click", () => {
+    if (pestanaContabActiva === "bancos") {
+      abrirModalNuevoMov("traslado");
+    } else if (pestanaContabActiva === "por_pagar") {
+      abrirModalNuevoMov("gasto", { gastoPendiente: true });
+    } else {
+      abrirModalNuevoMov("ingreso");
+    }
+  });
   root.querySelectorAll('[data-close-modal="modal-nuevo-mov-contable"]').forEach((btn) =>
     btn.addEventListener("click", () => $("#modal-nuevo-mov-contable")?.classList.remove("is-open"))
   );
@@ -1370,6 +1491,9 @@ export function mountContabilidadView(root) {
   );
   root.querySelectorAll('[data-close-modal="modal-pagar-cxp"]').forEach((btn) =>
     btn.addEventListener("click", () => $("#modal-pagar-cxp")?.classList.remove("is-open"))
+  );
+  root.querySelectorAll('[data-close-modal="modal-saldos-iniciales"]').forEach((btn) =>
+    btn.addEventListener("click", () => $("#modal-saldos-iniciales")?.classList.remove("is-open"))
   );
 
   // Sincronizar casilla de efectivo en caja según el método de pago y estado de pago
@@ -1408,6 +1532,7 @@ export function mountContabilidadView(root) {
             : "Como el pago se hizo por transferencia o billetera digital, NO modifica el efectivo físico de la caja.";
       }
     }
+    $("#gas-vencimiento-wrap")?.classList.toggle("hidden", !gasEsPendiente);
   }
 
   $("#ing-metodo")?.addEventListener("change", sincronizarVisibilidadCajaEfectivo);
@@ -1553,46 +1678,6 @@ export function mountContabilidadView(root) {
     $("#buscar-contabilidad-modal")?.focus();
   }
 
-  function renderMovimientosRecientes() {
-    const listEl = $("#contab-recientes-list");
-    if (!listEl) return;
-    const recientes = [...movimientos]
-      .filter((m) => !m.anulado && m.estado !== "Revertido" && m.tipo !== TIPOS_CONTABLE.REVERSION)
-      .sort((a, b) => String(b.fechaRegistro || b.fecha || "").localeCompare(String(a.fechaRegistro || a.fecha || "")))
-      .slice(0, 6);
-
-    if (!recientes.length) {
-      listEl.innerHTML = `<div class="text-muted" style="text-align:center;padding:1.5rem">Aún no hay movimientos contables registrados.</div>`;
-      return;
-    }
-
-    listEl.innerHTML = recientes
-      .map((m) => {
-        const esIng = m.tipo === TIPOS_CONTABLE.INGRESO;
-        const esTras = m.tipo === TIPOS_CONTABLE.TRASLADO;
-        const esDev = m.tipo === TIPOS_CONTABLE.DEVOLUCION;
-        const esGas = m.tipo === TIPOS_CONTABLE.GASTO;
-        const montoMostrar = esDev ? roundCOP(m.montoReembolsado ?? m.valor ?? m.monto) : roundCOP(m.valor ?? m.monto);
-        const signo = esIng ? "+" : esTras ? "⇄ " : "−";
-        const cls = esIng ? "text-success" : esTras ? "" : "text-danger";
-        const fechaTxt = formatShortDate(m.fechaEfectiva || m.fecha);
-        const cuentaTxt = esTras
-          ? `${m.cuentaOrigen || "Caja"} → ${m.cuentaDestino || "Banco"}`
-          : `${m.metodoPago || "Efectivo"} · ${normalizarCuentaContable(m.metodoPago || "Efectivo") === "Caja física" ? "Caja" : normalizarCuentaContable(m.metodoPago)}`;
-        const estadoTag = m.estadoPago === "Pendiente" || m.estado === "Por pagar" ? ' <span class="badge badge-warning" style="font-size:.72rem">Por pagar</span>' : "";
-        return `
-          <button type="button" class="contab-reciente-row" data-ver-detalle-cont="${escapeHtml(m.id)}">
-            <div class="contab-reciente-left">
-              <div class="contab-reciente-title">${escapeHtml(m.concepto || m.categoria || m.tipo)}${estadoTag}</div>
-              <div class="contab-reciente-meta">${escapeHtml(fechaTxt)} · ${escapeHtml(cuentaTxt)}</div>
-            </div>
-            <div class="contab-reciente-monto ${cls}">${signo}${formatCOP(montoMostrar)}</div>
-          </button>
-        `;
-      })
-      .join("");
-  }
-
   function renderCarteraContable() {
     const tbody = $("#contab-cartera-body");
     const badgeTotal = $("#contab-cartera-total-badge");
@@ -1617,6 +1702,7 @@ export function mountContabilidadView(root) {
     }
 
     tbody.innerHTML = ventasPendientes
+      .slice(0, 6)
       .map((v) => {
         const saldo = calcularSaldoPendienteVenta(v);
         const abonado = Math.max(0, roundCOP((v.total || 0) - saldo));
@@ -1647,7 +1733,7 @@ export function mountContabilidadView(root) {
     if ($("#contab-cuenta-daviplata")) $("#contab-cuenta-daviplata").textContent = formatCOP(saldos.Daviplata || 0);
     if ($("#contab-bancos-caja-badge")) {
       $("#contab-bancos-caja-badge").textContent = cajaAbierta
-        ? `Caja abierta por ${cajaAbierta.usuarioApertura} · Base inicial: ${formatCOP(cajaAbierta.baseInicial || 0)}`
+        ? `Caja abierta por ${cajaAbierta.usuarioApertura} · Base inicial: ${formatCOP(cajaAbierta.montoInicial ?? cajaAbierta.baseInicial ?? 0)}`
         : "No hay turno de caja abierto";
     }
 
@@ -1664,7 +1750,7 @@ export function mountContabilidadView(root) {
           m.tipo !== TIPOS_CONTABLE.BILLETERA_REDENCION &&
           m.metodoPago !== "Saldo a favor"
       )
-      .slice(0, 25);
+      .slice(0, 6);
 
     tbody.innerHTML = movsCuentas.length
       ? movsCuentas
@@ -1701,32 +1787,147 @@ export function mountContabilidadView(root) {
         !m.anulado &&
         m.estado !== "Revertido" &&
         m.tipo === TIPOS_CONTABLE.GASTO &&
-        (m.estadoPago === "Pendiente" || m.estado === "Por pagar")
+        (m.estadoPago === "Pendiente" || m.estadoPago === "Parcial" || m.estado === "Por pagar")
     );
-    const totalPorPagar = pendientes.reduce((acc, m) => acc + roundCOP(m.valor ?? m.monto), 0);
+    const totalPorPagar = pendientes.reduce(
+      (acc, m) => acc + roundCOP(m.saldoPendiente ?? Math.max(0, roundCOP(m.valor ?? m.monto) - (m.montoPagado || 0))),
+      0
+    );
     if (badgeTotal) badgeTotal.textContent = `Total por pagar: ${formatCOP(totalPorPagar)}`;
 
     if (!pendientes.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-muted" style="text-align:center;padding:1.5rem">No hay cuentas por pagar pendientes.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="text-muted" style="text-align:center;padding:1.5rem">No hay cuentas por pagar pendientes.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = pendientes
-      .map(
-        (m) => `
-          <tr>
-            <td><b>${formatShortDate(m.fechaEfectiva || m.fecha)}</b></td>
-            <td>${escapeHtml(m.proveedor || "Proveedor no especificado")}</td>
-            <td><b>${escapeHtml(m.concepto || "—")}</b><br><small class="text-muted">${escapeHtml(m.categoria || "—")}</small></td>
-            <td class="num text-danger"><b>${formatCOP(m.valor ?? m.monto)}</b></td>
-            <td><span class="badge badge-warning">Pendiente</span></td>
-            <td class="text-right" style="white-space:nowrap">
-              <button type="button" class="btn btn-primary btn-xs" data-pagar-cxp="${escapeHtml(m.id)}">Registrar pago a proveedor</button>
-            </td>
-          </tr>
-        `
-      )
-      .join("");
+    const hoyDate = new Date(`${hoyIso}T00:00:00`);
+    tbody.innerHTML = pendientes.slice(0, 6).map((m) => {
+      const totalDeuda = roundCOP(m.valor ?? m.monto);
+      const abonado = roundCOP(m.montoPagado || 0);
+      const saldoPend = roundCOP(m.saldoPendiente ?? Math.max(0, totalDeuda - abonado));
+      const esParcial = m.estadoPago === "Parcial" || abonado > 0;
+
+      let vencHtml = "";
+      if (m.fechaVencimiento) {
+        if (m.fechaVencimiento < hoyIso) {
+          vencHtml = `<br><span class="badge badge-danger" style="font-size:.72rem">Vencida (${formatShortDate(m.fechaVencimiento)})</span>`;
+        } else {
+          const vencDate = new Date(`${m.fechaVencimiento}T00:00:00`);
+          const diffDias = Math.ceil((vencDate - hoyDate) / 86400000);
+          if (diffDias <= 5) {
+            vencHtml = `<br><span class="badge badge-warning" style="font-size:.72rem">Por vencer (${formatShortDate(m.fechaVencimiento)})</span>`;
+          } else {
+            vencHtml = `<br><small class="text-muted">Vence: ${formatShortDate(m.fechaVencimiento)}</small>`;
+          }
+        }
+      }
+
+      return `
+        <tr>
+          <td><b>${formatShortDate(m.fechaEfectiva || m.fecha)}</b>${vencHtml}</td>
+          <td>${escapeHtml(m.proveedor || "Proveedor no especificado")}</td>
+          <td><b>${escapeHtml(m.concepto || "—")}</b><br><small class="text-muted">${escapeHtml(m.categoria || "—")}</small></td>
+          <td class="num">${formatCOP(totalDeuda)}</td>
+          <td class="num text-success">${formatCOP(abonado)}</td>
+          <td class="num text-danger"><b>${formatCOP(saldoPend)}</b></td>
+          <td><span class="badge ${esParcial ? "badge-info" : "badge-warning"}">${esParcial ? "Abono parcial" : "Pendiente"}</span></td>
+          <td class="text-right" style="white-space:nowrap">
+            <button type="button" class="btn btn-primary btn-xs" data-pagar-cxp="${escapeHtml(m.id)}">Abonar / Pagar</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  function renderGraficosContabilidad(informe, resPeriodo, resGlobal, periodoSel) {
+    const flujoEl = $("#contab-chart-flujo-svg");
+    if (flujoEl) {
+      const diasAsc = [...(informe.evolucionDiaria || [])]
+        .filter((d) => d.fecha && d.fecha !== "Sin fecha")
+        .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+      let buckets = [];
+      const usarMeses = periodoSel === "anio" || periodoSel === "todos" || diasAsc.length > 6;
+      if (usarMeses) {
+        const porMes = new Map();
+        for (const d of diasAsc) {
+          const mes = d.fecha.slice(0, 7);
+          const prev = porMes.get(mes) || { label: mes, shortLabel: mes.slice(5) + "/" + mes.slice(2, 4), valA: 0, valB: 0 };
+          prev.valA = roundCOP(prev.valA + roundCOP(d.ingresos));
+          prev.valB = roundCOP(prev.valB + roundCOP(d.gastos));
+          porMes.set(mes, prev);
+        }
+        buckets = [...porMes.values()].slice(-6);
+      } else {
+        buckets = diasAsc.slice(-6).map((d) => ({
+          label: d.fecha,
+          shortLabel: d.fecha.slice(8, 10) + "/" + d.fecha.slice(5, 7),
+          valA: roundCOP(d.ingresos),
+          valB: roundCOP(d.gastos)
+        }));
+      }
+
+      if ($("#contab-chart-flujo-sub")) {
+        $("#contab-chart-flujo-sub").textContent = usarMeses ? "Agrupado por mes (últimos períodos)" : "Comparativo diario del período";
+      }
+      flujoEl.innerHTML = renderSvgBarsHTML({
+        items: buckets,
+        labelA: "Recaudos",
+        colorA: "var(--success)",
+        labelB: "Gastos",
+        colorB: "var(--danger)",
+        ariaLabel: "Gráfico de Recaudos frente a Gastos",
+        emptyMsg: "Aún no hay recaudos ni gastos registrados en este período."
+      });
+    }
+
+    const flujoNeto = roundCOP(resPeriodo.flujoNetoEfectivo ?? resPeriodo.resultadoPeriodo ?? 0);
+    const utilEst = roundCOP(resPeriodo.utilidadOperativaEstimada ?? 0);
+    if ($("#contab-chart-flujo-neto")) {
+      $("#contab-chart-flujo-neto").textContent = `${flujoNeto > 0 ? "+ " : ""}${formatCOP(flujoNeto)}`;
+      $("#contab-chart-flujo-neto").className = `num ${flujoNeto >= 0 ? "text-income" : "text-expense"}`;
+    }
+    if ($("#contab-chart-utilidad-est")) {
+      $("#contab-chart-utilidad-est").textContent = `${utilEst > 0 ? "+ " : ""}${formatCOP(utilEst)}`;
+      $("#contab-chart-utilidad-est").className = `num ${utilEst >= 0 ? "text-income" : "text-expense"}`;
+    }
+
+    const cuentasEl = $("#contab-chart-cuentas");
+    if (cuentasEl) {
+      const saldos = resGlobal.saldosPorCuenta || {};
+      const listaCuentas = [
+        { label: "Caja física", value: Math.max(0, roundCOP(resGlobal.disponibleCaja ?? saldos["Caja física"] ?? 0)), real: roundCOP(resGlobal.disponibleCaja ?? saldos["Caja física"] ?? 0), color: "var(--success)" },
+        { label: "Transferencia bancaria", value: Math.max(0, roundCOP(saldos["Transferencia bancaria"] || 0)), real: roundCOP(saldos["Transferencia bancaria"] || 0), color: "var(--accent)" },
+        { label: "Nequi", value: Math.max(0, roundCOP(saldos.Nequi || 0)), real: roundCOP(saldos.Nequi || 0), color: "var(--accent)" },
+        { label: "Daviplata", value: Math.max(0, roundCOP(saldos.Daviplata || 0)), real: roundCOP(saldos.Daviplata || 0), color: "var(--warning)" }
+      ];
+      const sumaPos = listaCuentas.reduce((s, c) => s + c.value, 0);
+      if (sumaPos <= 0) {
+        cuentasEl.innerHTML = `<div class="chart-empty-state" style="padding:1rem">Sin saldos positivos disponibles para distribuir.</div>`;
+      } else {
+        cuentasEl.innerHTML = renderHorizontalBarsHTML(
+          listaCuentas.map((c) => ({
+            label: c.label,
+            value: c.value,
+            color: c.color,
+            valueLabel: `${formatCOP(c.real)} (${Math.round((c.value / sumaPos) * 100)}%)`
+          }))
+        );
+      }
+    }
+
+    const topGastosEl = $("#contab-chart-top-gastos");
+    if (topGastosEl) {
+      const top3 = (informe.gastosPorCategoria || []).slice(0, 3);
+      topGastosEl.innerHTML = top3.length
+        ? `<div class="text-xs text-muted" style="font-weight:700;margin-bottom:.45rem">3 MAYORES GASTOS POR CATEGORÍA</div>` +
+          top3
+            .map(
+              (g) => `<div class="flex justify-between items-center text-sm" style="padding:.2rem 0"><span>${escapeHtml(g.nombre)}</span><b class="num text-danger">${formatCOP(g.total)}</b></div>`
+            )
+            .join("")
+        : `<div class="text-xs text-muted">Sin gastos registrados en el período.</div>`;
+    }
   }
 
   function renderContabilidad() {
@@ -1736,7 +1937,9 @@ export function mountContabilidadView(root) {
     const informe = generarInformeFinancieroContable(movimientos, {
       periodo: desde || hasta ? "personalizado" : periodoSel,
       desde,
-      hasta
+      hasta,
+      ventas,
+      cajas: cajaAbierta ? [cajaAbierta] : []
     });
     const resGlobal = calcularResumenContable(movimientos, {
       cajas: cajaAbierta ? [cajaAbierta] : [],
@@ -1775,7 +1978,7 @@ export function mountContabilidadView(root) {
         : "Clientes con saldo pendiente";
     }
 
-    renderMovimientosRecientes();
+    renderGraficosContabilidad(informe, resPeriodo, resGlobal, periodoSel);
     renderCarteraContable();
     renderCajaYBancos(resGlobal);
     renderCuentasPorPagar();
@@ -1803,10 +2006,10 @@ export function mountContabilidadView(root) {
       $("#contab-inferior-count").textContent = String(filtrados.length);
     }
 
-    const visibles = filtrados.slice(0, 12);
+    const visibles = filtrados.slice(0, 6);
     const footer = $("#contab-tabla-footer");
     if (footer) {
-      const hayMas = filtrados.length > 12;
+      const hayMas = filtrados.length > 6;
       footer.classList.toggle("hidden", !hayMas);
       if ($("#contab-tabla-footer-texto")) {
         $("#contab-tabla-footer-texto").textContent = `Mostrando ${visibles.length} de ${filtrados.length} movimientos`;
@@ -1836,7 +2039,6 @@ export function mountContabilidadView(root) {
   });
 
   $("#btn-ver-todo-contabilidad")?.addEventListener("click", abrirModalContabilidadCompleto);
-  $("#btn-ver-contabilidad-inferior")?.addEventListener("click", abrirModalContabilidadCompleto);
   root.querySelectorAll('[data-close-modal="modal-contabilidad-completo"]').forEach((btn) =>
     btn.addEventListener("click", () => $("#modal-contabilidad-completo")?.classList.remove("is-open"))
   );
@@ -1942,7 +2144,6 @@ export function mountContabilidadView(root) {
   }
   $("#contab-table-body")?.addEventListener("click", manejarClickDetalleContable);
   $("#contab-table-body-modal")?.addEventListener("click", manejarClickDetalleContable);
-  $("#contab-recientes-list")?.addEventListener("click", manejarClickDetalleContable);
   $("#contab-bancos-body")?.addEventListener("click", manejarClickDetalleContable);
 
   // Cartera: abrir modal de abono y registrar abono
@@ -1980,35 +2181,95 @@ export function mountContabilidadView(root) {
     }
   });
 
-  // Cuentas por pagar: abrir modal de pago a proveedor y liquidar
+  // Cuentas por pagar: abrir modal de abono/pago a proveedor y liquidar total o parcialmente
+  let cxpSaldoActualModal = 0;
   $("#contab-cxp-body")?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-pagar-cxp]");
     if (!btn) return;
     const mov = movimientos.find((m) => m.id === btn.dataset.pagarCxp);
     if (!mov) return;
+    const totalDeuda = roundCOP(mov.valor ?? mov.monto);
+    const totalAbonado = roundCOP(mov.montoPagado || 0);
+    const saldoPend = roundCOP(mov.saldoPendiente ?? Math.max(0, totalDeuda - totalAbonado));
+    cxpSaldoActualModal = saldoPend;
     if ($("#cxp-mov-id")) $("#cxp-mov-id").value = mov.id;
+    if ($("#cxp-monto")) $("#cxp-monto").value = formatMontoInput(saldoPend);
     if ($("#cxp-fecha")) $("#cxp-fecha").value = hoyIso;
-    if ($("#cxp-ref")) $("#cxp-ref").value = mov.referencia || "";
+    if ($("#cxp-ref")) $("#cxp-ref").value = "";
+    if ($("#cxp-obs")) $("#cxp-obs").value = "";
     if ($("#cxp-resumen-box")) {
+      const histPagos = Array.isArray(mov.pagos) && mov.pagos.length
+        ? `<div style="margin-top:.35rem;padding-top:.35rem;border-top:1px dashed var(--border-color);font-size:.8rem">
+            <strong>Pagos anteriores (${mov.pagos.length}):</strong>
+            ${mov.pagos.slice(-3).map((p) => `<div>• ${formatShortDate(p.fecha)}: ${formatCOP(p.monto)} (${escapeHtml(p.metodoPago || "Efectivo")})</div>`).join("")}
+          </div>`
+        : "";
       $("#cxp-resumen-box").innerHTML = `
         <div><strong>Proveedor:</strong> ${escapeHtml(mov.proveedor || "No especificado")}</div>
         <div><strong>Concepto:</strong> ${escapeHtml(mov.concepto || "—")}</div>
-        <div><strong>Valor a pagar:</strong> <b class="text-danger">${formatCOP(mov.valor ?? mov.monto)}</b></div>
+        <div><strong>Total obligación:</strong> ${formatCOP(totalDeuda)} · <strong>Total abonado:</strong> <span class="text-success">${formatCOP(totalAbonado)}</span></div>
+        <div><strong>Saldo pendiente actual:</strong> <b class="text-danger">${formatCOP(saldoPend)}</b></div>
+        ${histPagos}
       `;
     }
     $("#modal-pagar-cxp")?.classList.add("is-open");
   });
 
+  $("#btn-cxp-pagar-todo")?.addEventListener("click", () => {
+    if ($("#cxp-monto") && cxpSaldoActualModal > 0) {
+      $("#cxp-monto").value = formatMontoInput(cxpSaldoActualModal);
+    }
+  });
+
   $("#form-pagar-cxp")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const movimientoId = $("#cxp-mov-id")?.value;
+    const montoPago = parseMontoInput($("#cxp-monto")?.value);
     const metodoPago = $("#cxp-metodo")?.value || "Efectivo";
     const fecha = $("#cxp-fecha")?.value || hoyIso;
     const referencia = $("#cxp-ref")?.value || "";
+    const observaciones = $("#cxp-obs")?.value || "";
     try {
-      const pagado = await pagarCuentaPorPagar({ movimientoId, metodoPago, fecha, referencia }, getCurrentUser());
+      const resPago = await pagarCuentaPorPagar(
+        { movimientoId, montoPago, metodoPago, fecha, referencia, observaciones },
+        getCurrentUser()
+      );
       $("#modal-pagar-cxp")?.classList.remove("is-open");
-      showFeedback(`Pago a proveedor registrado (${pagado.concepto} por ${formatCOP(pagado.monto)}).`);
+      showFeedback(
+        resPago.saldoPendiente === 0
+          ? `Cuenta por pagar liquidada (${resPago.abonoMovimiento.concepto} por ${formatCOP(resPago.montoPagado)}).`
+          : `Abono registrado por ${formatCOP(resPago.montoPagado)}. Saldo pendiente restante: ${formatCOP(resPago.saldoPendiente)}.`
+      );
+    } catch (err) {
+      showFeedback(err.message, true);
+    }
+  });
+
+  // Saldos iniciales por cuenta (Caja y Bancos)
+  $("#btn-config-saldos-iniciales")?.addEventListener("click", () => {
+    const saldos = obtenerSaldosInicialesCuentas();
+    if ($("#init-saldo-transferencia")) $("#init-saldo-transferencia").value = formatMontoInput(saldos.transferencia || 0) || "0";
+    if ($("#init-saldo-nequi")) $("#init-saldo-nequi").value = formatMontoInput(saldos.nequi || 0) || "0";
+    if ($("#init-saldo-daviplata")) $("#init-saldo-daviplata").value = formatMontoInput(saldos.daviplata || 0) || "0";
+    if ($("#init-saldo-caja")) $("#init-saldo-caja").value = formatMontoInput(saldos.caja || 0) || "0";
+    $("#modal-saldos-iniciales")?.classList.add("is-open");
+  });
+
+  $("#form-saldos-iniciales")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await guardarSaldosInicialesCuentas(
+        {
+          transferencia: parseMontoInput($("#init-saldo-transferencia")?.value),
+          nequi: parseMontoInput($("#init-saldo-nequi")?.value),
+          daviplata: parseMontoInput($("#init-saldo-daviplata")?.value),
+          caja: parseMontoInput($("#init-saldo-caja")?.value)
+        },
+        getCurrentUser()
+      );
+      $("#modal-saldos-iniciales")?.classList.remove("is-open");
+      renderContabilidad();
+      showFeedback("Saldos iniciales por cuenta guardados correctamente.");
     } catch (err) {
       showFeedback(err.message, true);
     }
@@ -2097,6 +2358,7 @@ export function mountContabilidadView(root) {
     const metodoPago = $("#gas-metodo")?.value || "Efectivo";
     const estadoPago = $("#gas-estado-pago")?.value || "Pagado";
     const proveedor = String($("#gas-proveedor")?.value || "").trim();
+    const fechaVencimiento = estadoPago === "Pendiente" ? ($("#gas-vencimiento")?.value || "") : "";
 
     if (!concepto) {
       showFeedback("Por favor escriba el concepto indicando en qué se gastó el dinero.", true);
@@ -2132,6 +2394,7 @@ export function mountContabilidadView(root) {
               fechaEfectiva,
               metodoPago,
               estadoPago,
+              fechaVencimiento,
               proveedor,
               afectaCajaFisica: estadoPago === "Pagado" && Boolean($("#gas-afecta-caja")?.checked),
               observaciones: $("#gas-nota")?.value || ""
@@ -2236,11 +2499,15 @@ export function mountContabilidadView(root) {
     ventas = lista;
     renderContabilidad();
   });
+  const u4 = watchSaldosInicialesCuentas(() => {
+    renderContabilidad();
+  });
 
   return () => {
     u1();
     u2();
     u3();
+    u4();
   };
 }
 
@@ -2614,6 +2881,22 @@ export function mountReportesView(root) {
   let ultimoConsolidado = null;
   const tablasReporteData = new Map();
   let modalTablaActualKey = null;
+  let expandirParaImprimir = false;
+
+  const TITULOS_REPORTES = {
+    ventas_periodo: "Ventas del período",
+    mas_vendidos: "Productos más vendidos",
+    inventario_actual: "Inventario y Stock bajo",
+    movimientos_inventario: "Movimientos de bodega (Kardex)",
+    ingresos_gastos: "Ingresos, Gastos y Pagos",
+    cierres_caja: "Cierres de caja y Devoluciones",
+    libro_fiscal: "Libro fiscal de operaciones diarias"
+  };
+
+  function formatFechaFiltro(ymd) {
+    const val = String(ymd || "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(val) ? val.split("-").reverse().join("/") : val;
+  }
 
   function obtenerFiltrosActuales() {
     return {
@@ -2625,6 +2908,38 @@ export function mountReportesView(root) {
       estadoVenta: "Todos",
       usuario: "Todos"
     };
+  }
+
+  function actualizarEncabezadoImpresion() {
+    const el = $("#rep-print-header");
+    if (!el) return;
+    const perfil = obtenerPerfilNegocio();
+    const tipo = $("#rep-csv-tipo")?.value || "ventas_periodo";
+    const tituloReporte = TITULOS_REPORTES[tipo] || "Reporte administrativo";
+    const { desde, hasta } = obtenerFiltrosActuales();
+    const rangoTexto =
+      desde && hasta
+        ? `Desde ${formatFechaFiltro(desde)} hasta ${formatFechaFiltro(hasta)}`
+        : desde
+          ? `Desde ${formatFechaFiltro(desde)}`
+          : hasta
+            ? `Hasta ${formatFechaFiltro(hasta)}`
+            : "Todo el historial";
+    const subIdent = [
+      perfil?.documentoNit ? `NIT / C.C.: ${perfil.documentoNit}` : "",
+      perfil?.regimenIva || "No responsable de IVA"
+    ].filter(Boolean).join(" · ");
+
+    el.innerHTML = `
+      <div>
+        <h2>${escapeHtml(perfil?.nombreEstablecimiento || "Vidrios y Aluminios El Carmen")} — ${escapeHtml(tituloReporte)}</h2>
+        <div class="text-sm text-muted">${escapeHtml(subIdent)}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="text-sm"><strong>Período:</strong> ${escapeHtml(rangoTexto)}</div>
+        <div class="text-xs text-muted">Impreso: ${escapeHtml(new Date().toLocaleDateString("es-CO"))}</div>
+      </div>
+    `;
   }
 
   function renderModalReporteCompleto() {
@@ -2669,11 +2984,23 @@ export function mountReportesView(root) {
     modalTablaActualKey = null;
   }
 
-  function renderTablaPaginada(tbodySel, rowsHtml, emptyColspan, emptyMsg, tablaKey) {
-    const LIMITE_FILAS = 5;
+  function resolverLimitePanel(card) {
+    const panelKeys = String(card?.dataset?.repPanel || "")
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+    if (!panelKeys.length) return 5;
+    const totalEnApartado = root.querySelectorAll(`[data-rep-panel~="${panelKeys[0]}"], [data-rep-panel="${panelKeys[0]}"]`).length;
+    return totalEnApartado === 1 ? 11 : 5;
+  }
+
+  function renderTablaPaginada(tbodySel, rowsHtml, emptyColspan, emptyMsg, tablaKey, limiteFilas = null) {
     const tbody = $(tbodySel);
     if (!tbody) return;
     const card = tbody.closest(".card");
+    const LIMITE_FILAS = Number.isFinite(Number(limiteFilas)) && Number(limiteFilas) > 0
+      ? Number(limiteFilas)
+      : resolverLimitePanel(card);
     const header = card?.querySelector(".card-header");
     const titulo = header?.querySelector("h3")?.textContent?.trim() || "Reporte";
     const theadHtml = tbody.closest("table")?.querySelector("thead")?.innerHTML || "";
@@ -2712,12 +3039,12 @@ export function mountReportesView(root) {
       return;
     }
 
-    const visibles = rowsHtml.slice(0, LIMITE_FILAS);
+    const visibles = expandirParaImprimir ? rowsHtml : rowsHtml.slice(0, LIMITE_FILAS);
     tbody.innerHTML = visibles.join("");
 
-    // Pie informativo discreto (sin botón repetido) únicamente cuando hay más de LIMITE_FILAS
+    // Pie informativo siempre visible en pantalla cuando hay al menos 1 registro
     let footer = card?.querySelector(".rep-table-footer");
-    if (total > LIMITE_FILAS) {
+    if (!expandirParaImprimir) {
       if (!footer && card) {
         footer = document.createElement("div");
         footer.className = "card-footer rep-table-footer";
@@ -2771,7 +3098,8 @@ export function mountReportesView(root) {
       ),
       4,
       "No hay ventas registradas en el período seleccionado.",
-      "ventas_periodo"
+      "ventas_periodo",
+      5
     );
 
     // Detalle de ventas
@@ -2799,7 +3127,8 @@ export function mountReportesView(root) {
       }),
       7,
       "No hay detalle de ventas para mostrar.",
-      "detalle_ventas"
+      "detalle_ventas",
+      5
     );
 
     // Productos más vendidos
@@ -2817,7 +3146,8 @@ export function mountReportesView(root) {
       ),
       4,
       "No hay productos vendidos en el período.",
-      "mas_vendidos"
+      "mas_vendidos",
+      11
     );
 
     // Inventario actual
@@ -2837,7 +3167,8 @@ export function mountReportesView(root) {
       ),
       5,
       "No hay productos registrados.",
-      "inventario_actual"
+      "inventario_actual",
+      5
     );
 
     // Productos con stock bajo
@@ -2857,7 +3188,8 @@ export function mountReportesView(root) {
       ),
       5,
       "No hay productos con stock bajo o agotado.",
-      "stock_bajo"
+      "stock_bajo",
+      5
     );
 
     // Movimientos de inventario (Kardex)
@@ -2879,7 +3211,8 @@ export function mountReportesView(root) {
       ),
       7,
       "No hay movimientos de inventario en el período.",
-      "movimientos_inventario"
+      "movimientos_inventario",
+      11
     );
 
     // Ingresos y gastos por categoría
@@ -2897,7 +3230,8 @@ export function mountReportesView(root) {
       ),
       4,
       "No hay movimientos contables en el período.",
-      "ingresos_gastos"
+      "ingresos_gastos",
+      5
     );
 
     // Métodos de pago
@@ -2918,7 +3252,8 @@ export function mountReportesView(root) {
         : [],
       4,
       "Sin pagos registrados en el período.",
-      "metodos_pago"
+      "metodos_pago",
+      5
     );
 
     // Cierres de caja y diferencias
@@ -2939,7 +3274,8 @@ export function mountReportesView(root) {
       }),
       5,
       "No hay cierres de caja registrados.",
-      "cierres_caja"
+      "cierres_caja",
+      5
     );
 
     // Anulaciones y devoluciones
@@ -2961,8 +3297,70 @@ export function mountReportesView(root) {
       ),
       5,
       "No hay anulaciones ni devoluciones en el período.",
-      "anulaciones_devoluciones"
+      "anulaciones_devoluciones",
+      5
     );
+
+    // Libro fiscal de operaciones diarias
+    const libro = rep.libroFiscalDiario;
+    if (libro) {
+      const p = libro.perfilNegocio || {};
+      if ($("#rep-libro-establecimiento")) {
+        $("#rep-libro-establecimiento").textContent = p.nombreEstablecimiento || "Vidrios y Aluminios El Carmen";
+      }
+      if ($("#rep-libro-nit")) {
+        $("#rep-libro-nit").textContent = p.documentoNit
+          ? `${p.tipoPersona === "Persona jurídica" ? "NIT" : "NIT / C.C."}: ${p.documentoNit}`
+          : "NIT / C.C.: Sin registrar";
+      }
+      if ($("#rep-libro-regimen")) {
+        $("#rep-libro-regimen").textContent = p.regimenIva || "No responsable de IVA";
+      }
+      if ($("#rep-libro-contacto")) {
+        const partes = [p.direccion, p.ciudad, p.telefono ? `Tel: ${p.telefono}` : ""].filter(Boolean);
+        $("#rep-libro-contacto").textContent = partes.join(" · ");
+      }
+      if ($("#rep-libro-uvt-info")) {
+        $("#rep-libro-uvt-info").innerHTML = `<b>Ingresos brutos ${escapeHtml(libro.anioReferencia)}:</b> ${formatCOP(libro.ingresosBrutosAnioActual)} de ${formatCOP(libro.topeAnualUvt)} (<b>${libro.porcentajeTopeUvt}%</b>)`;
+      }
+      if ($("#rep-libro-count")) $("#rep-libro-count").textContent = `${libro.filas.length} días`;
+
+      renderTablaPaginada(
+        "#rep-tabla-libro-fiscal",
+        libro.filas.map(
+          (r) => `
+            <tr>
+              <td><b>${escapeHtml(r.fecha)}</b></td>
+              <td class="num">${r.cantidadOperaciones}</td>
+              <td class="num text-income"><b>${formatCOP(r.ingresosDiarios)}</b></td>
+              <td class="num text-expense">${formatCOP(r.comprasYPagosDiarios)}</td>
+              <td class="num ${r.saldoNetoDia >= 0 ? "text-income" : "text-expense"}"><b>${formatCOP(r.saldoNetoDia)}</b></td>
+            </tr>
+          `
+        ),
+        5,
+        "No hay operaciones registradas en el período seleccionado.",
+        "libro_fiscal",
+        11
+      );
+
+      const tfootLibro = $("#rep-tfoot-libro-fiscal");
+      if (tfootLibro) {
+        tfootLibro.innerHTML = libro.filas.length
+          ? `
+            <tr style="background:var(--bg-subtle); font-weight:800">
+              <td>TOTAL PERÍODO CONSULTADO</td>
+              <td class="num">${libro.totalOperaciones}</td>
+              <td class="num text-income">${formatCOP(libro.totalIngresosPeriodo)}</td>
+              <td class="num text-expense">${formatCOP(libro.totalComprasPagosPeriodo)}</td>
+              <td class="num ${libro.saldoNetoPeriodo >= 0 ? "text-income" : "text-expense"}">${formatCOP(libro.saldoNetoPeriodo)}</td>
+            </tr>
+          `
+          : "";
+      }
+    }
+
+    actualizarEncabezadoImpresion();
   }
 
   $("#form-filtro-reportes")?.addEventListener("submit", (e) => {
@@ -2983,6 +3381,7 @@ export function mountReportesView(root) {
       const keys = String(panel.dataset.repPanel || "").split(",");
       panel.classList.toggle("hidden", !keys.includes(tipo));
     });
+    actualizarEncabezadoImpresion();
   }
 
   root.querySelectorAll("[data-rep-btn]").forEach((btn) => {
@@ -3063,7 +3462,26 @@ export function mountReportesView(root) {
     URL.revokeObjectURL(url);
   });
 
+  const onBeforePrint = () => {
+    if (!expandirParaImprimir) {
+      expandirParaImprimir = true;
+      renderReportes();
+    } else {
+      actualizarEncabezadoImpresion();
+    }
+  };
+  const onAfterPrint = () => {
+    if (expandirParaImprimir) {
+      expandirParaImprimir = false;
+      renderReportes();
+    }
+  };
+  window.addEventListener("beforeprint", onBeforePrint);
+  window.addEventListener("afterprint", onAfterPrint);
+
   $("#btn-imprimir")?.addEventListener("click", () => {
+    expandirParaImprimir = true;
+    renderReportes();
     window.print();
   });
 
@@ -3078,14 +3496,18 @@ export function mountReportesView(root) {
   const u3 = watchCajas(({ historial }) => { cajas = historial; renderReportes(); });
   const u4 = watchMovimientosContables((l) => { movsContables = l; renderReportes(); });
   const u5 = watchMovimientosInventario((l) => { movsInventario = l; renderReportes(); });
+  const u6 = watchPerfilNegocio(() => { renderReportes(); });
 
   return () => {
     document.removeEventListener("keydown", onEscapeModal);
+    window.removeEventListener("beforeprint", onBeforePrint);
+    window.removeEventListener("afterprint", onAfterPrint);
     u1();
     u2();
     u3();
     u4();
     u5();
+    u6();
   };
 }
 
@@ -3247,5 +3669,111 @@ export function mountUsuariosView(root) {
   const u1 = watchUsuarios((l) => { usuarios = l; renderUsuarios(); });
   const u2 = watchAuditoria((l) => { auditoria = l; renderAuditoria(); });
 
-  return () => { u1(); u2(); };
+  function cargarPerfilNegocioEnFormulario() {
+    const perfil = obtenerPerfilNegocio();
+    if ($("#neg-nombre")) $("#neg-nombre").value = perfil.nombreEstablecimiento || "Vidrios y Aluminios El Carmen";
+    if ($("#neg-nit")) $("#neg-nit").value = perfil.documentoNit || "";
+    if ($("#neg-tipo-persona")) $("#neg-tipo-persona").value = perfil.tipoPersona || "Persona natural";
+    if ($("#neg-regimen")) $("#neg-regimen").value = perfil.regimenIva || "No responsable de IVA";
+    if ($("#neg-direccion")) $("#neg-direccion").value = perfil.direccion || "";
+    if ($("#neg-telefono")) $("#neg-telefono").value = perfil.telefono || "";
+    if ($("#neg-ciudad")) $("#neg-ciudad").value = perfil.ciudad || "";
+  }
+  cargarPerfilNegocioEnFormulario();
+  const u3 = watchPerfilNegocio(() => cargarPerfilNegocioEnFormulario());
+
+  $("#form-perfil-negocio")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await guardarPerfilNegocio(
+        {
+          nombreEstablecimiento: $("#neg-nombre")?.value,
+          documentoNit: $("#neg-nit")?.value,
+          tipoPersona: $("#neg-tipo-persona")?.value,
+          regimenIva: $("#neg-regimen")?.value || "No responsable de IVA",
+          direccion: $("#neg-direccion")?.value,
+          telefono: $("#neg-telefono")?.value,
+          ciudad: $("#neg-ciudad")?.value
+        },
+        getCurrentUser()
+      );
+      showFeedback("Datos del establecimiento guardados correctamente. Ya se reflejan en comprobantes y Libro Fiscal Diario.");
+    } catch (err) {
+      showFeedback(err.message, true);
+    }
+  });
+
+  const BACKUP_LS_KEY = "elcarmen_ultimo_respaldo";
+  function refrescarEstadoRespaldo() {
+    const el = $("#usr-ultimo-respaldo");
+    if (!el) return;
+    try {
+      const ts = typeof localStorage !== "undefined" ? localStorage.getItem(BACKUP_LS_KEY) : null;
+      el.textContent = ts
+        ? `Último respaldo descargado: ${formatDateTime(ts)}`
+        : "Último respaldo: sin registrar en este equipo";
+    } catch {
+      el.textContent = "Último respaldo: sin registrar";
+    }
+  }
+  refrescarEstadoRespaldo();
+
+  $("#btn-descargar-respaldo")?.addEventListener("click", () => {
+    try {
+      const respaldo = exportarRespaldoJSON(getCurrentUser());
+      const blob = new Blob([respaldo.jsonString], { type: "application/json;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = respaldo.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      try {
+        if (typeof localStorage !== "undefined") localStorage.setItem(BACKUP_LS_KEY, respaldo.fechaRespaldo);
+      } catch {
+        // Sin acceso a localStorage
+      }
+      refrescarEstadoRespaldo();
+      showFeedback(`Copia de seguridad descargada (${respaldo.totalRegistros} registros en ${respaldo.filename}).`);
+    } catch (err) {
+      showFeedback(err.message, true);
+    }
+  });
+
+  $("#btn-restaurar-respaldo")?.addEventListener("click", async () => {
+    const fileInput = $("#input-restaurar-respaldo");
+    const file = fileInput?.files?.[0];
+    if (!file) {
+      showFeedback("Seleccione primero un archivo de respaldo (.json).", true);
+      return;
+    }
+    try {
+      const texto = await file.text();
+      const info = validarRespaldoJSON(texto);
+      const c = info.conteosPorColeccion || {};
+      const confirmado = await confirmarAccionModal({
+        titulo: "Confirmar restauración de copia de seguridad",
+        pregunta: "¿Desea restaurar la información desde este archivo de respaldo?",
+        detallesHtml: `
+          <div><strong>Archivo:</strong> ${escapeHtml(file.name)}</div>
+          <div><strong>Fecha del respaldo:</strong> ${info.fechaRespaldo ? formatDateTime(info.fechaRespaldo) : "No especificada"}</div>
+          <div><strong>Productos:</strong> ${c.productos ?? 0} · <strong>Clientes:</strong> ${c.clientes ?? 0} · <strong>Ventas:</strong> ${c.ventas ?? 0}</div>
+          <div><strong>Mov. Contables:</strong> ${c.movimientos_contables ?? 0} · <strong>Mov. Inventario:</strong> ${c.movimientos_inventario ?? 0}</div>
+          <div><strong>Total de registros a restaurar:</strong> <b>${info.totalRegistros}</b></div>
+        `,
+        textoConfirmar: "Sí, restaurar respaldo",
+        claseBoton: "btn-danger"
+      });
+      if (!confirmado) return;
+      const res = await restaurarRespaldoJSON(texto, getCurrentUser());
+      if (fileInput) fileInput.value = "";
+      showFeedback(`Respaldo restaurado correctamente (${res.totalRestaurados} registros cargados).`);
+    } catch (err) {
+      showFeedback(err.message, true);
+    }
+  });
+
+  return () => { u1(); u2(); u3(); };
 }

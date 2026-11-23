@@ -100,6 +100,74 @@
           </div>
         </section>
 
+        <!-- Configuración del negocio (No responsable de IVA) y Copias de seguridad -->
+        <section class="card" style="margin-top:1.5rem">
+          <div class="card-header">
+            <div>
+              <h3 style="margin:0">Configuración del negocio y Copias de seguridad</h3>
+              <span class="text-xs text-muted">Datos del establecimiento para comprobantes y Libro Fiscal Diario, más respaldo general</span>
+            </div>
+          </div>
+          <div class="card-body grid grid-2" style="gap:1.5rem">
+            <form id="form-perfil-negocio" style="display:grid; gap:.75rem; align-content:start">
+              <h4 style="margin:0; font-size:1rem">Datos del establecimiento (No responsable de IVA)</h4>
+              <div class="form-grid">
+                <div class="field full">
+                  <label class="label" for="neg-nombre">Nombre del establecimiento *</label>
+                  <input class="input" id="neg-nombre" required placeholder="Ej: Vidrios y Aluminios El Carmen">
+                </div>
+                <div class="field">
+                  <label class="label" for="neg-nit">NIT o Cédula (C.C.)</label>
+                  <input class="input" id="neg-nit" placeholder="Ej: 12345678-9">
+                </div>
+                <div class="field">
+                  <label class="label" for="neg-tipo-persona">Tipo de persona</label>
+                  <select class="select" id="neg-tipo-persona">
+                    <option value="Persona natural">Persona natural</option>
+                    <option value="Persona jurídica">Persona jurídica</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="neg-regimen">Régimen tributario</label>
+                  <input class="input" id="neg-regimen" value="No responsable de IVA" readonly style="background:var(--bg-subtle); font-weight:600">
+                </div>
+                <div class="field">
+                  <label class="label" for="neg-telefono">Teléfono</label>
+                  <input class="input" id="neg-telefono" placeholder="Ej: 300 000 0000">
+                </div>
+                <div class="field">
+                  <label class="label" for="neg-direccion">Dirección</label>
+                  <input class="input" id="neg-direccion" placeholder="Dirección del local">
+                </div>
+                <div class="field">
+                  <label class="label" for="neg-ciudad">Ciudad / Municipio</label>
+                  <input class="input" id="neg-ciudad" placeholder="Ej: El Carmen">
+                </div>
+              </div>
+              <div class="flex justify-end">
+                <button type="submit" class="btn btn-primary" id="btn-guardar-perfil-negocio">Guardar datos del negocio</button>
+              </div>
+            </form>
+
+            <div style="display:grid; gap:.9rem; align-content:start; padding:1rem; background:var(--bg-subtle); border:1px solid var(--border-color); border-radius:var(--radius-sm)">
+              <h4 style="margin:0; font-size:1rem">Copia de seguridad de la información</h4>
+              <p class="text-sm text-muted" style="margin:0">
+                Descargue un archivo completo con productos, clientes, ventas, caja, inventarios y contabilidad para resguardo administrativo.
+              </p>
+              <div style="display:grid; gap:.5rem">
+                <button type="button" class="btn btn-primary" id="btn-descargar-respaldo">Descargar copia de seguridad (.json)</button>
+                <span class="text-xs text-muted" id="usr-ultimo-respaldo">Último respaldo: sin registrar en este equipo</span>
+              </div>
+              <hr style="border:0; border-top:1px solid var(--border-color); margin:.25rem 0">
+              <div style="display:grid; gap:.5rem">
+                <label class="label" for="input-restaurar-respaldo" style="margin:0">Restaurar desde archivo (.json)</label>
+                <input class="input" id="input-restaurar-respaldo" type="file" accept=".json,application/json">
+                <button type="button" class="btn btn-outline" id="btn-restaurar-respaldo">Restaurar desde archivo</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Modal: crear o editar usuario -->
         <div class="modal-overlay" id="modal-usuario" role="dialog" aria-modal="true" aria-labelledby="titulo-usuario">
           <div class="modal">

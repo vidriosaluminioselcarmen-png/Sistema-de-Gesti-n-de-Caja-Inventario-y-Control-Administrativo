@@ -71,7 +71,7 @@
       <div class="view" data-view="reportes">
 
         <!-- Barra superior limpia de período y acciones -->
-        <section class="card" style="margin-bottom:1.5rem">
+        <section class="card rep-filter-card" style="margin-bottom:1.5rem">
           <form class="card-body rep-filter-bar" id="form-filtro-reportes">
             <input type="hidden" id="rep-csv-tipo" value="ventas_periodo">
             <div class="rep-period-pills" id="rep-period-pills" role="group" aria-label="Períodos rápidos">
@@ -81,11 +81,11 @@
               <button type="button" class="btn btn-primary btn-sm rep-period-btn active" data-rep-rango="todos">Todo el historial</button>
             </div>
             <div class="rep-date-group">
-              <div class="field" style="margin-bottom:0;min-width:170px">
+              <div class="field" style="margin-bottom:0">
                 <label class="label" for="rep-desde">Fecha inicial</label>
                 <input class="input" id="rep-desde" type="date">
               </div>
-              <div class="field" style="margin-bottom:0;min-width:170px">
+              <div class="field" style="margin-bottom:0">
                 <label class="label" for="rep-hasta">Fecha final</label>
                 <input class="input" id="rep-hasta" type="date">
               </div>
@@ -97,6 +97,9 @@
             </div>
           </form>
         </section>
+
+        <!-- Encabezado visible únicamente al imprimir / PDF -->
+        <div id="rep-print-header" class="print-only-header"></div>
 
         <!-- Totales consolidados del período consultado -->
         <div class="grid grid-4" style="margin-bottom:1.75rem">
@@ -123,13 +126,14 @@
         </div>
 
         <!-- Barra de botones grandes de un solo clic para elegir reporte -->
-        <div class="rep-tabs" role="tablist" aria-label="Tipo de reporte">
+        <div class="rep-tabs rep-tabs-bar" role="tablist" aria-label="Tipo de reporte">
           <button type="button" class="btn btn-primary rep-tab-btn" data-rep-btn="ventas_periodo" aria-pressed="true">Ventas del período</button>
           <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="mas_vendidos" aria-pressed="false">Productos más vendidos</button>
           <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="inventario_actual" aria-pressed="false">Inventario y Stock bajo</button>
           <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="movimientos_inventario" aria-pressed="false">Movimientos de bodega (Kardex)</button>
           <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="ingresos_gastos" aria-pressed="false">Ingresos, Gastos y Pagos</button>
           <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="cierres_caja" aria-pressed="false">Cierres de caja y Devoluciones</button>
+          <button type="button" class="btn btn-outline rep-tab-btn" data-rep-btn="libro_fiscal" aria-pressed="false">Libro fiscal diario</button>
         </div>
 
         <div class="rep-panels-stack">
@@ -292,11 +296,54 @@
               </table>
             </div>
           </section>
+
+          <!-- Libro fiscal de operaciones diarias -->
+          <section class="card hidden" data-rep-panel="libro_fiscal">
+            <div class="card-header">
+              <div>
+                <h3 style="margin:0">Libro fiscal de operaciones diarias</h3>
+                <span class="text-xs text-muted">Control diario de ingresos, compras y pagos (No responsable de IVA)</span>
+              </div>
+              <span class="badge" id="rep-libro-count">0 días</span>
+            </div>
+            <div class="card-body" style="padding:1rem 1.25rem; border-bottom:1px solid var(--border-color); background:var(--bg-subtle); display:grid; gap:.6rem">
+              <div class="flex justify-between items-center gap-2" style="flex-wrap:wrap">
+                <div>
+                  <strong id="rep-libro-establecimiento" style="font-size:1.05rem">Vidrios y Aluminios El Carmen</strong>
+                  <div class="text-sm text-muted">
+                    <span id="rep-libro-nit">NIT / C.C.: Sin registrar</span> · <span id="rep-libro-regimen">No responsable de IVA</span>
+                  </div>
+                  <div class="text-xs text-muted" id="rep-libro-contacto"></div>
+                </div>
+                <div style="text-align:right">
+                  <div class="text-sm" id="rep-libro-uvt-info"><b>Ingresos brutos año actual:</b> $ 0 de $ 183.309.000 (0%)</div>
+                  <small class="text-muted">Referencia informativa tope anual 3.500 UVT (2026). No constituye facturación electrónica DIAN.</small>
+                </div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th class="num">Operaciones</th>
+                    <th class="num">Ingresos del día</th>
+                    <th class="num">Compras y pagos</th>
+                    <th class="num">Saldo del día</th>
+                  </tr>
+                </thead>
+                <tbody id="rep-tabla-libro-fiscal">
+                  <tr><td colspan="5" class="text-muted" style="text-align:center; padding:1.25rem">No hay operaciones registradas en el período seleccionado.</td></tr>
+                </tbody>
+                <tfoot id="rep-tfoot-libro-fiscal"></tfoot>
+              </table>
+            </div>
+          </section>
         </div>
 
         <!-- MODAL: TODOS LOS REGISTROS DE UN REPORTE -->
         <div class="modal-overlay" id="modal-reporte-completo" role="dialog" aria-modal="true" aria-labelledby="modal-rep-titulo">
-          <div class="modal modal-catalogo-lg" style="max-width: 1280px; width: 96vw; height: 86vh; display: flex; flex-direction: column;">
+          <div class="modal modal-catalogo-lg" style="max-width: 1280px; width: 96vw; display: flex; flex-direction: column;">
             <div class="modal-header">
               <div>
                 <h3 id="modal-rep-titulo">Todos los registros</h3>
@@ -305,7 +352,7 @@
               <button type="button" class="modal-close" data-close-rep-modal aria-label="Cerrar">&times;</button>
             </div>
             <div class="cat-modal-searchbar">
-              <input class="input" id="buscar-reporte-modal" type="search" placeholder="Buscar dentro de esta tabla..." style="flex:1;min-width:240px;min-height:46px">
+              <input class="input" id="buscar-reporte-modal" type="search" placeholder="Buscar dentro de esta tabla..." style="flex:1;min-width:0;min-height:46px">
             </div>
             <div class="cat-modal-body" style="flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; padding: 0 1.25rem 1rem;">
               <div class="table-wrap" style="flex:1; overflow-y:auto;">

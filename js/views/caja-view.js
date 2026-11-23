@@ -706,7 +706,7 @@ export function mountCajaView(root) {
           const subtotal = roundCOP(item.subtotal ?? Math.max(0, precioMaterial + costosAdic - descLinea));
           const step = esMedida ? "1" : item.permiteDecimal ? "0.01" : "1";
           const inputVal = esMedida ? item.dimensiones.piezas : item.cantidad;
-          const puedeEditarPrecio = esTemporal && hasPermission("ventas.modificar_precio", user);
+          const puedeEditarPrecio = false;
 
           let dimText = "";
           if (esMedida) {
@@ -1090,6 +1090,28 @@ export function mountCajaView(root) {
     updateCobrarButtonState(calculo.total);
   }
 
+  let carritoVisibleEnViewport = false;
+  function actualizarBarraMovilCarrito(totalActual = null) {
+    const bar = $("#pos-mobile-cart-bar");
+    const summaryEl = $("#pos-mobile-cart-summary");
+    if (!bar) return;
+
+    let total = totalActual;
+    if (total === null) {
+      try {
+        total = cart.length ? calcularTotalesVenta(cart, obtenerDescuentoFormulario()).total : 0;
+      } catch {
+        total = 0;
+      }
+    }
+
+    if (summaryEl) {
+      const n = cart.length;
+      summaryEl.textContent = `${n} ${n === 1 ? "producto" : "productos"} · Total ${formatCOP(total)}`;
+    }
+    bar.classList.toggle("hidden", !cajaAbierta || carritoVisibleEnViewport);
+  }
+
   function updateCobrarButtonState(totalActual = null) {
     const btnCobrar = $("#btn-cobrar");
     const labelCambio = $("#label-cambio-faltante");
@@ -1109,6 +1131,7 @@ export function mountCajaView(root) {
         total = 0;
       }
     }
+    actualizarBarraMovilCarrito(total);
 
     if (!cajaAbierta || !tieneClienteSeleccionado() || cart.length === 0 || !(total > 0) || isProcessingSale) {
       btnCobrar.disabled = true;
@@ -1816,6 +1839,17 @@ export function mountCajaView(root) {
             </svg>
           </div>
           <div class="receipt-brand">${escapeHtml(String(comp.establecimiento || "VIDRIOS Y ALUMINIOS EL CARMEN").toUpperCase())}</div>
+          ${
+            comp.documentoNit || comp.direccionEstablecimiento || comp.telefonoEstablecimiento || comp.regimenIva
+              ? `<div class="receipt-subtitle" style="margin-top:.15rem;line-height:1.35">
+                  ${comp.documentoNit ? `NIT / C.C.: <b>${escapeHtml(comp.documentoNit)}</b>` : ""}
+                  ${comp.documentoNit && comp.regimenIva ? " · " : ""}
+                  ${comp.regimenIva ? escapeHtml(comp.regimenIva) : ""}
+                  ${comp.direccionEstablecimiento || comp.ciudadEstablecimiento ? `<br>${escapeHtml([comp.direccionEstablecimiento, comp.ciudadEstablecimiento].filter(Boolean).join(" · "))}` : ""}
+                  ${comp.telefonoEstablecimiento ? `<br>Tel: ${escapeHtml(comp.telefonoEstablecimiento)}` : ""}
+                </div>`
+              : ""
+          }
           <div class="receipt-subtitle">${escapeHtml(comp.tipoDocumento || "Comprobante interno de venta")}</div>
           <span class="receipt-status-badge ${estadoClass}">${estadoTexto}</span>
           <div class="receipt-number num">${escapeHtml(comp.numero)}</div>
@@ -1884,7 +1918,7 @@ export function mountCajaView(root) {
             <path d="M8 7h8M8 11h8M8 15h5"/>
           </svg>
           <p class="receipt-thanks">Gracias por su compra.</p>
-          <p class="receipt-legal">Documento de control interno. No constituye factura electrónica validada ante la DIAN.</p>
+          <p class="receipt-legal">${escapeHtml(comp.leyendaLegal || "Documento de control interno. No constituye factura electrónica validada ante la DIAN.")}</p>
         </div>
       </div>
     `;
@@ -2083,8 +2117,9 @@ export function mountCajaView(root) {
     const prod = productos.find((p) => p.id === selProdId);
     const precioInput = $("#med-precio-m2");
     if (precioInput && prod) {
-      precioInput.value = prod.precio;
-      precioInput.disabled = !hasPermission("ventas.modificar_precio", getCurrentUser());
+      precioInput.value = roundCOP(prod.precio);
+      precioInput.readOnly = true;
+      precioInput.disabled = false;
     }
 
     if ($("#med-costo-adicional")) $("#med-costo-adicional").value = "0";
@@ -2132,9 +2167,12 @@ export function mountCajaView(root) {
     if (errEl) errEl.classList.add("hidden");
 
     const prod = productos.find((p) => p.id === $("#med-producto")?.value);
-    const precioDefault = prod ? prod.precio : 0;
+    const rawPrecio = prod ? roundCOP(prod.precio) : 0;
     const precioInput = $("#med-precio-m2");
-    const rawPrecio = precioInput && precioInput.value !== "" ? Number(precioInput.value) : precioDefault;
+    if (precioInput) {
+      precioInput.value = rawPrecio;
+      precioInput.readOnly = true;
+    }
     const largoInput = $("#med-largo") || $("#med-alto");
 
     try {
@@ -2182,10 +2220,7 @@ export function mountCajaView(root) {
       const prod = productos.find((p) => p.id === prodId);
       if (!prod) throw new Error("Selecciona un vidrio o espejo válido del inventario.");
 
-      const precioInput = $("#med-precio-m2");
-      const rawPrecio = precioInput && precioInput.value !== "" ? Number(precioInput.value) : prod.precio;
-      const puedeModificarPrecio = hasPermission("ventas.modificar_precio", getCurrentUser());
-      const precioAplicado = puedeModificarPrecio ? rawPrecio : prod.precio;
+      const precioAplicado = roundCOP(prod.precio);
       const largoInput = $("#med-largo") || $("#med-alto");
 
       const calc = calcularVidrioPersonalizado({
@@ -2660,7 +2695,6 @@ export function mountCajaView(root) {
   }
 
   $("#btn-ver-todo-catalogo")?.addEventListener("click", abrirModalCatalogoCompleto);
-  $("#btn-ver-catalogo-inferior")?.addEventListener("click", abrirModalCatalogoCompleto);
 
   $("#buscar-catalogo-modal")?.addEventListener("input", renderCatalogoModal);
   $("#btn-limpiar-buscar-catalogo")?.addEventListener("click", () => {
@@ -3054,6 +3088,23 @@ export function mountCajaView(root) {
     if (clienteHistorialId) renderModalHistorialCliente();
   });
 
+  $("#btn-pos-ir-cobrar")?.addEventListener("click", () => {
+    root.querySelector(".cart")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  let cartObserver = null;
+  const cartAsideEl = root.querySelector(".cart");
+  if (typeof IntersectionObserver !== "undefined" && cartAsideEl) {
+    cartObserver = new IntersectionObserver(
+      (entries) => {
+        carritoVisibleEnViewport = Boolean(entries[0]?.isIntersecting);
+        actualizarBarraMovilCarrito();
+      },
+      { threshold: 0.1 }
+    );
+    cartObserver.observe(cartAsideEl);
+  }
+
   restaurarBorradorPOS();
 
   const onPosKeyDown = (e) => {
@@ -3075,6 +3126,7 @@ export function mountCajaView(root) {
 
   return () => {
     document.removeEventListener("keydown", onPosKeyDown);
+    cartObserver?.disconnect();
     unsubProd();
     unsubCli();
     unsubCajas();

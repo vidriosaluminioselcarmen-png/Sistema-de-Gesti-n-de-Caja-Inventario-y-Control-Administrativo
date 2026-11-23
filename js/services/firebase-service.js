@@ -77,7 +77,7 @@ export function traducirErrorFirebase(error) {
   const msg = String(error.message || error);
 
   if (code.includes("permission-denied") || msg.includes("Missing or insufficient permissions")) {
-    return "Permiso denegado por las reglas de seguridad de Firebase Firestore. En Firebase Console → Firestore Database → pestaña 'Reglas', cambia 'allow read, write: if false;' por 'allow read, write: if true;' y pulsa Publicar (o verifica que tu usuario esté activo y tenga el rol autorizado).";
+    return "No tienes permisos suficientes en Firebase Firestore para realizar esta operación. Verifica que hayas iniciado sesión con una cuenta activa y autorizada (Administrador o Empleado general según el módulo) y que las reglas de seguridad de Firestore estén desplegadas correctamente.";
   }
   if (code.includes("unauthenticated")) {
     return "Debes iniciar sesión con una cuenta válida de Firebase Authentication para realizar esta operación.";
@@ -396,13 +396,13 @@ export function inspeccionarDatosLocalStorage() {
     registrosMigrablesPorColeccion: {}
   };
 
-  try {
-    if (typeof localStorage === "undefined") return resultado;
-    resultado.disponible = true;
+  for (const col of COLECCIONES_NEGOCIO) {
+    resultado.registrosMigrablesPorColeccion[col] = [];
+  }
 
-    for (const col of COLECCIONES_NEGOCIO) {
-      resultado.registrosMigrablesPorColeccion[col] = [];
-    }
+  try {
+    if (typeof localStorage === "undefined" || typeof localStorage.getItem !== "function") return resultado;
+    resultado.disponible = true;
 
     const idsVistosPorColeccion = new Map(COLECCIONES_NEGOCIO.map((c) => [c, new Set()]));
 

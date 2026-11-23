@@ -13,7 +13,8 @@ import {
   getCollection,
   getDocById,
   subscribeCollection,
-  runAtomicTransaction
+  runAtomicTransaction,
+  obtenerPerfilNegocio
 } from "./store.js";
 import { getCurrentUser, assertPermission, hasPermission } from "../auth.js";
 import {
@@ -21,7 +22,8 @@ import {
   roundCOP,
   validarCantidadPorUnidad,
   calcularVidrioPersonalizado,
-  crearProducto
+  crearProducto,
+  ordenarMasRecientesPrimero
 } from "./inventario-service.js";
 import { TIPOS_CONTABLE } from "./contabilidad-service.js";
 
@@ -121,14 +123,13 @@ export function obtenerCajaAbierta() {
 export function watchCajas(callback) {
   return subscribeCollection(COLLECTIONS.CAJAS, (cajas) => {
     const abierta = cajas.find((c) => c.estado === ESTADOS_CAJA.ABIERTA) || null;
-    const historial = [...cajas].sort((a, b) => (b.fechaApertura || "").localeCompare(a.fechaApertura || ""));
+    const historial = ordenarMasRecientesPrimero(cajas, ["fechaApertura"]);
     callback({ cajaAbierta: abierta, historial });
   });
 }
 
 export function listarVentas() {
-  const ventas = getCollection(COLLECTIONS.VENTAS);
-  return [...ventas].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  return ordenarMasRecientesPrimero(getCollection(COLLECTIONS.VENTAS), ["fecha"]);
 }
 
 export function obtenerVentaPorId(ventaId) {
@@ -137,7 +138,7 @@ export function obtenerVentaPorId(ventaId) {
 
 export function watchVentas(callback) {
   return subscribeCollection(COLLECTIONS.VENTAS, (ventas) => {
-    const sorted = [...ventas].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+    const sorted = ordenarMasRecientesPrimero(ventas, ["fecha"]);
     callback(sorted);
   });
 }
@@ -2152,10 +2153,17 @@ export function generarDatosComprobante(venta, devolucionesVenta = null) {
       ? venta.importePagado
       : Math.max(0, roundCOP(venta.total) - saldoPendiente)
   );
+  const perfil = obtenerPerfilNegocio();
   return {
-    establecimiento: "Vidrios y Aluminios El Carmen",
+    establecimiento: perfil.nombreEstablecimiento || "Vidrios y Aluminios El Carmen",
+    perfilNegocio: perfil,
+    documentoNit: perfil.documentoNit || "",
+    regimenIva: perfil.regimenIva || "No responsable de IVA",
+    direccionEstablecimiento: perfil.direccion || "",
+    telefonoEstablecimiento: perfil.telefono || "",
+    ciudadEstablecimiento: perfil.ciudad || "",
     tipoDocumento: "Comprobante interno de venta",
-    leyendaLegal: "Documento equivalente de control interno. No constituye factura electrónica de venta validada ante la DIAN.",
+    leyendaLegal: "Documento de control interno. No constituye factura electrónica validada ante la DIAN.",
     numero: venta.numero,
     fecha: venta.fecha,
     estado: venta.estado,

@@ -45,6 +45,13 @@
   --info: #1e40af;
   --info-bg: #dbeafe;
 
+  /* Botones sólidos semánticos (alto contraste garantizado en ambos temas) */
+  --btn-success-bg: #15803d;
+  --btn-success-text: #ffffff;
+  --btn-danger-bg: #b91c1c;
+  --btn-danger-text: #ffffff;
+  --receipt-bg: #ffffff;
+
   /* Etiqueta temporal "SOLO ESTA VENTA" */
   --temp-bg: #fff7ed;
   --temp-text: #c2410c;
@@ -77,7 +84,7 @@
   --radius: 10px;
   --radius-sm: 8px;
   --sidebar-w: 264px;
-  --font: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
 /* ---------- Modo Oscuro: Gris Neutro / Carbón (sin tinte azulado) ---------- */
@@ -117,6 +124,12 @@
   --warning-bg: rgba(245, 158, 11, 0.16);
   --info: #60a5fa;
   --info-bg: rgba(59, 130, 246, 0.16);
+
+  --btn-success-bg: #15803d;
+  --btn-success-text: #ffffff;
+  --btn-danger-bg: #b91c1c;
+  --btn-danger-text: #ffffff;
+  --receipt-bg: #161619;
 
   --temp-bg: rgba(249, 115, 22, 0.18);
   --temp-text: #fdba74;
@@ -175,8 +188,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .num { font-variant-numeric: tabular-nums; }
 .hidden { display: none !important; }
+.text-xs { font-size: .78rem; line-height: 1.35; }
+.text-sm { font-size: .88rem; line-height: 1.4; }
 .text-muted { color: var(--text-secondary); }
+.text-danger { color: var(--danger); }
+.text-success { color: var(--success); }
+.text-warning { color: var(--warning); }
 .text-right { text-align: right; }
+.mt-1 { margin-top: .25rem; }
+.mt-2 { margin-top: .5rem; }
+.mt-3 { margin-top: 1rem; }
+.mb-1 { margin-bottom: .25rem; }
+.mb-2 { margin-bottom: .5rem; }
+.mb-3 { margin-bottom: 1rem; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;

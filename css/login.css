@@ -33,3 +33,19 @@
 .login-brand p { margin: 0; font-size: .94rem; color: var(--text-secondary); }
 .login-card form { display: grid; gap: 1.1rem; }
 .login-copy { margin: 1.5rem 0 0; text-align: center; font-size: .82rem; color: var(--text-secondary); }
+
+@media (max-width: 640px) {
+  #login-view {
+    align-content: start;
+    padding: 1rem .85rem 1.5rem;
+  }
+  .login-theme-bar {
+    position: static;
+    justify-self: end;
+    margin-bottom: .5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card { padding: 1.5rem 1.25rem; }
+}

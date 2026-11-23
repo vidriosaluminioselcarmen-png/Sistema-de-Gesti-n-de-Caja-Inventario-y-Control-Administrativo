@@ -23,15 +23,15 @@ service cloud.firestore {
     }
 
     function canManageCashAndSales() {
-      return isActiveUser() && userRole() in ['Administrador', 'Cajero', 'Empleado'];
+      return isActiveUser() && userRole() in ['Administrador', 'Empleado', 'Cajero'];
     }
 
     function canManageInventory() {
-      return isActiveUser() && userRole() in ['Administrador', 'Inventario'];
+      return isActiveUser() && userRole() == 'Administrador';
     }
 
     function canManageAccounting() {
-      return isActiveUser() && userRole() in ['Administrador', 'Contabilidad'];
+      return isActiveUser() && userRole() == 'Administrador';
     }
 
     // Denegar por defecto cualquier ruta no declarada explícitamente
@@ -61,10 +61,14 @@ service cloud.firestore {
         canManageInventory() ||
         (
           canManageCashAndSales()
+          && request.resource.data.stock <= resource.data.stock
           && request.resource.data.precio == resource.data.precio
+          && (!('precioCompra' in resource.data) || request.resource.data.precioCompra == resource.data.precioCompra)
           && request.resource.data.nombre == resource.data.nombre
           && request.resource.data.codigo == resource.data.codigo
+          && (!('unidad' in resource.data) || request.resource.data.unidad == resource.data.unidad)
           && request.resource.data.stockMinimo == resource.data.stockMinimo
+          && (!('activo' in resource.data) || request.resource.data.activo == resource.data.activo)
         )
       )
         && request.resource.data.precio >= 0
@@ -116,7 +120,12 @@ service cloud.firestore {
         && resource.data.estado == 'Abierta'
         && request.resource.data.montoInicial == resource.data.montoInicial
         && request.resource.data.fechaApertura == resource.data.fechaApertura
-        && request.resource.data.usuarioApertura == resource.data.usuarioApertura;
+        && request.resource.data.usuarioApertura == resource.data.usuarioApertura
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'estado', 'movimientosEfectivoExtra', 'fechaCierre', 'usuarioCierre',
+          'usuarioCierreUid', 'montoFinal', 'efectivoContado', 'efectivoEsperado',
+          'diferenciaCierre', 'observacionesCierre', 'arqueoCierre'
+        ]);
       allow delete: if false;
     }
 
@@ -168,7 +177,12 @@ service cloud.firestore {
     // Movimientos de inventario (Kardex histórico inmutable)
     match /movimientos_inventario/{movId} {
       allow read: if isActiveUser();
-      allow create: if canManageInventory() || canManageCashAndSales();
+      allow create: if (canManageInventory() || canManageCashAndSales())
+        && request.resource.data.productoId is string
+        && request.resource.data.tipo in ['Entrada', 'Salida']
+        && request.resource.data.cantidad > 0
+        && request.resource.data.stockAnterior >= 0
+        && request.resource.data.stockNuevo >= 0;
       allow update, delete: if false;
     }
 
@@ -176,7 +190,16 @@ service cloud.firestore {
     match /movimientos_contables/{movId} {
       allow read: if isActiveUser();
       allow create: if (canManageAccounting() || canManageCashAndSales())
-        && (request.resource.data.monto > 0 || request.resource.data.valor > 0);
+        && request.resource.data.tipo is string
+        && request.resource.data.categoria is string
+        && (request.resource.data.monto > 0 || request.resource.data.valor > 0)
+        && (
+          isAdmin()
+          || (
+            'origen' in request.resource.data
+            && request.resource.data.origen in ['Venta POS', 'Abono venta', 'Movimiento de caja', 'Billetera cliente']
+          )
+        );
       allow update: if (
         isAdmin()
         && request.resource.data.monto == resource.data.monto
@@ -225,6 +248,20 @@ service cloud.firestore {
         && request.resource.data.activa == true;
       allow update: if canManageCashAndSales()
         && (resource.data.activa != request.resource.data.activa || isAdmin());
+      allow delete: if false;
+    }
+
+    // Saldos iniciales por cuenta de Caja y Bancos (solo Administrador)
+    match /control/saldos_iniciales_cuentas {
+      allow read: if isActiveUser();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Configuración del perfil del negocio (solo Administrador)
+    match /control/perfil_negocio {
+      allow read: if isActiveUser();
+      allow create, update: if isAdmin();
       allow delete: if false;
     }
 

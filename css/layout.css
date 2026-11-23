@@ -187,8 +187,18 @@
 }
 
 @media (max-width: 640px) {
-  .topbar-title h1 { font-size: 1.15rem; }
-  .topbar-title p { font-size: .82rem; }
+  .topbar { padding: .65rem .85rem; gap: .5rem; }
+  .topbar-title { min-width: 0; }
+  .topbar-title h1 { font-size: 1.08rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-title p { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .theme-toggle-btn { min-height: 40px; padding: .35rem .65rem; font-size: .84rem; }
+  .page-header { gap: .75rem; }
   .page-actions { width: 100%; }
-  .page-actions .btn { flex: 1 1 auto; }
+  .page-actions .btn { flex: 1 1 auto; min-height: 44px; }
+}
+
+@media (max-width: 480px) {
+  .topbar-title p { display: none; }
+  #app-root { padding: .85rem .75rem; }
+  .footer { padding: .75rem .85rem; }
 }

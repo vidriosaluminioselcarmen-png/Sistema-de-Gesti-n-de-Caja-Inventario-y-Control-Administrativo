@@ -18,8 +18,10 @@
 .btn-primary:hover { background: var(--accent-hover); box-shadow: var(--shadow-sm); }
 .btn-outline { background: var(--bg-surface); color: var(--text-primary); border-color: var(--border-strong); }
 .btn-outline:hover { background: var(--bg-subtle); border-color: var(--accent); color: var(--accent); }
-.btn-danger { background: var(--danger); color: #ffffff; }
+.btn-danger { background: var(--btn-danger-bg); color: var(--btn-danger-text); border-color: var(--btn-danger-bg); }
 .btn-danger:hover { filter: brightness(.92); }
+.btn-success { background: var(--btn-success-bg); color: var(--btn-success-text); border-color: var(--btn-success-bg); }
+.btn-success:hover { filter: brightness(.92); }
 .btn-block { width: 100%; }
 .btn-sm { min-height: 38px; padding: .4rem .85rem; font-size: .88rem; }
 .btn-xs { min-height: 36px; padding: .3rem .7rem; font-size: .84rem; }
@@ -104,6 +106,7 @@
 .badge-success { background: var(--success-bg); color: var(--success); border-color: transparent; }
 .badge-danger  { background: var(--danger-bg);  color: var(--danger); border-color: transparent; }
 .badge-warning { background: var(--warning-bg); color: var(--warning); border-color: transparent; }
+.badge-neutral { background: var(--bg-subtle);  color: var(--text-secondary); border-color: var(--border-color); }
 
 /* ---------- Alertas ---------- */
 .alert { padding: .85rem 1.05rem; border-radius: var(--radius-sm); font-size: .95rem; border-left: 4px solid; }
@@ -128,7 +131,9 @@
 .block { display: block; }
 .flex { display: flex; }
 .justify-between { justify-content: space-between; }
+.justify-end { justify-content: flex-end; }
 .items-center { align-items: center; }
+.gap-2 { gap: .5rem; }
 
 .text-income  { color: var(--success); font-weight: 650; }
 .text-expense { color: var(--danger);  font-weight: 650; }
@@ -199,3 +204,39 @@
 .summary { display: grid; gap: .55rem; margin: 0 0 1rem; }
 .summary-row { display: flex; justify-content: space-between; gap: 1rem; font-size: .96rem; color: var(--text-primary); }
 .summary-row.total { font-size: 1.25rem; font-weight: 800; color: var(--text-primary); padding-top: .6rem; border-top: 2px solid var(--border-color); }
+
+@media (max-width: 640px) {
+  .table-wrap {
+    border: 1px solid var(--border-color);
+    box-shadow: inset -12px 0 12px -12px rgba(0, 0, 0, .18);
+  }
+  .table th,
+  .table td {
+    padding: .65rem .6rem;
+    font-size: .88rem;
+  }
+  .table .btn,
+  .table .btn-xs,
+  .table .btn-sm {
+    min-height: 36px;
+  }
+  .modal-overlay {
+    padding: .4rem;
+    align-items: flex-end;
+  }
+  .modal {
+    width: 100%;
+    max-width: 100% !important;
+    max-height: 94dvh;
+    border-radius: var(--radius);
+  }
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding: .85rem 1rem;
+  }
+  .modal-footer .btn {
+    flex: 1 1 140px;
+    min-height: 46px;
+  }
+}

@@ -5,8 +5,8 @@
 // - Soporta filtros combinados por fecha inicial, fecha final, producto, categoría, usuario,
 //   método de pago y estado de venta, así como exportación real a CSV.
 
-import { COLLECTIONS, getCollection } from "./store.js";
-import { roundCOP, roundQty, getEstadoStock } from "./inventario-service.js";
+import { COLLECTIONS, getCollection, obtenerPerfilNegocio } from "./store.js";
+import { roundCOP, roundQty, getEstadoStock, ordenarMasRecientesPrimero } from "./inventario-service.js";
 import { calcularResumenContable } from "./contabilidad-service.js";
 
 export function estaEnRangoFechas(isoDate, { desde = "", hasta = "" } = {}) {
@@ -39,7 +39,10 @@ export function generarReportesConsolidados(
     estadoVenta = "Todos"
   } = filtros;
 
-  const productos = datos?.productos || getCollection(COLLECTIONS.PRODUCTOS);
+  const productos = ordenarMasRecientesPrimero(
+    datos?.productos || getCollection(COLLECTIONS.PRODUCTOS),
+    ["creadoEn", "fechaCreacion", "actualizadoEn"]
+  );
   const ventas = datos?.ventas || getCollection(COLLECTIONS.VENTAS);
   const cajas = datos?.cajas || getCollection(COLLECTIONS.CAJAS);
   const movsInventario = datos?.movsInventario || getCollection(COLLECTIONS.MOV_INVENTARIO);
@@ -50,34 +53,37 @@ export function generarReportesConsolidados(
 
   const prodMap = new Map(productos.map((p) => [p.id, p]));
 
-  // Filtrar ventas según criterios seleccionados
-  const ventasFiltradas = ventas.filter((v) => {
-    if (!estaEnRangoFechas(v.fecha, { desde, hasta })) return false;
-    if (estadoVenta !== "Todos" && v.estado !== estadoVenta) return false;
-    if (usuario !== "Todos" && String(v.vendedor || "").toLowerCase() !== String(usuario).toLowerCase()) {
-      return false;
-    }
-    if (metodoPago !== "Todos") {
-      const coincideMetodo =
-        v.metodoPago === metodoPago ||
-        (Array.isArray(v.pagos) && v.pagos.some((p) => p.metodo === metodoPago));
-      if (!coincideMetodo) return false;
-    }
-    if (productoId !== "Todos") {
-      const tieneProd = Array.isArray(v.items) && v.items.some((i) => i.productoId === productoId);
-      if (!tieneProd) return false;
-    }
-    if (categoria !== "Todas" && categoria !== "Todos") {
-      const tieneCat =
-        Array.isArray(v.items) &&
-        v.items.some((i) => {
-          const p = prodMap.get(i.productoId);
-          return (i.categoria || p?.categoria) === categoria;
-        });
-      if (!tieneCat) return false;
-    }
-    return true;
-  });
+  // Filtrar ventas según criterios seleccionados y ordenar más reciente primero
+  const ventasFiltradas = ordenarMasRecientesPrimero(
+    ventas.filter((v) => {
+      if (!estaEnRangoFechas(v.fecha, { desde, hasta })) return false;
+      if (estadoVenta !== "Todos" && v.estado !== estadoVenta) return false;
+      if (usuario !== "Todos" && String(v.vendedor || "").toLowerCase() !== String(usuario).toLowerCase()) {
+        return false;
+      }
+      if (metodoPago !== "Todos") {
+        const coincideMetodo =
+          v.metodoPago === metodoPago ||
+          (Array.isArray(v.pagos) && v.pagos.some((p) => p.metodo === metodoPago));
+        if (!coincideMetodo) return false;
+      }
+      if (productoId !== "Todos") {
+        const tieneProd = Array.isArray(v.items) && v.items.some((i) => i.productoId === productoId);
+        if (!tieneProd) return false;
+      }
+      if (categoria !== "Todas" && categoria !== "Todos") {
+        const tieneCat =
+          Array.isArray(v.items) &&
+          v.items.some((i) => {
+            const p = prodMap.get(i.productoId);
+            return (i.categoria || p?.categoria) === categoria;
+          });
+        if (!tieneCat) return false;
+      }
+      return true;
+    }),
+    ["fecha"]
+  );
 
   // Ventas efectivas (excluye Anuladas de los totales comerciales)
   const ventasEfectivas = ventasFiltradas.filter((v) => v.estado !== "Anulada");
@@ -194,32 +200,45 @@ export function generarReportesConsolidados(
     (p) => p.activo !== false && (p.estadoCodigo === "agotado" || p.estadoCodigo === "bajo")
   );
 
-  // 6. Movimientos de inventario (Kardex)
-  const movimientosInventario = movsInventario.filter((m) => {
-    if (!estaEnRangoFechas(m.fecha, { desde, hasta })) return false;
-    if (productoId !== "Todos" && m.productoId !== productoId) return false;
-    if (usuario !== "Todos" && String(m.usuario || "").toLowerCase() !== String(usuario).toLowerCase()) {
-      return false;
+  // 6. Movimientos de inventario (Kardex, más reciente primero)
+  const movimientosInventario = ordenarMasRecientesPrimero(
+    movsInventario.filter((m) => {
+      if (!estaEnRangoFechas(m.fecha, { desde, hasta })) return false;
+      if (productoId !== "Todos" && m.productoId !== productoId) return false;
+      if (usuario !== "Todos" && String(m.usuario || "").toLowerCase() !== String(usuario).toLowerCase()) {
+        return false;
+      }
+      if (categoria !== "Todas" && categoria !== "Todos") {
+        const p = prodMap.get(m.productoId);
+        if (p && p.categoria !== categoria) return false;
+      }
+      return true;
+    }),
+    ["fecha"],
+    (a, b) => {
+      if (a.productoId && a.productoId === b.productoId) {
+        if (b.stockAnterior === a.stockNuevo) return -1;
+        if (a.stockAnterior === b.stockNuevo) return 1;
+      }
+      return String(b.id || "").localeCompare(String(a.id || ""));
     }
-    if (categoria !== "Todas" && categoria !== "Todos") {
-      const p = prodMap.get(m.productoId);
-      if (p && p.categoria !== categoria) return false;
-    }
-    return true;
-  });
+  );
 
-  // 7. Ingresos y gastos (Contabilidad)
-  const movsContablesFiltrados = movsContables.filter((m) => {
-    if (m.anulado) return false;
-    if (!estaEnRangoFechas(m.fecha, { desde, hasta })) return false;
-    if (usuario !== "Todos" && String(m.usuario || "").toLowerCase() !== String(usuario).toLowerCase()) {
-      return false;
-    }
-    if (metodoPago !== "Todos" && (m.metodoPago || "Efectivo") !== metodoPago) {
-      return false;
-    }
-    return true;
-  });
+  // 7. Ingresos y gastos (Contabilidad, más reciente primero por fechaRegistro || fecha)
+  const movsContablesFiltrados = ordenarMasRecientesPrimero(
+    movsContables.filter((m) => {
+      if (m.anulado) return false;
+      if (!estaEnRangoFechas(m.fecha, { desde, hasta })) return false;
+      if (usuario !== "Todos" && String(m.usuario || "").toLowerCase() !== String(usuario).toLowerCase()) {
+        return false;
+      }
+      if (metodoPago !== "Todos" && (m.metodoPago || "Efectivo") !== metodoPago) {
+        return false;
+      }
+      return true;
+    }),
+    ["fechaRegistro", "fecha"]
+  );
   const resumenContable = calcularResumenContable(movsContablesFiltrados);
 
   const gruposCategoriasContables = new Map();
@@ -278,8 +297,8 @@ export function generarReportesConsolidados(
   }));
 
   // 9. Cierres de caja
-  const cierresDeCaja = cajas
-    .filter((c) => {
+  const cierresDeCaja = ordenarMasRecientesPrimero(
+    cajas.filter((c) => {
       if (c.estado !== "Cerrada") return false;
       if (!estaEnRangoFechas(c.fechaCierre || c.fechaApertura, { desde, hasta })) return false;
       if (
@@ -289,8 +308,9 @@ export function generarReportesConsolidados(
         return false;
       }
       return true;
-    })
-    .sort((a, b) => (b.fechaCierre || "").localeCompare(a.fechaCierre || ""));
+    }),
+    ["fechaCierre", "fechaApertura"]
+  );
 
   // 10. Diferencias de efectivo en cierres de caja
   const diferenciasEfectivo = cierresDeCaja.filter((c) => roundCOP(c.diferencia || 0) !== 0);
@@ -318,8 +338,9 @@ export function generarReportesConsolidados(
       usuario: d.usuario
     }));
 
-  const anulacionesYDevoluciones = [...ventasAnuladas, ...devolucionesFiltradas].sort((a, b) =>
-    (b.fecha || "").localeCompare(a.fecha || "")
+  const anulacionesYDevoluciones = ordenarMasRecientesPrimero(
+    [...ventasAnuladas, ...devolucionesFiltradas],
+    ["fecha"]
   );
 
   // Resumen general de KPIs del período
@@ -432,6 +453,112 @@ export function generarReportesConsolidados(
     aplicacionesEnVentas
   };
 
+  // 14. Libro fiscal de operaciones diarias (No responsable de IVA)
+  const perfilNegocio = datos?.perfilNegocio || obtenerPerfilNegocio();
+  const mapaLibroDias = new Map();
+  const asegurarDiaLibro = (dia) => {
+    if (!mapaLibroDias.has(dia)) {
+      mapaLibroDias.set(dia, {
+        fecha: dia,
+        cantidadOperaciones: 0,
+        ingresosDiarios: 0,
+        comprasYPagosDiarios: 0,
+        saldoNetoDia: 0
+      });
+    }
+    return mapaLibroDias.get(dia);
+  };
+
+  for (const v of ventasEfectivas) {
+    const dia = String(v.fecha || "").slice(0, 10) || "Sin fecha";
+    const row = asegurarDiaLibro(dia);
+    row.cantidadOperaciones += 1;
+    row.ingresosDiarios = roundCOP(row.ingresosDiarios + roundCOP(v.total || 0));
+  }
+
+  for (const m of movsContablesFiltrados) {
+    if (m.anulado || m.estado === "Revertido") continue;
+    if (m.tipo === "Traslado interno" || m.tipo === "Reversión" || m.tipo === "Redención saldo a favor") continue;
+    const dia = String(m.fechaEfectiva || m.fecha || "").slice(0, 10) || "Sin fecha";
+
+    if (m.tipo === "Ingreso") {
+      // No duplicar ventas POS ni abonos de ventas ya contadas en ventasEfectivas
+      if (m.origen === "Venta POS" || m.origen === "Abono venta" || m.categoria === "Abonos de cartera") {
+        continue;
+      }
+      const row = asegurarDiaLibro(dia);
+      row.cantidadOperaciones += 1;
+      row.ingresosDiarios = roundCOP(row.ingresosDiarios + roundCOP(m.valor ?? m.monto ?? 0));
+    } else if (m.tipo === "Gasto") {
+      const esPendiente = m.estadoPago === "Pendiente" || m.estadoPago === "Parcial" || m.estado === "Por pagar";
+      const fueLiquidadaConAbonos =
+        Boolean(m.esObligacionPorPagar) ||
+        (Array.isArray(m.pagos) && m.pagos.length > 0 && m.origen !== "Abono cuenta por pagar");
+      if (esPendiente || fueLiquidadaConAbonos) continue;
+      const row = asegurarDiaLibro(dia);
+      row.cantidadOperaciones += 1;
+      row.comprasYPagosDiarios = roundCOP(row.comprasYPagosDiarios + roundCOP(m.valor ?? m.monto ?? 0));
+    } else if (m.tipo === "Devolución") {
+      const reemb = roundCOP(m.montoReembolsado ?? 0);
+      if (reemb > 0 && m.metodoPago !== "Saldo a favor" && m.metodoPago !== "Ajuste / Nota crédito") {
+        const row = asegurarDiaLibro(dia);
+        row.cantidadOperaciones += 1;
+        row.comprasYPagosDiarios = roundCOP(row.comprasYPagosDiarios + reemb);
+      }
+    }
+  }
+
+  const filasLibro = [...mapaLibroDias.values()]
+    .map((r) => ({
+      ...r,
+      saldoNetoDia: roundCOP(r.ingresosDiarios - r.comprasYPagosDiarios)
+    }))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  const totalIngresosMes = filasLibro.reduce((s, r) => roundCOP(s + r.ingresosDiarios), 0);
+  const totalComprasPagosMes = filasLibro.reduce((s, r) => roundCOP(s + r.comprasYPagosDiarios), 0);
+  const totalOperacionesLibro = filasLibro.reduce((s, r) => s + r.cantidadOperaciones, 0);
+
+  // Ingresos brutos acumulados del año actual vs tope referencial 3.500 UVT
+  const anioActual = String(new Date().getFullYear());
+  let ingresosBrutosAnioActual = 0;
+  for (const v of ventas) {
+    if (v.estado !== "Anulada" && String(v.fecha || "").startsWith(anioActual)) {
+      ingresosBrutosAnioActual = roundCOP(ingresosBrutosAnioActual + roundCOP(v.total || 0));
+    }
+  }
+  for (const m of movsContables) {
+    if (
+      !m.anulado &&
+      m.estado !== "Revertido" &&
+      m.tipo === "Ingreso" &&
+      m.origen !== "Venta POS" &&
+      m.origen !== "Abono venta" &&
+      m.categoria !== "Abonos de cartera" &&
+      String(m.fechaEfectiva || m.fecha || "").startsWith(anioActual)
+    ) {
+      ingresosBrutosAnioActual = roundCOP(ingresosBrutosAnioActual + roundCOP(m.valor ?? m.monto ?? 0));
+    }
+  }
+  const topeAnualUvt = Number(perfilNegocio.topeAnualUvt || 183309000);
+  const porcentajeTopeUvt =
+    topeAnualUvt > 0 ? Math.round((ingresosBrutosAnioActual / topeAnualUvt) * 1000) / 10 : 0;
+
+  const libroFiscalDiario = {
+    perfilNegocio,
+    anioReferencia: anioActual,
+    ingresosBrutosAnioActual,
+    topeAnualUvt,
+    porcentajeTopeUvt,
+    totalIngresosMes,
+    totalComprasPagosMes,
+    totalIngresosPeriodo: totalIngresosMes,
+    totalComprasPagosPeriodo: totalComprasPagosMes,
+    saldoNetoPeriodo: roundCOP(totalIngresosMes - totalComprasPagosMes),
+    totalOperaciones: totalOperacionesLibro,
+    filas: filasLibro
+  };
+
   return {
     kpis: {
       totalVentasPeriodo: roundCOP(totalVentasPeriodo),
@@ -459,18 +586,19 @@ export function generarReportesConsolidados(
     diferenciasEfectivo,
     anulacionesYDevoluciones,
     resumenCartera,
-    resumenBilletera
+    resumenBilletera,
+    libroFiscalDiario
   };
 }
 
 // Genera contenido CSV real para descargar cualquiera de los 11 reportes
 export function generarCSVReporte(tipoReporte, reporteConsolidado) {
   const escapeCSV = (val) => {
-    const s = String(val ?? "").replace(/"/g, '""');
-    return `"${s}"`;
+    const s = String(val ?? "");
+    return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const buildCSV = (headers, rows) =>
-    [headers.map(escapeCSV).join(","), ...rows.map((r) => r.map(escapeCSV).join(","))].join("\r\n");
+    [headers.map(escapeCSV).join(";"), ...rows.map((r) => r.map(escapeCSV).join(";"))].join("\r\n");
 
   switch (tipoReporte) {
     case "ventas_periodo":
@@ -602,6 +730,17 @@ export function generarCSVReporte(tipoReporte, reporteConsolidado) {
           a.monto,
           a.motivo,
           a.usuario
+        ])
+      );
+    case "libro_fiscal":
+      return buildCSV(
+        ["Fecha", "N° Operaciones", "Ingresos Diarios COP", "Compras y Pagos Diarios COP", "Saldo Neto Día COP"],
+        (reporteConsolidado.libroFiscalDiario?.filas || []).map((r) => [
+          r.fecha,
+          r.cantidadOperaciones,
+          r.ingresosDiarios,
+          r.comprasYPagosDiarios,
+          r.saldoNetoDia
         ])
       );
     default:

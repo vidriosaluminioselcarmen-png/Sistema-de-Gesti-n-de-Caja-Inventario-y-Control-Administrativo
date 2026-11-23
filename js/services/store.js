@@ -15,6 +15,7 @@ import {
   escribirLoteFirestore,
   suscribirColeccionFirestore
 } from "./firebase-service.js";
+import { assertPermission, getCurrentUser } from "../auth.js";
 
 const LEGACY_STORAGE_PREFIXES = ["elcarmen_db_v1_", "elcarmen_real_v2_"];
 const STORAGE_PREFIX = "elcarmen_clean_v3_";
@@ -253,7 +254,11 @@ export function isInMemoryTestMode() {
 function getStorage() {
   if (inMemoryTestMode) return null;
   try {
-    if (typeof localStorage !== "undefined") {
+    if (
+      typeof localStorage !== "undefined" &&
+      typeof localStorage.getItem === "function" &&
+      typeof localStorage.setItem === "function"
+    ) {
       return localStorage;
     }
   } catch {
@@ -619,4 +624,225 @@ export async function runAtomicTransaction(workFn, options = {}) {
   } finally {
     activeLocks.delete(lockKey);
   }
+}
+
+// ---------------------------------------------------------------------------
+// PERFIL TRIBUTARIO DEL NEGOCIO (No responsable de IVA) Y COPIAS DE SEGURIDAD
+// ---------------------------------------------------------------------------
+export const PERFIL_NEGOCIO_DOC_ID = "perfil_negocio";
+export const DEFAULT_PERFIL_NEGOCIO = {
+  nombreEstablecimiento: "Vidrios y Aluminios El Carmen",
+  tipoPersona: "Persona natural",
+  documentoNit: "",
+  regimenIva: "No responsable de IVA",
+  direccion: "",
+  telefono: "",
+  ciudad: "",
+  topeAnualUvt: 183309000
+};
+
+export function obtenerPerfilNegocio() {
+  const doc = getDocById(COLLECTIONS.CONTROL, PERFIL_NEGOCIO_DOC_ID);
+  return {
+    ...DEFAULT_PERFIL_NEGOCIO,
+    ...(doc || {}),
+    nombreEstablecimiento:
+      String(doc?.nombreEstablecimiento || "").trim() || DEFAULT_PERFIL_NEGOCIO.nombreEstablecimiento,
+    regimenIva: String(doc?.regimenIva || "").trim() || DEFAULT_PERFIL_NEGOCIO.regimenIva,
+    topeAnualUvt:
+      Number(doc?.topeAnualUvt) > 0 ? Math.round(Number(doc.topeAnualUvt)) : DEFAULT_PERFIL_NEGOCIO.topeAnualUvt
+  };
+}
+
+export function watchPerfilNegocio(callback) {
+  return subscribeCollection(COLLECTIONS.CONTROL, () => {
+    callback(obtenerPerfilNegocio());
+  });
+}
+
+export async function guardarPerfilNegocio(datos = {}, user = getCurrentUser()) {
+  assertPermission("usuarios.gestionar", user);
+  const nombreEstablecimiento =
+    String(datos.nombreEstablecimiento || "").trim() || DEFAULT_PERFIL_NEGOCIO.nombreEstablecimiento;
+  const tipoPersona =
+    datos.tipoPersona === "Persona jurídica" ? "Persona jurídica" : "Persona natural";
+  const documentoNit = String(datos.documentoNit || "").trim();
+  const regimenIva = String(datos.regimenIva || "").trim() || "No responsable de IVA";
+  const direccion = String(datos.direccion || "").trim();
+  const telefono = String(datos.telefono || "").trim();
+  const ciudad = String(datos.ciudad || "").trim();
+  const topeNum = Number(datos.topeAnualUvt);
+  const topeAnualUvt = Number.isFinite(topeNum) && topeNum > 0 ? Math.round(topeNum) : 183309000;
+
+  return runAtomicTransaction(
+    async (tx) => {
+      const ahora = new Date().toISOString();
+      const actualizado = tx.upsert(COLLECTIONS.CONTROL, PERFIL_NEGOCIO_DOC_ID, {
+        nombreEstablecimiento,
+        tipoPersona,
+        documentoNit,
+        regimenIva,
+        direccion,
+        telefono,
+        ciudad,
+        topeAnualUvt,
+        actualizadoEn: ahora,
+        actualizadoPor: user.name || user.email
+      });
+
+      tx.insert(COLLECTIONS.AUDITORIA, {
+        accion: "NEGOCIO_PERFIL_ACTUALIZADO",
+        nombreEstablecimiento,
+        documentoNit,
+        regimenIva,
+        usuario: user.name || user.email,
+        fecha: ahora
+      });
+
+      return actualizado;
+    },
+    { readDocs: [{ collection: COLLECTIONS.CONTROL, id: PERFIL_NEGOCIO_DOC_ID }] }
+  );
+}
+
+const COLECCIONES_RESPALDO = [
+  COLLECTIONS.PRODUCTOS,
+  COLLECTIONS.CLIENTES,
+  COLLECTIONS.CAJAS,
+  COLLECTIONS.VENTAS,
+  COLLECTIONS.MOV_INVENTARIO,
+  COLLECTIONS.MOV_CONTABLES,
+  COLLECTIONS.DEVOLUCIONES,
+  COLLECTIONS.USUARIOS,
+  COLLECTIONS.CONTROL,
+  COLLECTIONS.MOV_BILLETERA,
+  COLLECTIONS.AUDITORIA
+];
+
+export function exportarRespaldoJSON(user = getCurrentUser()) {
+  assertPermission("usuarios.gestionar", user);
+  ensureSeedData();
+  const ahora = new Date().toISOString();
+  const colecciones = {};
+  const conteos = {};
+  let totalRegistros = 0;
+
+  for (const col of COLECCIONES_RESPALDO) {
+    const docs = getCollection(col);
+    colecciones[col] = docs;
+    conteos[col] = docs.length;
+    totalRegistros += docs.length;
+  }
+
+  const respaldo = {
+    version: 1,
+    sistema: "Vidrios y Aluminios El Carmen",
+    fechaRespaldo: ahora,
+    generadoPor: user.name || user.email,
+    totalRegistros,
+    conteos,
+    colecciones
+  };
+
+  return {
+    ...respaldo,
+    filename: `respaldo-el-carmen-${ahora.slice(0, 10)}.json`,
+    jsonString: JSON.stringify(respaldo, null, 2)
+  };
+}
+
+export function validarRespaldoJSON(jsonData) {
+  let parsed = jsonData;
+  if (typeof jsonData === "string") {
+    try {
+      parsed = JSON.parse(jsonData);
+    } catch {
+      throw new Error("El archivo seleccionado no contiene un JSON válido.");
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Formato de respaldo inválido: se esperaba un objeto JSON.");
+  }
+  if (!parsed.colecciones || typeof parsed.colecciones !== "object" || Array.isArray(parsed.colecciones)) {
+    throw new Error("El archivo de respaldo no contiene el bloque 'colecciones'.");
+  }
+
+  const permitidas = new Set(Object.values(COLLECTIONS));
+  const claves = Object.keys(parsed.colecciones);
+  if (claves.length === 0) {
+    throw new Error("El archivo de respaldo no contiene ninguna colección para restaurar.");
+  }
+
+  const conteosPorColeccion = {};
+  let totalRegistros = 0;
+  for (const col of claves) {
+    if (!permitidas.has(col)) {
+      throw new Error(`Colección desconocida o corrupta en el respaldo: "${col}".`);
+    }
+    const lista = parsed.colecciones[col];
+    if (!Array.isArray(lista)) {
+      throw new Error(`Los registros de la colección "${col}" deben ser un arreglo válido.`);
+    }
+    for (let i = 0; i < lista.length; i++) {
+      const doc = lista[i];
+      if (!doc || typeof doc !== "object" || Array.isArray(doc) || !doc.id) {
+        throw new Error(`Documento corrupto o sin identificador en "${col}" (posición ${i}).`);
+      }
+    }
+    conteosPorColeccion[col] = lista.length;
+    totalRegistros += lista.length;
+  }
+
+  return {
+    parsed,
+    conteosPorColeccion,
+    totalRegistros,
+    fechaRespaldo: parsed.fechaRespaldo || null
+  };
+}
+
+export async function restaurarRespaldoJSON(jsonData, user = getCurrentUser()) {
+  assertPermission("usuarios.gestionar", user);
+  const { parsed, conteosPorColeccion, totalRegistros } = validarRespaldoJSON(jsonData);
+
+  if (!inMemoryTestMode && isFirebaseConfigured()) {
+    const ops = [];
+    for (const [col, lista] of Object.entries(parsed.colecciones)) {
+      for (const doc of lista) {
+        ops.push({ collection: col, id: String(doc.id), data: { ...doc, id: String(doc.id) } });
+      }
+    }
+    if (ops.length > 0) {
+      await escribirLoteFirestore(ops);
+    }
+  }
+
+  const ahora = new Date().toISOString();
+  const colsTocadas = [];
+  for (const [col, lista] of Object.entries(parsed.colecciones)) {
+    writeCollectionRaw(col, lista);
+    colsTocadas.push(col);
+  }
+
+  const auditoriaActual = readCollectionRaw(COLLECTIONS.AUDITORIA) || [];
+  const regAud = {
+    id: generateId("aud"),
+    accion: "RESPALDO_RESTAURADO",
+    totalRegistros,
+    fechaRespaldoOriginal: parsed.fechaRespaldo || "",
+    usuario: user.name || user.email,
+    fecha: ahora
+  };
+  writeCollectionRaw(COLLECTIONS.AUDITORIA, [...auditoriaActual, regAud]);
+  if (!colsTocadas.includes(COLLECTIONS.AUDITORIA)) colsTocadas.push(COLLECTIONS.AUDITORIA);
+
+  for (const col of colsTocadas) {
+    notifyListeners(col);
+  }
+
+  return {
+    totalRestaurados: totalRegistros,
+    conteosPorColeccion,
+    fechaRestauracion: ahora
+  };
 }

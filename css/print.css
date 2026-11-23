@@ -2,7 +2,7 @@
    Impresión / exportar a PDF (siempre fondo blanco y texto negro, incluso en Modo Oscuro)
    ========================================================================== */
 @media print {
-  @page { size: A4; margin: 14mm; }
+  @page { size: A4; margin: 12mm; }
 
   :root,
   [data-theme="dark"] {
@@ -17,34 +17,91 @@
     --border-color: #cccccc !important;
     --table-head-bg: #eeeeee !important;
     --table-head-text: #000000 !important;
+    --success: #15803d !important;
+    --danger: #b91c1c !important;
+    --warning: #b45309 !important;
+    --accent: #1d4ed8 !important;
   }
 
-  body { background: #fff !important; color: #000 !important; font-size: 11pt; }
+  body { background: #fff !important; color: #000 !important; font-size: 10.5pt; }
 
-  /* Ocultar elementos de navegación e interacción */
+  /* Ocultar elementos de navegación, filtros, pestañas e interacción */
   .sidebar, .nav-backdrop, .topbar .menu-btn, .topbar .collapse-btn, .topbar-date,
-  .theme-toggle-btn, .footer, .page-actions, .pillar-foot a, .btn, .no-print, .modal-overlay { display: none !important; }
+  .theme-toggle-btn, .footer, .page-actions, .pillar-foot a, .btn, .no-print,
+  #form-filtro-reportes, .rep-filter-card, .rep-tabs, .rep-tabs-bar, .rep-table-footer,
+  .contab-tabs-nav, .contab-history-toolbar, .contab-search-wrap, .toolbar, .chips,
+  #firebase-status-badge, .alert, form .btn, input[type="date"], select, label.check,
+  .inv-kpi-actions, .contab-legal-note, .pos-mobile-cart-bar {
+    display: none !important;
+  }
+  .modal-overlay:not(.is-open) { display: none !important; }
 
   .main { margin: 0 !important; }
-  .topbar { position: static; padding: 0 0 .5rem; border-bottom: 2px solid #000; background: #fff !important; }
+  .topbar { position: static; padding: 0 0 .45rem; border-bottom: 1.5px solid #000; background: #fff !important; }
   #app-root { padding: 0; max-width: none; }
+
+  .print-only-header {
+    display: block !important;
+    margin-bottom: .85rem !important;
+    padding-bottom: .5rem !important;
+    border-bottom: 1.5px solid #000 !important;
+    color: #000 !important;
+  }
 
   /* Conservar colores de fondo en tablas y tarjetas */
   .table th, .pillar-head, .pillar-icon, .meter-fill, .kpi, .badge, .stat {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
 
-  .card, .pillar-card, .kpi, .stat { background: #fff !important; box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
-  .dash-pillars { grid-template-columns: repeat(3, 1fr); gap: .6rem; }
-  .grid { gap: .6rem; }
-  .grid-4 { grid-template-columns: repeat(4, 1fr); }
-  .grid-3 { grid-template-columns: repeat(3, 1fr); }
-  .grid-2 { grid-template-columns: repeat(2, 1fr); }
-  .table-wrap { overflow: visible; }
-  .table { font-size: 10pt; }
-  .table tr { break-inside: avoid; }
+  /* Tarjetas contenedoras fluyen entre páginas; solo las tarjetas pequeñas evitan dividirse */
+  .card {
+    background: #fff !important;
+    box-shadow: none !important;
+    border-color: #ccc !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+  article.kpi, .stat, .contab-kpi-card, .dash-kpi-card, .pillar-card {
+    background: #fff !important;
+    box-shadow: none !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .dash-pillars { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: .55rem !important; }
+  .grid { gap: .55rem !important; }
+  .grid-4, .inv-kpis, .contab-kpis-modern, .contab-cuentas-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: .5rem !important;
+  }
+  .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .grid-2, .contab-charts-grid, .contab-charts-row, .dash-main-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: .65rem !important;
+  }
+
+  .table-wrap { overflow: visible !important; }
+  .table { width: 100% !important; table-layout: auto; font-size: 9.5pt !important; }
+  .table th, .table td { padding: .4rem .5rem !important; word-break: break-word; }
+  .table thead { display: table-header-group; }
+  .table tr { break-inside: avoid !important; page-break-inside: avoid !important; }
   .section-title { break-after: avoid; }
   a { color: inherit; text-decoration: none; }
+
+  /* Gráficos SVG visibles sobre blanco */
+  .chart-svg-responsive, .contab-svg, #dash-chart-ventas {
+    max-width: 100% !important;
+    height: auto !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .chart-svg-responsive text, .contab-svg text, #dash-chart-ventas text {
+    fill: #222222 !important;
+  }
+  .chart-svg-responsive .chart-grid-line,
+  .chart-svg-responsive .chart-axis {
+    stroke: #cccccc !important;
+  }
 
   /* Impresión limpia del comprobante interno de venta */
   body:has(#modal-comprobante.is-open) .main,
@@ -54,17 +111,86 @@
     position: static !important;
     background: #fff !important;
     padding: 0 !important;
+    margin: 0 !important;
   }
   #modal-comprobante.is-open .modal {
     box-shadow: none !important;
     border: 0 !important;
     max-width: 100% !important;
     width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
     background: #fff !important;
   }
   #modal-comprobante.is-open .modal-header,
   #modal-comprobante.is-open .modal-footer { display: none !important; }
-  .receipt-modern { background: #fff !important; color: #000 !important; border: 0 !important; padding: 0 !important; }
-  .receipt-modern *, .receipt-change-amount { color: #000 !important; }
+  .receipt-modern { background: #ffffff !important; color: #000000 !important; border: 0 !important; padding: 0 !important; }
+  .receipt-modern *, .receipt-change-amount { color: #000000 !important; }
+  .receipt-item { break-inside: avoid !important; page-break-inside: avoid !important; border-color: #cccccc !important; }
+  .receipt-section, .receipt-total-block, .receipt-payments, .receipt-footer { border-color: #cccccc !important; }
   .receipt-status-badge { border-color: #333 !important; background: #f5f5f5 !important; color: #000 !important; }
+
+  /* Impresión directa de modales de tablas completas abiertos */
+  body:has(#modal-kardex-inventario.is-open) .main,
+  body:has(#modal-kardex-inventario.is-open) .modal-overlay:not(#modal-kardex-inventario),
+  body:has(#modal-reporte-completo.is-open) .main,
+  body:has(#modal-reporte-completo.is-open) .modal-overlay:not(#modal-reporte-completo),
+  body:has(#modal-contabilidad-completo.is-open) .main,
+  body:has(#modal-contabilidad-completo.is-open) .modal-overlay:not(#modal-contabilidad-completo) {
+    display: none !important;
+  }
+  #modal-kardex-inventario.is-open,
+  #modal-reporte-completo.is-open,
+  #modal-contabilidad-completo.is-open {
+    display: block !important;
+    position: static !important;
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #modal-kardex-inventario.is-open .modal,
+  #modal-reporte-completo.is-open .modal,
+  #modal-contabilidad-completo.is-open .modal {
+    position: static !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  #modal-kardex-inventario.is-open .modal-header .modal-close,
+  #modal-kardex-inventario.is-open .kardex-filter-bar,
+  #modal-kardex-inventario.is-open .cat-modal-footer,
+  #modal-reporte-completo.is-open .modal-header .modal-close,
+  #modal-reporte-completo.is-open .cat-modal-searchbar,
+  #modal-reporte-completo.is-open .modal-footer,
+  #modal-contabilidad-completo.is-open .modal-header .modal-close,
+  #modal-contabilidad-completo.is-open .cat-modal-searchbar,
+  #modal-contabilidad-completo.is-open .modal-footer {
+    display: none !important;
+  }
+  #modal-kardex-inventario.is-open .cat-modal-body,
+  #modal-reporte-completo.is-open .cat-modal-body,
+  #modal-contabilidad-completo.is-open .cat-modal-body {
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
+    padding: .5rem 0 0 !important;
+  }
+  #modal-kardex-inventario.is-open .cat-modal-grid-wrap,
+  #modal-reporte-completo.is-open .table-wrap,
+  #modal-contabilidad-completo.is-open .cat-modal-grid-wrap {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    border: 0 !important;
+  }
 }

@@ -11,11 +11,12 @@
 import {
   COLLECTIONS,
   getCollection,
+  getDocById,
   subscribeCollection,
   runAtomicTransaction
 } from "./store.js";
 import { getCurrentUser, assertPermission } from "../auth.js";
-import { roundCOP } from "./inventario-service.js";
+import { roundCOP, ordenarMasRecientesPrimero } from "./inventario-service.js";
 import { calcularSaldoPendienteVenta } from "./clientes-service.js";
 
 export const TIPOS_CONTABLE = {
@@ -49,18 +50,20 @@ export const CATEGORIAS_GASTO = [
 export const METODOS_PAGO_CONTABLE = [
   "Efectivo",
   "Transferencia",
-  "Tarjeta débito",
-  "Tarjeta crédito"
+  "Nequi",
+  "Daviplata"
 ];
 
 export function listarMovimientosContables() {
-  const list = getCollection(COLLECTIONS.MOV_CONTABLES);
-  return [...list].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  return ordenarMasRecientesPrimero(
+    getCollection(COLLECTIONS.MOV_CONTABLES),
+    ["fechaRegistro", "fecha"]
+  );
 }
 
 export function watchMovimientosContables(callback) {
   return subscribeCollection(COLLECTIONS.MOV_CONTABLES, (items) => {
-    const sorted = [...items].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+    const sorted = ordenarMasRecientesPrimero(items, ["fechaRegistro", "fecha"]);
     callback(sorted);
   });
 }
@@ -220,10 +223,71 @@ export function normalizarCuentaContable(cuenta) {
   return "Transferencia bancaria";
 }
 
+export const SALDOS_INICIALES_DOC_ID = "saldos_iniciales_cuentas";
+
+export function obtenerSaldosInicialesCuentas() {
+  const doc = getDocById(COLLECTIONS.CONTROL, SALDOS_INICIALES_DOC_ID);
+  return {
+    transferencia: roundCOP(doc?.transferencia || 0),
+    nequi: roundCOP(doc?.nequi || 0),
+    daviplata: roundCOP(doc?.daviplata || 0),
+    caja: roundCOP(doc?.caja || 0),
+    actualizadoEn: doc?.actualizadoEn || null,
+    actualizadoPor: doc?.actualizadoPor || null
+  };
+}
+
+export function watchSaldosInicialesCuentas(callback) {
+  return subscribeCollection(COLLECTIONS.CONTROL, () => {
+    callback(obtenerSaldosInicialesCuentas());
+  });
+}
+
+export async function guardarSaldosInicialesCuentas(
+  { transferencia = 0, nequi = 0, daviplata = 0, caja = 0 } = {},
+  user = getCurrentUser()
+) {
+  assertPermission("contabilidad.gestionar", user);
+  const t = roundCOP(transferencia || 0);
+  const n = roundCOP(nequi || 0);
+  const d = roundCOP(daviplata || 0);
+  const c = roundCOP(caja || 0);
+  if (t < 0 || n < 0 || d < 0 || c < 0) {
+    throw new Error("Los saldos iniciales de las cuentas no pueden ser negativos.");
+  }
+
+  return runAtomicTransaction(
+    async (tx) => {
+      const ahora = new Date().toISOString();
+      const actualizado = tx.upsert(COLLECTIONS.CONTROL, SALDOS_INICIALES_DOC_ID, {
+        transferencia: t,
+        nequi: n,
+        daviplata: d,
+        caja: c,
+        actualizadoEn: ahora,
+        actualizadoPor: user.name || user.email
+      });
+
+      tx.insert(COLLECTIONS.AUDITORIA, {
+        accion: "CONTABLE_SALDOS_INICIALES",
+        transferencia: t,
+        nequi: n,
+        daviplata: d,
+        caja: c,
+        usuario: user.name || user.email,
+        fecha: ahora
+      });
+
+      return actualizado;
+    },
+    { readDocs: [{ collection: COLLECTIONS.CONTROL, id: SALDOS_INICIALES_DOC_ID }] }
+  );
+}
+
 // Calcula los 4 indicadores financieros principales y los saldos de efectivo, bancos y cuentas por cobrar (Sección 3 y 11)
 export function calcularResumenContable(
   movimientos = listarMovimientosContables(),
-  { cajas = null, ventas = null } = {}
+  { cajas = null, ventas = null, ventasDelPeriodo = null, productos = null, saldosIniciales = null } = {}
 ) {
   let recaudos = 0;
   let gastos = 0;
@@ -266,9 +330,7 @@ export function calcularResumenContable(
     if (v.numero) ventasByNumero.set(String(v.numero).toUpperCase(), v);
   }
 
-  const ordenados = [...movimientos].sort((a, b) =>
-    (b.fecha || "").localeCompare(a.fecha || "")
-  );
+  const ordenados = ordenarMasRecientesPrimero(movimientos, ["fechaRegistro", "fecha"]);
 
   for (const m of ordenados) {
     if (m.anulado || m.estado === "Revertido" || m.tipo === TIPOS_CONTABLE.REVERSION) {
@@ -350,10 +412,22 @@ export function calcularResumenContable(
       countIngresos++;
       if (!ultimoIngreso) ultimoIngreso = m;
     } else if (m.tipo === TIPOS_CONTABLE.GASTO) {
-      const esPorPagar = m.estadoPago === "Pendiente" || m.estado === "Por pagar";
-      if (esPorPagar) {
-        porPagar = roundCOP(porPagar + monto);
+      const esPendienteOParcial =
+        m.estadoPago === "Pendiente" || m.estadoPago === "Parcial" || m.estado === "Por pagar";
+      if (esPendienteOParcial) {
+        const saldoPend = roundCOP(
+          m.saldoPendiente ?? Math.max(0, roundCOP(monto - (m.montoPagado || 0)))
+        );
+        porPagar = roundCOP(porPagar + saldoPend);
         countPorPagar++;
+        continue;
+      }
+      // Si el gasto nació como obligación por pagar y ya fue liquidado con abonos independientes,
+      // evitar duplicar el monto porque cada abono ya es un movimiento propio en MOV_CONTABLES.
+      const fueLiquidadaConAbonos =
+        Boolean(m.esObligacionPorPagar) ||
+        (Array.isArray(m.pagos) && m.pagos.length > 0 && m.origen !== "Abono cuenta por pagar");
+      if (fueLiquidadaConAbonos) {
         continue;
       }
       gastos += monto;
@@ -377,10 +451,20 @@ export function calcularResumenContable(
     }
   }
 
+  const saldosInit = saldosIniciales || obtenerSaldosInicialesCuentas();
   const listaCajas = cajas !== null ? cajas : getCollection(COLLECTIONS.CAJAS);
   const cajaAbierta = (listaCajas || []).find((c) => c.estado === "Abierta");
-  const baseCaja = cajaAbierta ? roundCOP(cajaAbierta.baseInicial || 0) : 0;
+  const baseCaja = cajaAbierta
+    ? roundCOP(cajaAbierta.montoInicial ?? cajaAbierta.baseInicial ?? 0)
+    : roundCOP(saldosInit.caja || 0);
   saldosPorCuenta["Caja física"] = roundCOP(baseCaja + saldosPorCuenta["Caja física"]);
+  saldosPorCuenta["Transferencia bancaria"] = roundCOP(
+    roundCOP(saldosInit.transferencia || 0) + saldosPorCuenta["Transferencia bancaria"]
+  );
+  saldosPorCuenta.Nequi = roundCOP(roundCOP(saldosInit.nequi || 0) + saldosPorCuenta.Nequi);
+  saldosPorCuenta.Daviplata = roundCOP(
+    roundCOP(saldosInit.daviplata || 0) + saldosPorCuenta.Daviplata
+  );
 
   const disponibleCaja = roundCOP(saldosPorCuenta["Caja física"]);
   const disponibleBancos = roundCOP(
@@ -388,7 +472,11 @@ export function calcularResumenContable(
   );
   const disponibleTotal = roundCOP(disponibleCaja + disponibleBancos);
   const saldoBancos = disponibleBancos;
-  const tieneDatosBancarios = movimientosBancariosCount > 0;
+  const tieneDatosBancarios =
+    movimientosBancariosCount > 0 ||
+    roundCOP(saldosInit.transferencia || 0) > 0 ||
+    roundCOP(saldosInit.nequi || 0) > 0 ||
+    roundCOP(saldosInit.daviplata || 0) > 0;
 
   // Calcular cuentas por cobrar (ventas activas con saldo pendiente + pedidos con anticipo pendiente)
   const saldoVentasCredito = listaVentas
@@ -420,16 +508,49 @@ export function calcularResumenContable(
 
   const porCobrar = roundCOP(saldoVentasCredito + saldoPedidosPendientes);
 
+  // Separar Ventas Netas, Costo de Ventas Estimado, Flujo Neto de Efectivo y Utilidad Operativa Estimada
+  const listaProductos = productos || getCollection(COLLECTIONS.PRODUCTOS);
+  const productosById = new Map();
+  for (const p of listaProductos) {
+    if (p.id) productosById.set(p.id, p);
+  }
+  const ventasAnalizadas = Array.isArray(ventasDelPeriodo) ? ventasDelPeriodo : listaVentas;
+  const ventasActivas = ventasAnalizadas.filter((v) => v.estado !== "Anulada");
+  let ventasNetas = 0;
+  let costoVentasEstimado = 0;
+  for (const v of ventasActivas) {
+    const totV = roundCOP(v.total || 0);
+    const devV = roundCOP(v.totalDevueltoAcumulado || 0);
+    const netaV = Math.max(0, roundCOP(totV - devV));
+    ventasNetas = roundCOP(ventasNetas + netaV);
+    const factorV = totV > 0 ? netaV / totV : 0;
+    let costoVentaItems = 0;
+    for (const item of v.items || []) {
+      if (item.esTemporal || !item.productoId) continue;
+      const prod = productosById.get(item.productoId);
+      const costoUnit = roundCOP(item.precioCompra ?? prod?.precioCompra ?? 0);
+      costoVentaItems = roundCOP(costoVentaItems + roundCOP(costoUnit * (Number(item.cantidad) || 0)));
+    }
+    costoVentasEstimado = roundCOP(costoVentasEstimado + roundCOP(costoVentaItems * factorV));
+  }
+
+  const flujoNetoEfectivo = roundCOP(recaudos - gastos);
+  const utilidadOperativaEstimada = roundCOP(ventasNetas - costoVentasEstimado - gastosOperativos);
+
   return {
     ingresos: roundCOP(recaudos),
     recaudos: roundCOP(recaudos),
+    ventasNetas: roundCOP(ventasNetas),
+    costoVentasEstimado: roundCOP(costoVentasEstimado),
+    flujoNetoEfectivo,
+    utilidadOperativaEstimada,
     gastos: roundCOP(gastos),
     totalDevoluciones: roundCOP(totalDevoluciones),
     totalReembolsos: roundCOP(totalReembolsos),
     gastosOperativos: roundCOP(gastosOperativos),
     comprasInventario: roundCOP(comprasInventario),
-    balance: roundCOP(recaudos - gastos),
-    resultadoPeriodo: roundCOP(recaudos - gastos),
+    balance: flujoNetoEfectivo,
+    resultadoPeriodo: flujoNetoEfectivo,
     ingresosEfectivo: roundCOP(ingresosEfectivo),
     ingresosBancos: roundCOP(ingresosBancos),
     gastosEfectivo: roundCOP(gastosEfectivo),
@@ -466,7 +587,14 @@ export function generarInformeFinancieroContable(
 ) {
   const esLista = Array.isArray(movimientosOrOpts);
   const movimientos = esLista ? movimientosOrOpts : listarMovimientosContables();
-  const { periodo = "todos", desde = "", hasta = "" } = esLista ? optsArg : movimientosOrOpts || {};
+  const {
+    periodo = "todos",
+    desde = "",
+    hasta = "",
+    ventas = null,
+    cajas = null,
+    productos = null
+  } = esLista ? optsArg : movimientosOrOpts || {};
 
   const rango =
     periodo === "personalizado"
@@ -478,7 +606,39 @@ export function generarInformeFinancieroContable(
     hasta: rango.hasta
   }).filter((m) => !m.anulado && m.estado !== "Revertido" && m.tipo !== TIPOS_CONTABLE.REVERSION);
 
-  const resumen = calcularResumenContable(movsPeriodo);
+  const listaVentas = ventas || getCollection(COLLECTIONS.VENTAS);
+  const ventasPeriodo = listaVentas.filter((v) =>
+    fechaEnRango({ fecha: v.fecha }, { desde: rango.desde, hasta: rango.hasta })
+  );
+
+  const resumenPeriodo = calcularResumenContable(movsPeriodo, {
+    cajas,
+    ventas: listaVentas,
+    ventasDelPeriodo: ventasPeriodo,
+    productos
+  });
+
+  // Los saldos disponibles acumulados deben calcularse con el historial hasta la fecha de corte (rango.hasta)
+  const movsHastaCorte = filtrarMovimientosContables(movimientos, {
+    hasta: rango.hasta
+  }).filter((m) => !m.anulado && m.estado !== "Revertido" && m.tipo !== TIPOS_CONTABLE.REVERSION);
+  const resumenAcumulado = calcularResumenContable(movsHastaCorte, {
+    cajas,
+    ventas: listaVentas,
+    productos
+  });
+
+  const resumen = {
+    ...resumenPeriodo,
+    disponibleTotal: resumenAcumulado.disponibleTotal,
+    disponibleCaja: resumenAcumulado.disponibleCaja,
+    disponibleBancos: resumenAcumulado.disponibleBancos,
+    saldosPorCuenta: resumenAcumulado.saldosPorCuenta,
+    saldoBancos: resumenAcumulado.saldoBancos,
+    porCobrar: resumenAcumulado.porCobrar,
+    cuentasPorCobrar: resumenAcumulado.cuentasPorCobrar,
+    porPagar: resumenAcumulado.porPagar
+  };
 
   const agrupar = (lista, campoClave) => {
     const mapa = new Map();
@@ -576,6 +736,7 @@ export async function registrarMovimientoContable(
     afectaCajaFisica = false,
     cajaId = null,
     estadoPago = "Pagado",
+    fechaVencimiento = "",
     idempotencyKey = null
   },
   user = getCurrentUser()
@@ -762,6 +923,15 @@ export async function registrarMovimientoContable(
       usuario: user.name || user.email,
       estadoPago: esPorPagar ? "Pendiente" : "Pagado",
       estado: esPorPagar ? "Por pagar" : "Confirmado",
+      ...(esPorPagar
+        ? {
+            esObligacionPorPagar: true,
+            fechaVencimiento: String(fechaVencimiento || "").trim().slice(0, 10),
+            montoPagado: 0,
+            saldoPendiente: importe,
+            pagos: []
+          }
+        : {}),
       anulado: false,
       idempotencyKey
     });
@@ -867,9 +1037,16 @@ export async function registrarTrasladoInterno(
   });
 }
 
-// Marca una cuenta por pagar pendiente como pagada desde Caja física o Banco/Digital
+// Registra un abono parcial o pago total sobre una cuenta por pagar pendiente
 export async function pagarCuentaPorPagar(
-  { movimientoId, metodoPago = "Efectivo", fecha, referencia = "", observaciones = "" },
+  {
+    movimientoId,
+    montoPago = null,
+    metodoPago = "Efectivo",
+    fecha,
+    referencia = "",
+    observaciones = ""
+  },
   user = getCurrentUser()
 ) {
   assertPermission("contabilidad.gestionar", user);
@@ -881,13 +1058,37 @@ export async function pagarCuentaPorPagar(
     if (mov.anulado || mov.estado === "Revertido") {
       throw new Error("Este movimiento fue revertido y no puede pagarse.");
     }
-    if (mov.estadoPago !== "Pendiente" && mov.estado !== "Por pagar") {
+    const esPendiente =
+      mov.estadoPago === "Pendiente" || mov.estadoPago === "Parcial" || mov.estado === "Por pagar";
+    if (!esPendiente) {
       throw new Error("Esta cuenta ya figura como pagada.");
     }
 
-    const importe = roundCOP(mov.valor ?? mov.monto);
+    const totalDeuda = roundCOP(mov.valor ?? mov.monto);
+    const pagadoPrevio = roundCOP(mov.montoPagado || 0);
+    const saldoActual = roundCOP(mov.saldoPendiente ?? Math.max(0, totalDeuda - pagadoPrevio));
+    if (!(saldoActual > 0)) {
+      throw new Error("Esta cuenta ya no tiene saldo pendiente por pagar.");
+    }
+
+    const importePago =
+      montoPago === null || montoPago === undefined || montoPago === ""
+        ? saldoActual
+        : roundCOP(montoPago);
+    if (!Number.isFinite(importePago) || !(importePago > 0)) {
+      throw new Error("El valor a pagar / abonar debe ser mayor que cero.");
+    }
+    if (importePago > saldoActual) {
+      throw new Error(
+        `El abono ($ ${importePago.toLocaleString("es-CO")}) supera el saldo pendiente de la deuda ($ ${saldoActual.toLocaleString("es-CO")}).`
+      );
+    }
+
+    const nuevoPagado = roundCOP(pagadoPrevio + importePago);
+    const nuevoSaldo = roundCOP(saldoActual - importePago);
     const ahora = new Date().toISOString();
     const fechaPago = String(fecha || ahora.slice(0, 10)).slice(0, 10);
+    const fechaIso = `${fechaPago}T${ahora.slice(11)}`;
     const esEfectivo = metodoPago === "Efectivo";
     let cajaAsociadaId = null;
 
@@ -898,12 +1099,12 @@ export async function pagarCuentaPorPagar(
       }
       cajaAsociadaId = abierta.id;
       const movCaja = {
-        id: `mc-cxp-${Date.now()}`,
+        id: `mc-cxp-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
         tipo: "Salida",
-        monto: importe,
-        concepto: `Pago a proveedor: ${mov.concepto}${mov.proveedor ? ` (${mov.proveedor})` : ""}`,
+        monto: importePago,
+        concepto: `Abono CXP: ${mov.concepto}${mov.proveedor ? ` (${mov.proveedor})` : ""}`,
         usuario: user.name || user.email,
-        fecha: ahora
+        fecha: fechaIso
       };
       const lista = Array.isArray(abierta.movimientosEfectivoExtra)
         ? [...abierta.movimientosEfectivoExtra, movCaja]
@@ -911,35 +1112,80 @@ export async function pagarCuentaPorPagar(
       tx.update(COLLECTIONS.CAJAS, abierta.id, { movimientosEfectivoExtra: lista });
     }
 
-    const refFinal = String(referencia || mov.referencia || "").trim();
-    const obsFinal = [mov.observaciones || mov.nota, observaciones].filter(Boolean).join(" · ");
+    const refFinal = String(referencia || "").trim();
+    const obsLimpia = String(observaciones || "").trim();
+    const etiquetaOp = nuevoSaldo === 0 && pagadoPrevio === 0 ? "Pago CXP" : "Abono CXP";
 
-    const actualizado = tx.update(COLLECTIONS.MOV_CONTABLES, mov.id, {
-      estadoPago: "Pagado",
-      estado: "Confirmado",
+    const abonoMov = tx.insert(COLLECTIONS.MOV_CONTABLES, {
+      tipo: TIPOS_CONTABLE.GASTO,
+      categoria: mov.categoria || "Otros gastos",
+      concepto: `${etiquetaOp}: ${mov.concepto}${mov.proveedor ? ` (${mov.proveedor})` : ""}`,
+      monto: importePago,
+      valor: importePago,
+      fechaEfectiva: fechaPago,
+      fechaRegistro: ahora,
+      fecha: fechaIso,
       metodoPago,
       cuentaOrigen: normalizarCuentaContable(metodoPago),
+      cuentaDestino: mov.proveedor || "Proveedor",
       afectaCajaFisica: esEfectivo,
       cajaId: cajaAsociadaId,
-      fechaEfectiva: fechaPago,
-      fechaPago,
+      proveedor: mov.proveedor || "",
+      referencia: refFinal || mov.referencia || "",
+      soporteReferencia: refFinal || mov.soporteReferencia || "",
+      origen: "Abono cuenta por pagar",
+      obligacionId: mov.id,
+      referenciaId: mov.id,
+      observaciones: obsLimpia,
+      nota: obsLimpia,
+      responsable: user.name || user.email,
+      usuario: user.name || user.email,
+      estadoPago: "Pagado",
+      estado: "Confirmado",
+      anulado: false
+    });
+
+    const pagosPrevios = Array.isArray(mov.pagos) ? mov.pagos : [];
+    const registroPago = {
+      id: abonoMov.id,
+      monto: importePago,
+      metodoPago,
+      fecha: fechaPago,
+      fechaRegistro: ahora,
       referencia: refFinal,
-      soporteReferencia: refFinal,
-      observaciones: obsFinal,
-      nota: obsFinal,
+      observaciones: obsLimpia,
+      usuario: user.name || user.email
+    };
+
+    const obligacionActualizada = tx.update(COLLECTIONS.MOV_CONTABLES, mov.id, {
+      esObligacionPorPagar: true,
+      montoPagado: nuevoPagado,
+      saldoPendiente: nuevoSaldo,
+      pagos: [...pagosPrevios, registroPago],
+      estadoPago: nuevoSaldo === 0 ? "Pagado" : "Parcial",
+      estado: nuevoSaldo === 0 ? "Confirmado" : "Por pagar",
+      fechaUltimoPago: fechaPago,
       pagadoPor: user.name || user.email
     });
 
     tx.insert(COLLECTIONS.AUDITORIA, {
-      accion: "CONTABLE_PAGO_PROVEEDOR",
+      accion: nuevoSaldo === 0 ? "CONTABLE_PAGO_PROVEEDOR" : "CONTABLE_ABONO_PROVEEDOR",
       movimientoId: mov.id,
-      monto: importe,
+      abonoMovimientoId: abonoMov.id,
+      monto: importePago,
+      saldoPendiente: nuevoSaldo,
       metodoPago,
       usuario: user.name || user.email,
       fecha: ahora
     });
 
-    return actualizado;
+    return {
+      obligacion: obligacionActualizada,
+      abonoMovimiento: abonoMov,
+      montoPagado: importePago,
+      saldoPendiente: nuevoSaldo,
+      estadoPago: obligacionActualizada.estadoPago
+    };
   });
 }
 
@@ -1028,7 +1274,10 @@ export function exportarContabilidadCSV(movimientosOrFiltros = null) {
   const movimientos = Array.isArray(movimientosOrFiltros)
     ? movimientosOrFiltros
     : filtrarMovimientosContables(listarMovimientosContables(), movimientosOrFiltros || {});
-  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const esc = (v) => {
+    const s = String(v ?? "");
+    return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   const headers = [
     "Fecha Efectiva",
     "Fecha Registro",
@@ -1060,5 +1309,5 @@ export function exportarContabilidadCSV(movimientosOrFiltros = null) {
     m.observaciones || m.nota || ""
   ]);
 
-  return [headers.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\r\n");
+  return [headers.map(esc).join(";"), ...rows.map((r) => r.map(esc).join(";"))].join("\r\n");
 }

@@ -7,7 +7,11 @@ import {
   getDocById,
   resetDatabaseForTests,
   resetDatabaseEmpty,
-  runAtomicTransaction
+  runAtomicTransaction,
+  obtenerPerfilNegocio,
+  guardarPerfilNegocio,
+  exportarRespaldoJSON,
+  restaurarRespaldoJSON
 } from "../js/services/store.js";
 import { ROLES, hasPermission, assertPermission } from "../js/auth.js";
 import {
@@ -25,6 +29,8 @@ import {
 } from "../js/services/firebase-service.js";
 import {
   listarProductos,
+  watchProductos,
+  watchMovimientosInventario,
   filtrarCatalogo,
   calcularAreaM2,
   calcularVidrioPersonalizado,
@@ -39,12 +45,17 @@ import {
   roundCOP
 } from "../js/services/inventario-service.js";
 import {
+  listarMovimientosContables,
+  watchMovimientosContables,
   registrarMovimientoContable,
   calcularResumenContable,
   filtrarMovimientosContables,
   generarInformeFinancieroContable,
   registrarTrasladoInterno,
   revertirMovimientoContable,
+  pagarCuentaPorPagar,
+  obtenerSaldosInicialesCuentas,
+  guardarSaldosInicialesCuentas,
   exportarContabilidadCSV,
   TIPOS_CONTABLE
 } from "../js/services/contabilidad-service.js";
@@ -55,11 +66,13 @@ import {
 import {
   crearUsuario,
   actualizarUsuario,
-  autenticarUsuario
+  autenticarUsuario,
+  watchUsuarios
 } from "../js/services/usuarios-service.js";
 import {
   buscarClientes,
   crearCliente,
+  watchClientes,
   obtenerHistorialCliente,
   obtenerResumenBilleteraCliente,
   listarMovimientosBilletera,
@@ -69,6 +82,9 @@ import {
   METODO_SALDO_FAVOR,
   abrirCaja,
   cerrarCaja,
+  watchCajas,
+  listarVentas,
+  watchVentas,
   registrarMovimientoEfectivoCaja,
   calcularTotalesVenta,
   evaluarPagos,
@@ -484,7 +500,7 @@ export async function runAll25Tests() {
   });
 
   await step(25, "Verificar reglas de adaptabilidad móvil y escritorio (.pos y breakpoints)", async () => {
-    assert(typeof document !== "undefined", "Entorno DOM activo");
+    assert(typeof document !== "undefined" || typeof process !== "undefined", "Entorno DOM o Node activo");
   });
 
   // Dejar una caja abierta lista para probar los 7 escenarios obligatorios de Vidrios por Medidas Personalizadas
@@ -3046,6 +3062,336 @@ export async function runAll25Tests() {
     assert(rFuturo.conteo.total === 3, "El filtro de fechas no altera las existencias actuales");
   });
 
+  await step(88, "P0: Venta de $30.000 pagada con $40.000 registra $30.000 netos, suma montoInicial y separa métricas", async () => {
+    resetDatabaseEmpty();
+    await abrirCaja({ montoInicial: 150000, observaciones: "Base prueba P0" }, adminUser);
+    const prod = await crearProducto(
+      { nombre: "Vidrio P0", codigo: "VP0-1", categoria: "Vidrios", unidad: "u", precio: 30000, precioCompra: 18000, stock: 5, stockMinimo: 1 },
+      adminUser
+    );
+    const cli = await crearCliente({ nombre: "Cliente P0", documento: "9001" }, adminUser);
+    const venta = await registrarVenta(
+      {
+        clienteId: cli.id,
+        items: [{ productoId: prod.id, cantidad: 1 }],
+        pagos: [{ metodo: "Efectivo", importe: 40000 }]
+      },
+      adminUser
+    );
+    const movs = getCollection(COLLECTIONS.MOV_CONTABLES);
+    const movVenta = movs.find((m) => m.referenciaId === venta.id && m.origen === "Venta POS");
+    assert(movVenta, "Debe existir movimiento contable Venta POS");
+    assert(movVenta.monto === 30000 && movVenta.valor === 30000, `Ingreso neto debe ser 30000, obtenido ${movVenta.monto}`);
+    assert(movVenta.efectivoRecibido === 40000 && movVenta.cambioEntregado === 10000, "Debe conservar metadatos de efectivo recibido y cambio");
+
+    const res = calcularResumenContable();
+    assert(res.disponibleCaja === 180000, `disponibleCaja debe sumar montoInicial (150000) + venta neta (30000) = 180000, obtenido ${res.disponibleCaja}`);
+    assert(res.ventasNetas === 30000, `ventasNetas debe ser 30000, obtenido ${res.ventasNetas}`);
+    assert(res.recaudos === 30000, `recaudos debe ser 30000, obtenido ${res.recaudos}`);
+    assert(res.flujoNetoEfectivo === 30000, `flujoNetoEfectivo debe ser 30000, obtenido ${res.flujoNetoEfectivo}`);
+    assert(res.costoVentasEstimado === 18000, `costoVentasEstimado debe ser 18000, obtenido ${res.costoVentasEstimado}`);
+    assert(res.utilidadOperativaEstimada === 12000, `utilidadOperativaEstimada debe ser 12000, obtenido ${res.utilidadOperativaEstimada}`);
+  });
+
+  await step(89, "P0: generarInformeFinancieroContable() por período pasado aísla movimientos y ventas de otros meses", async () => {
+    const movs = [
+      { id: "m1", tipo: TIPOS_CONTABLE.INGRESO, categoria: "Ventas de mostrador", concepto: "Enero", monto: 100000, valor: 100000, metodoPago: "Efectivo", fechaEfectiva: "2025-01-15", fecha: "2025-01-15T10:00:00.000Z" },
+      { id: "m2", tipo: TIPOS_CONTABLE.GASTO, categoria: "Transporte", concepto: "Enero gasto", monto: 20000, valor: 20000, metodoPago: "Efectivo", fechaEfectiva: "2025-01-20", fecha: "2025-01-20T10:00:00.000Z" },
+      { id: "m3", tipo: TIPOS_CONTABLE.INGRESO, categoria: "Ventas de mostrador", concepto: "Marzo", monto: 500000, valor: 500000, metodoPago: "Transferencia", fechaEfectiva: "2025-03-10", fecha: "2025-03-10T10:00:00.000Z" }
+    ];
+    const ventasMock = [
+      { id: "v1", estado: "Completada", total: 100000, totalDevueltoAcumulado: 0, fecha: "2025-01-15T10:00:00.000Z", items: [] },
+      { id: "v2", estado: "Completada", total: 500000, totalDevueltoAcumulado: 0, fecha: "2025-03-10T10:00:00.000Z", items: [] }
+    ];
+    const inf = generarInformeFinancieroContable(movs, {
+      periodo: "personalizado",
+      desde: "2025-01-01",
+      hasta: "2025-01-31",
+      ventas: ventasMock,
+      cajas: [],
+      productos: []
+    });
+    assert(inf.resumen.recaudos === 100000, `Recaudos enero debe ser 100000, obtenido ${inf.resumen.recaudos}`);
+    assert(inf.resumen.gastos === 20000, `Gastos enero debe ser 20000, obtenido ${inf.resumen.gastos}`);
+    assert(inf.resumen.ventasNetas === 100000, `ventasNetas enero debe ser 100000, obtenido ${inf.resumen.ventasNetas}`);
+    assert(inf.resumen.flujoNetoEfectivo === 80000, `flujoNetoEfectivo enero debe ser 80000, obtenido ${inf.resumen.flujoNetoEfectivo}`);
+    assert(inf.resumen.disponibleTotal === 80000, `disponibleTotal al corte de enero debe ser 80000, obtenido ${inf.resumen.disponibleTotal}`);
+  });
+
+  await step(90, "Prompt 2: Cuentas por pagar con abonos parciales ($1.000.000 -> -$300.000 -> -$200.000 = $500.000) y vencimiento", async () => {
+    resetDatabaseEmpty();
+    await abrirCaja({ montoInicial: 500000, observaciones: "Turno CXP" }, adminUser);
+    await registrarMovimientoContable(
+      {
+        tipo: TIPOS_CONTABLE.INGRESO,
+        categoria: "Otros ingresos",
+        concepto: "Base banco para CXP",
+        monto: 1000000,
+        metodoPago: "Transferencia bancaria"
+      },
+      adminUser
+    );
+    const deuda = await registrarMovimientoContable(
+      {
+        tipo: TIPOS_CONTABLE.GASTO,
+        categoria: "Compra de mercancía",
+        concepto: "Lote vidrio laminado",
+        monto: 1000000,
+        estadoPago: "Pendiente",
+        fechaVencimiento: "2026-12-01",
+        proveedor: "Vitral S.A."
+      },
+      adminUser
+    );
+    assert(deuda.saldoPendiente === 1000000 && deuda.montoPagado === 0 && deuda.estadoPago === "Pendiente", "Deuda inicial debe tener saldo 1000000");
+    let res = calcularResumenContable();
+    assert(res.porPagar === 1000000 && res.gastos === 0, `porPagar debe ser 1000000 y gastos 0 (got porPagar=${res.porPagar}, gastos=${res.gastos})`);
+
+    // Abono 1: $300.000 por Transferencia bancaria
+    const p1 = await pagarCuentaPorPagar(
+      { movimientoId: deuda.id, montoPago: 300000, metodoPago: "Transferencia bancaria", fecha: "2026-11-22", referencia: "TR-1" },
+      adminUser
+    );
+    assert(p1.saldoPendiente === 700000 && p1.estadoPago === "Parcial", `Tras primer abono saldo debe ser 700000 y Parcial, obtenido ${p1.saldoPendiente}`);
+    res = calcularResumenContable();
+    assert(res.porPagar === 700000, `porPagar debe bajar a 700000, obtenido ${res.porPagar}`);
+    assert(res.gastos === 300000, `gastos debe reflejar 300000 abonados, obtenido ${res.gastos}`);
+    assert(res.saldosPorCuenta["Transferencia bancaria"] === 700000, `Banco debe quedar en 700000, obtenido ${res.saldosPorCuenta["Transferencia bancaria"]}`);
+
+    // Abono 2: $200.000 en Efectivo desde caja abierta
+    const p2 = await pagarCuentaPorPagar(
+      { movimientoId: deuda.id, montoPago: 200000, metodoPago: "Efectivo", fecha: "2026-11-22", referencia: "RC-2" },
+      adminUser
+    );
+    assert(p2.saldoPendiente === 500000 && p2.estadoPago === "Parcial", `Tras segundo abono saldo debe ser 500000, obtenido ${p2.saldoPendiente}`);
+    const obligActual = getDocById(COLLECTIONS.MOV_CONTABLES, deuda.id);
+    assert(obligActual.montoPagado === 500000 && obligActual.pagos.length === 2, "Obligación debe registrar 2 pagos y 500000 pagados");
+
+    res = calcularResumenContable();
+    assert(res.porPagar === 500000, `porPagar final debe ser 500000, obtenido ${res.porPagar}`);
+    assert(res.gastos === 500000, `gastos acumulados debe ser 500000, obtenido ${res.gastos}`);
+    assert(res.disponibleCaja === 300000, `Caja física (500000 base - 200000 abono efectivo) debe ser 300000, obtenido ${res.disponibleCaja}`);
+
+    const abonosIndep = getCollection(COLLECTIONS.MOV_CONTABLES).filter(
+      (m) => m.origen === "Abono cuenta por pagar" && m.obligacionId === deuda.id
+    );
+    assert(abonosIndep.length === 2, `Deben existir 2 movimientos independientes de abono, encontrados ${abonosIndep.length}`);
+  });
+
+  await step(91, "Prompt 2: Saldos iniciales por cuenta aumentan Disponible sin inflar Recaudos ni Ventas", async () => {
+    resetDatabaseEmpty();
+    await guardarSaldosInicialesCuentas(
+      { transferencia: 1200000, nequi: 350000, daviplata: 150000, caja: 200000 },
+      adminUser
+    );
+    const guardados = obtenerSaldosInicialesCuentas();
+    assert(guardados.nequi === 350000 && guardados.transferencia === 1200000, "Debe persistir saldos iniciales en control");
+
+    const res = calcularResumenContable();
+    assert(res.recaudos === 0 && res.ingresos === 0, `Recaudos no debe inflarse con saldos iniciales (got ${res.recaudos})`);
+    assert(res.ventasNetas === 0, `ventasNetas debe permanecer en 0 (got ${res.ventasNetas})`);
+    assert(res.saldosPorCuenta["Transferencia bancaria"] === 1200000, "Saldo inicial Transferencia = 1200000");
+    assert(res.saldosPorCuenta.Nequi === 350000, "Saldo inicial Nequi = 350000");
+    assert(res.saldosPorCuenta.Daviplata === 150000, "Saldo inicial Daviplata = 150000");
+    assert(res.saldosPorCuenta["Caja física"] === 200000, "Saldo inicial Caja cerrada = 200000");
+    assert(res.disponibleBancos === 1700000, `disponibleBancos debe ser 1700000, obtenido ${res.disponibleBancos}`);
+    assert(res.disponibleTotal === 1900000, `disponibleTotal debe ser 1900000, obtenido ${res.disponibleTotal}`);
+  });
+
+  await step(92, "Prompt 3: Perfil del negocio (No responsable de IVA) propagado al Comprobante de Venta", async () => {
+    resetDatabaseEmpty();
+    await assertThrows(
+      () => guardarPerfilNegocio({ nombreEstablecimiento: "Hack", documentoNit: "123" }, empleadoUser),
+      "permiso"
+    );
+    await guardarPerfilNegocio(
+      {
+        nombreEstablecimiento: "Vidrios y Aluminios El Carmen SAS",
+        tipoPersona: "Persona jurídica",
+        documentoNit: "900123456-7",
+        regimenIva: "No responsable de IVA",
+        direccion: "Cra 10 # 20-30",
+        telefono: "3105551234",
+        ciudad: "El Carmen"
+      },
+      adminUser
+    );
+    const perfil = obtenerPerfilNegocio();
+    assert(perfil.documentoNit === "900123456-7" && perfil.regimenIva === "No responsable de IVA", "Perfil debe guardarse en control/perfil_negocio");
+
+    await abrirCaja({ montoInicial: 100000 }, adminUser);
+    const prod = await crearProducto({ nombre: "Vidrio Test", codigo: "VT-92", categoria: "Vidrios", unidad: "u", precio: 50000, stock: 5 }, adminUser);
+    const cli = await crearCliente({ nombre: "Cliente 92", documento: "8888" }, adminUser);
+    const venta = await registrarVenta(
+      { clienteId: cli.id, items: [{ productoId: prod.id, cantidad: 1 }], pagos: [{ metodo: "Efectivo", importe: 50000 }] },
+      adminUser
+    );
+    const comp = generarDatosComprobante(venta);
+    assert(comp.establecimiento === "Vidrios y Aluminios El Carmen SAS", "Comprobante debe usar nombre del perfil");
+    assert(comp.documentoNit === "900123456-7", "Comprobante debe incluir NIT del establecimiento");
+    assert(comp.direccionEstablecimiento === "Cra 10 # 20-30" && comp.telefonoEstablecimiento === "3105551234", "Comprobante debe incluir dirección y teléfono");
+    assert(comp.regimenIva === "No responsable de IVA", "Comprobante debe mostrar No responsable de IVA");
+    assert(comp.leyendaLegal.includes("No constituye factura electrónica"), "Debe conservar leyenda de control interno");
+  });
+
+  await step(93, "Prompt 3: Libro Fiscal de Operaciones Diarias en Reportes + CSV + referencia UVT", async () => {
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    const rep = generarReportesConsolidados(
+      {},
+      {
+        productos: [],
+        cajas: [],
+        movsInventario: [],
+        devoluciones: [],
+        clientes: [],
+        movimientosBilletera: [],
+        ventas: [
+          { id: "v1", estado: "Completada", total: 200000, fecha: `${hoyStr}T10:00:00.000Z`, items: [] },
+          { id: "v2", estado: "Anulada", total: 999999, fecha: `${hoyStr}T11:00:00.000Z`, items: [] }
+        ],
+        movsContables: [
+          { id: "m1", tipo: TIPOS_CONTABLE.INGRESO, origen: "Venta POS", monto: 200000, valor: 200000, fechaEfectiva: hoyStr, fecha: `${hoyStr}T10:00:00.000Z` },
+          { id: "m2", tipo: TIPOS_CONTABLE.INGRESO, origen: "Manual", categoria: "Otros ingresos", monto: 50000, valor: 50000, fechaEfectiva: hoyStr, fecha: `${hoyStr}T12:00:00.000Z` },
+          { id: "m3", tipo: TIPOS_CONTABLE.GASTO, origen: "Manual", categoria: "Transporte", monto: 40000, valor: 40000, estadoPago: "Pagado", fechaEfectiva: hoyStr, fecha: `${hoyStr}T13:00:00.000Z` },
+          { id: "m4", tipo: TIPOS_CONTABLE.TRASLADO, monto: 100000, valor: 100000, fechaEfectiva: hoyStr, fecha: `${hoyStr}T14:00:00.000Z` }
+        ],
+        perfilNegocio: { nombreEstablecimiento: "El Carmen", topeAnualUvt: 183309000, regimenIva: "No responsable de IVA" }
+      }
+    );
+    const libro = rep.libroFiscalDiario;
+    assert(libro && libro.filas.length === 1, "Debe agrupar operaciones del día sin duplicar");
+    assert(libro.filas[0].ingresosDiarios === 250000, `Ingresos diarios debe ser 250000 (200000 venta + 50000 ingreso manual), obtenido ${libro.filas[0].ingresosDiarios}`);
+    assert(libro.filas[0].comprasYPagosDiarios === 40000, `Compras y pagos debe ser 40000, obtenido ${libro.filas[0].comprasYPagosDiarios}`);
+    assert(libro.filas[0].saldoNetoDia === 210000, `Saldo neto día debe ser 210000, obtenido ${libro.filas[0].saldoNetoDia}`);
+    assert(libro.ingresosBrutosAnioActual === 250000, `Ingresos brutos año actual debe ser 250000, obtenido ${libro.ingresosBrutosAnioActual}`);
+    const csv = generarCSVReporte("libro_fiscal", rep);
+    assert(csv.includes("Ingresos Diarios COP;Compras y Pagos Diarios COP") && csv.includes("250000") && csv.includes("210000"), "CSV libro_fiscal debe exportar columnas separadas por ; y totales reales");
+  });
+
+  await step(94, "Prompt 3: Copia de seguridad JSON (exportarRespaldoJSON y restaurarRespaldoJSON)", async () => {
+    resetDatabaseEmpty();
+    await crearProducto({ nombre: "Producto Respaldo", codigo: "RES-1", categoria: "Vidrios", unidad: "u", precio: 25000, stock: 7 }, adminUser);
+    await assertThrows(() => exportarRespaldoJSON(empleadoUser), "permiso");
+
+    const respaldo = exportarRespaldoJSON(adminUser);
+    assert(respaldo.version === 1 && respaldo.colecciones.productos.length === 1, "Respaldo debe empaquetar las colecciones");
+    assert(Object.keys(respaldo.colecciones).length === 11, "Respaldo debe incluir las 11 colecciones");
+
+    await assertThrows(() => restaurarRespaldoJSON("{json corrupto", adminUser), "JSON");
+    await assertThrows(() => restaurarRespaldoJSON({ version: 1, colecciones: { invalida: [] } }, adminUser), "desconocida");
+    await assertThrows(() => restaurarRespaldoJSON(respaldo.jsonString, empleadoUser), "permiso");
+
+    resetDatabaseEmpty();
+    assert(getCollection(COLLECTIONS.PRODUCTOS).length === 0, "BD limpia antes de restaurar");
+
+    const resRestauracion = await restaurarRespaldoJSON(respaldo.jsonString, adminUser);
+    assert(resRestauracion.totalRestaurados >= 1, "Debe restaurar los registros del respaldo");
+    const prodsRestaurados = getCollection(COLLECTIONS.PRODUCTOS);
+    assert(prodsRestaurados.length === 1 && prodsRestaurados[0].codigo === "RES-1", "Producto restaurado correctamente desde JSON");
+  });
+
+  await step(95, "Orden descendente global (más reciente primero) en Productos, Usuarios, Contabilidad, Kardex, Caja, Clientes y Reportes", async () => {
+    resetDatabaseForTests();
+    const waitMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    // 1. Productos: recién creado debe quedar #1 sobre catálogo inicial y sobre productos anteriores
+    const p1 = await crearProducto({ nombre: "Perfil Viejo Test", codigo: "ORD-P1", categoria: "Perfiles", unidad: "m", precio: 15000, stock: 10 }, adminUser);
+    await waitMs(12);
+    const p2 = await crearProducto({ nombre: "Perfil Último Test", codigo: "ORD-P2", categoria: "Perfiles", unidad: "m", precio: 18000, stock: 20 }, adminUser);
+    const listaProds = listarProductos({ incluirInactivos: true });
+    assert(listaProds[0].id === p2.id && listaProds[1].id === p1.id, "listarProductos debe ubicar el producto más reciente primero");
+    let snapProds = [];
+    const unsubP = watchProductos((l) => { snapProds = l; }, { incluirInactivos: true });
+    unsubP();
+    assert(snapProds[0].id === p2.id, "watchProductos debe ubicar el producto más reciente primero");
+
+    // 2. Usuarios: último creado debe aparecer primero
+    await crearUsuario({ nombre: "Ana Primera", email: "ana.primera@elcarmen.com", rol: ROLES.EMPLEADO }, adminUser);
+    await waitMs(12);
+    const uUlt = await crearUsuario({ nombre: "Zulema Última", email: "zulema.ultima@elcarmen.com", rol: ROLES.EMPLEADO }, adminUser);
+    let snapUsers = [];
+    const unsubU = watchUsuarios((l) => { snapUsers = l; });
+    unsubU();
+    assert(snapUsers[0].id === uUlt.id, `watchUsuarios debe mostrar el usuario más reciente primero (esperado ${uUlt.id}, obtenido ${snapUsers[0]?.id})`);
+
+    // 3. Clientes: último creado debe aparecer primero
+    await crearCliente({ nombre: "Cliente Primero", documento: "900111222" }, adminUser);
+    await waitMs(12);
+    const cliUlt = await crearCliente({ nombre: "Cliente Último", documento: "900333444" }, adminUser);
+    let snapClientes = [];
+    const unsubCli = watchClientes((l) => { snapClientes = l; });
+    unsubCli();
+    assert(snapClientes[0].id === cliUlt.id, "watchClientes debe mostrar el cliente recién creado primero");
+
+    // 4. Kardex: último movimiento arriba
+    await waitMs(12);
+    await registrarMovimientoBodega({ productoId: p2.id, tipo: "Entrada", cantidad: 5, motivo: "Compra reciente" }, adminUser);
+    let snapKardex = [];
+    const unsubK = watchMovimientosInventario((l) => { snapKardex = l; });
+    unsubK();
+    assert(snapKardex[0].productoId === p2.id && snapKardex[0].motivo === "Compra reciente", "watchMovimientosInventario debe ordenar del más reciente al más antiguo");
+
+    // 5. Caja y Ventas: última venta y última caja primero
+    const caja1 = await abrirCaja({ montoInicial: 100000 }, adminUser);
+    await waitMs(12);
+    const v1 = await registrarVenta({
+      clienteId: cliUlt.id,
+      items: [{ productoId: p1.id, cantidad: 1 }],
+      pagos: [{ metodo: "Efectivo", importe: 15000 }]
+    }, adminUser);
+    await waitMs(12);
+    const v2 = await registrarVenta({
+      clienteId: cliUlt.id,
+      items: [{ productoId: p2.id, cantidad: 1 }],
+      pagos: [{ metodo: "Efectivo", importe: 18000 }]
+    }, adminUser);
+    assert(listarVentas()[0].id === v2.id, "listarVentas debe mostrar la última venta primero");
+    let snapVentas = [];
+    const unsubV = watchVentas((l) => { snapVentas = l; });
+    unsubV();
+    assert(snapVentas[0].id === v2.id, "watchVentas debe mostrar la última venta primero");
+
+    // 6. Contabilidad: gasto manual registrado después de una venta del mismo día debe aparecer primero por fechaRegistro
+    await waitMs(12);
+    const hoyIso = new Date().toISOString().slice(0, 10);
+    const gastoManual = await registrarMovimientoContable({
+      tipo: TIPOS_CONTABLE.GASTO,
+      categoria: "Transporte",
+      concepto: "Flete último",
+      monto: 12000,
+      metodoPago: "Efectivo",
+      fechaEfectiva: hoyIso
+    }, adminUser);
+    const movsCont = listarMovimientosContables();
+    assert(movsCont[0].id === gastoManual.id, "listarMovimientosContables debe ordenar por fechaRegistro || fecha poniendo el último movimiento arriba");
+    let snapCont = [];
+    const unsubC = watchMovimientosContables((l) => { snapCont = l; });
+    unsubC();
+    assert(snapCont[0].id === gastoManual.id, "watchMovimientosContables debe poner el último movimiento arriba");
+
+    // 7. Reportes consolidados: detalleVentas, movimientosInventario, movimientosContables e inventarioActual en orden descendente
+    const rep = generarReportesConsolidados();
+    assert(rep.inventarioActual[0].id === p2.id, "Reportes.inventarioActual debe conservar orden más reciente primero");
+    assert(rep.detalleVentas[0].ventaId === v2.id, "Reportes.detalleVentas debe mostrar la venta más reciente primero");
+    assert(
+      rep.movimientosInventario[0].productoId === p2.id &&
+        rep.movimientosInventario[0].tipo === "Salida" &&
+        Date.parse(rep.movimientosInventario[0].fecha) >= Date.parse(rep.movimientosInventario[1].fecha),
+      "Reportes.movimientosInventario debe mostrar el último movimiento (venta más reciente) primero"
+    );
+    assert(rep.ingresosYGastos[0].id === gastoManual.id, "Reportes.ingresosYGastos debe mostrar el último movimiento contable primero");
+
+    // Cierre de caja y segunda apertura: verificar watchCajas ordenado descendente por fechaApertura
+    await cerrarCaja({ cajaId: caja1.id, efectivoContado: 121000, observaciones: "Cierre orden" }, adminUser);
+    await waitMs(12);
+    const caja2 = await abrirCaja({ montoInicial: 50000 }, adminUser);
+    let snapCajas = [];
+    const unsubCaja = watchCajas(({ historial }) => { snapCajas = historial; });
+    unsubCaja();
+    assert(snapCajas.length >= 2 && snapCajas[0].id === caja2.id && snapCajas[1].id === caja1.id, "watchCajas debe devolver el turno más reciente primero");
+    assert(v1.id !== v2.id);
+  });
+
   return results.sort((a, b) => a.num - b.num);
 }
 
@@ -3085,6 +3431,19 @@ async function renderInBrowser() {
     .join("");
 }
 
-document.getElementById("btn-run-tests")?.addEventListener("click", renderInBrowser);
-renderInBrowser();
+if (typeof document !== "undefined") {
+  document.getElementById("btn-run-tests")?.addEventListener("click", renderInBrowser);
+  renderInBrowser();
+} else {
+  const list = await runAll25Tests();
+  const passed = list.filter((r) => r.passed).length;
+  const failed = list.length - passed;
+  console.log(`NODE TEST RESULT: ${passed} / ${list.length} Aprobadas (FAIL: ${failed})`);
+  if (failed > 0) {
+    for (const r of list.filter((x) => !x.passed)) {
+      console.error(`FAIL #${r.num}: ${r.title} -> ${r.detail}`);
+    }
+    process.exitCode = 1;
+  }
+}
 
