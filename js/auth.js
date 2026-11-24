@@ -98,20 +98,18 @@ export function applySidebarVisibility(user = getCurrentUser()) {
 
 export function getCurrentUser() {
   try {
+    if (typeof sessionStorage === "undefined") return null;
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && parsed.role) {
+        return parsed;
+      }
     }
   } catch {
     // Ignorar error de sessionStorage
   }
-  return {
-    uid: "usr-owner",
-    email: "vidrios.aluminioselcarmen@gmail.com",
-    name: "Vidrios y Aluminios El Carmen",
-    role: ROLES.ADMIN,
-    activo: true
-  };
+  return null;
 }
 
 export function setCurrentUser(user) {

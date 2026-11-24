@@ -851,3 +851,595 @@ export async function registrarMovimientoBodega(
     }
   );
 }
+
+// ---------------------------------------------------------------------------
+// Importación masiva desde Excel / CSV (mapeo, normalización y transacción)
+// ---------------------------------------------------------------------------
+function normalizarClaveTexto(str) {
+  return String(str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[_\-./]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function parsearCSVTabla(texto) {
+  const limpio = String(texto || "").replace(/^\uFEFF/, "");
+  const lineasRaw = [];
+  let filaActual = [];
+  let celda = "";
+  let enComillas = false;
+  let delimitador = null;
+
+  for (let i = 0; i < limpio.length; i++) {
+    const ch = limpio[i];
+    if (ch === '"') enComillas = !enComillas;
+    else if (!enComillas && (ch === "\n" || ch === "\r")) break;
+    else if (!enComillas && !delimitador && (ch === ";" || ch === ",")) {
+      delimitador = ch;
+    }
+  }
+  if (!delimitador) delimitador = ";";
+  enComillas = false;
+
+  for (let i = 0; i < limpio.length; i++) {
+    const ch = limpio[i];
+    const next = limpio[i + 1];
+    if (enComillas) {
+      if (ch === '"' && next === '"') {
+        celda += '"';
+        i++;
+      } else if (ch === '"') {
+        enComillas = false;
+      } else {
+        celda += ch;
+      }
+    } else if (ch === '"') {
+      enComillas = true;
+    } else if (ch === delimitador) {
+      filaActual.push(celda.trim());
+      celda = "";
+    } else if (ch === "\r" || ch === "\n") {
+      if (ch === "\r" && next === "\n") i++;
+      filaActual.push(celda.trim());
+      if (filaActual.some((c) => c !== "")) lineasRaw.push(filaActual);
+      filaActual = [];
+      celda = "";
+    } else {
+      celda += ch;
+    }
+  }
+  filaActual.push(celda.trim());
+  if (filaActual.some((c) => c !== "")) lineasRaw.push(filaActual);
+
+  if (!lineasRaw.length) return { encabezados: [], filas: [] };
+
+  const encabezados = lineasRaw[0].map((h, idx) => h || `Columna_${idx + 1}`);
+  const filas = lineasRaw.slice(1).map((cols) => {
+    const obj = {};
+    encabezados.forEach((h, idx) => {
+      obj[h] = cols[idx] !== undefined ? cols[idx] : "";
+    });
+    return obj;
+  });
+  return { encabezados, filas };
+}
+
+export function sugerirMapeoColumnasExcel(encabezados = [], user = getCurrentUser()) {
+  assertPermission("inventario.gestionar", user);
+  const cols = (Array.isArray(encabezados) ? encabezados : []).map((raw) => ({
+    raw: String(raw),
+    norm: normalizarClaveTexto(raw)
+  }));
+
+  const usados = new Set();
+  const buscar = (patrones) => {
+    for (const pat of patrones) {
+      const hit = cols.find((c) => !usados.has(c.raw) && c.norm === pat);
+      if (hit) {
+        usados.add(hit.raw);
+        return hit.raw;
+      }
+    }
+    for (const pat of patrones) {
+      const hit = cols.find((c) => !usados.has(c.raw) && c.norm.includes(pat));
+      if (hit) {
+        usados.add(hit.raw);
+        return hit.raw;
+      }
+    }
+    return "";
+  };
+
+  const nombre = buscar(["producto", "nombre", "articulo", "item", "descripcion corta", "referencia"]);
+  const codigo = buscar(["codigo", "cod", "sku", "ref", "referencia", "id"]);
+  const categoria = buscar(["categoria", "linea", "grupo", "familia", "tipo"]);
+  const unidad = buscar(["modalidad / unidad", "modalidad unidad", "unidad", "und", "medida", "modalidad", "u m", "um"]);
+  const precioCompra = buscar(["precio compra", "valor compra", "costo unitario", "costo"]);
+  const precio = buscar(["precio venta", "valor venta", "pvp", "valor publico", "precio", "valor"]);
+  const stockMinimo = buscar(["stock minimo", "minimo", "alerta"]);
+  const stock = buscar(["stock inicial", "stock", "existencias", "cantidad", "cant", "inventario", "saldo"]);
+  const descripcion = buscar(["descripcion", "detalle", "especificacion", "calibre", "acabado", "observacion"]);
+
+  return { nombre, codigo, categoria, unidad, precioCompra, precio, stock, stockMinimo, descripcion };
+}
+
+function limpiarNumeroExcel(raw, { esMoneda = false } = {}) {
+  if (raw === null || raw === undefined) return { ok: true, vacio: true, valor: null };
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw)) return { ok: false, vacio: false, valor: null };
+    return { ok: true, vacio: false, valor: raw };
+  }
+  const txt = String(raw).trim();
+  if (!txt) return { ok: true, vacio: true, valor: null };
+
+  let limpio = txt.replace(/[^0-9.,-]/g, "");
+  if (!limpio || limpio === "-") return { ok: false, vacio: false, valor: null };
+
+  const tieneComa = limpio.includes(",");
+  const tienePunto = limpio.includes(".");
+  if (tieneComa && tienePunto) {
+    const ultComa = limpio.lastIndexOf(",");
+    const ultPunto = limpio.lastIndexOf(".");
+    if (ultComa > ultPunto) {
+      limpio = limpio.replace(/\./g, "").replace(",", ".");
+    } else {
+      limpio = limpio.replace(/,/g, "");
+    }
+  } else if (tienePunto) {
+    if (/^-?\d{1,3}(\.\d{3})+$/.test(limpio)) {
+      limpio = limpio.replace(/\./g, "");
+    }
+  } else if (tieneComa) {
+    if (/^-?\d{1,3}(,\d{3})+$/.test(limpio) && esMoneda) {
+      limpio = limpio.replace(/,/g, "");
+    } else if (/^-?\d{1,3}(,\d{3}){2,}$/.test(limpio)) {
+      limpio = limpio.replace(/,/g, "");
+    } else {
+      limpio = limpio.replace(",", ".");
+    }
+  }
+
+  const num = Number(limpio);
+  if (!Number.isFinite(num)) return { ok: false, vacio: false, valor: null };
+  return { ok: true, vacio: false, valor: num };
+}
+
+function traducirCategoriaExcel(raw, fallback = "Vidrios") {
+  const txt = String(raw || "").trim();
+  if (!txt) return { categoria: fallback, reconocida: true };
+  const norm = normalizarClaveTexto(txt);
+  const mapa = [
+    { cat: "Vidrios", keys: ["vidrio", "espejo", "templado", "crudo", "laminado", "cristal"] },
+    { cat: "Perfiles", keys: ["aluminio", "perfil", "tubo", "angulo", "riel", "marco", "alfajia"] },
+    { cat: "Accesorios", keys: ["accesorio", "herraje", "chapa", "bisagra", "manija", "tornillo", "cerradura", "rueda", "rodamiento", "pomo"] },
+    { cat: "Insumos", keys: ["insumo", "silicona", "sellador", "empaque", "pega", "vinilo", "cinta", "lija"] }
+  ];
+  for (const item of mapa) {
+    if (item.keys.some((k) => norm.includes(k))) {
+      return { categoria: item.cat, reconocida: true };
+    }
+  }
+  return { categoria: txt, reconocida: false };
+}
+
+function traducirUnidadYModalidadExcel(raw, fallback = "u") {
+  const txt = String(raw || "").trim();
+  const base = txt || fallback;
+  const norm = normalizarClaveTexto(base);
+
+  if (["m2", "m²", "metro cuadrado", "metros cuadrados", "mts2", "m^2"].includes(norm) || norm.includes("cuadrado")) {
+    return {
+      modalidad: MODALIDADES_INVENTARIO.METROS_CUADRADOS,
+      unidad: UNIDADES_MEDIDA.METRO_CUADRADO,
+      permiteDecimal: true,
+      permiteDimensiones: true,
+      esPersonalizado: true,
+      reconocida: true
+    };
+  }
+  if (["m", "ml", "mt", "mts", "metro", "metros", "metro lineal", "metros lineales"].includes(norm) || norm.includes("lineal")) {
+    return {
+      modalidad: MODALIDADES_INVENTARIO.METROS_LINEALES,
+      unidad: UNIDADES_MEDIDA.METRO_LINEAL,
+      permiteDecimal: true,
+      permiteDimensiones: false,
+      esPersonalizado: false,
+      reconocida: true
+    };
+  }
+  if (["u", "und", "unds", "unid", "unidad", "unidades", "pza", "pieza", "piezas"].includes(norm)) {
+    return {
+      modalidad: MODALIDADES_INVENTARIO.UNIDADES,
+      unidad: UNIDADES_MEDIDA.UNIDAD,
+      permiteDecimal: false,
+      permiteDimensiones: false,
+      esPersonalizado: false,
+      reconocida: true
+    };
+  }
+  const extras = {
+    lamina: UNIDADES_MEDIDA.LAMINA,
+    kg: UNIDADES_MEDIDA.KILOGRAMO,
+    kilogramo: UNIDADES_MEDIDA.KILOGRAMO,
+    l: UNIDADES_MEDIDA.LITRO,
+    litro: UNIDADES_MEDIDA.LITRO,
+    caja: UNIDADES_MEDIDA.CAJA,
+    paquete: UNIDADES_MEDIDA.PAQUETE,
+    servicio: UNIDADES_MEDIDA.SERVICIO
+  };
+  if (extras[norm]) {
+    const unidad = extras[norm];
+    return {
+      modalidad: MODALIDADES_INVENTARIO.UNIDADES,
+      unidad,
+      permiteDecimal: UNIDADES_DECIMALES.has(unidad),
+      permiteDimensiones: false,
+      esPersonalizado: false,
+      reconocida: true
+    };
+  }
+  return {
+    modalidad: MODALIDADES_INVENTARIO.UNIDADES,
+    unidad: base,
+    permiteDecimal: false,
+    permiteDimensiones: false,
+    esPersonalizado: false,
+    reconocida: false
+  };
+}
+
+export function normalizarYValidarFilasImportacion(
+  filasCrudas = [],
+  mapeo = {},
+  defaults = {},
+  user = getCurrentUser()
+) {
+  assertPermission("inventario.gestionar", user);
+
+  const existentes = Array.isArray(defaults.productosExistentes)
+    ? defaults.productosExistentes
+    : getCollection(COLLECTIONS.PRODUCTOS);
+
+  const porCodigo = new Map();
+  const porNombreCat = new Map();
+  for (const p of existentes) {
+    const c = String(p.codigo || "").trim().toUpperCase();
+    if (c) porCodigo.set(c, p);
+    const nc = `${normalizarClaveTexto(p.nombre)}|${normalizarClaveTexto(p.categoria)}`;
+    if (p.nombre) porNombreCat.set(nc, p);
+  }
+
+  const codigosEnArchivo = new Set();
+  const leerCampo = (fila, campo) => {
+    const src = mapeo?.[campo];
+    if (typeof src === "string" && src.startsWith("__fixed__:")) {
+      return src.slice("__fixed__:".length);
+    }
+    if (src && src !== "__default__" && Object.prototype.hasOwnProperty.call(fila, src)) {
+      return fila[src];
+    }
+    return defaults?.[campo] ?? "";
+  };
+
+  return (Array.isArray(filasCrudas) ? filasCrudas : []).map((fila, idx) => {
+    const filaExcel = fila.__filaExcel || idx + 2;
+    const nombre = String(leerCampo(fila, "nombre") || "").trim();
+    const codigo = String(leerCampo(fila, "codigo") || "").trim().toUpperCase();
+    const descripcion = String(leerCampo(fila, "descripcion") || "").trim();
+
+    const catInfo = traducirCategoriaExcel(leerCampo(fila, "categoria"), defaults.categoria || "Vidrios");
+    const unitInfo = traducirUnidadYModalidadExcel(leerCampo(fila, "unidad"), defaults.unidad || "u");
+
+    const pCompraRes = limpiarNumeroExcel(leerCampo(fila, "precioCompra"), { esMoneda: true });
+    const pVentaRes = limpiarNumeroExcel(leerCampo(fila, "precio"), { esMoneda: true });
+    const stockRes = limpiarNumeroExcel(leerCampo(fila, "stock"), { esMoneda: false });
+    const minRes = limpiarNumeroExcel(leerCampo(fila, "stockMinimo"), { esMoneda: false });
+
+    const precioCompra = pCompraRes.vacio ? roundCOP(defaults.precioCompra ?? 0) : pCompraRes.ok ? roundCOP(pCompraRes.valor) : NaN;
+    const precio = pVentaRes.vacio
+      ? (defaults.precio !== undefined && defaults.precio !== "" ? roundCOP(defaults.precio) : NaN)
+      : pVentaRes.ok
+        ? roundCOP(pVentaRes.valor)
+        : NaN;
+    const stock = stockRes.vacio ? roundQty(defaults.stock ?? 0) : stockRes.ok ? roundQty(stockRes.valor) : NaN;
+    const stockMinimo = minRes.vacio ? roundQty(defaults.stockMinimo ?? 0) : minRes.ok ? roundQty(minRes.valor) : NaN;
+
+    const errores = [];
+    const alertas = [];
+
+    if (!nombre) errores.push("Falta el nombre del producto");
+    if (!Number.isFinite(precio) || precio < 0) errores.push("Precio de venta inválido o faltante");
+    if (!Number.isFinite(precioCompra) || precioCompra < 0) errores.push("Precio de compra inválido");
+    if (!Number.isFinite(stock) || stock < 0) errores.push("Stock inválido");
+    if (!Number.isFinite(stockMinimo) || stockMinimo < 0) errores.push("Stock mínimo inválido");
+
+    if (!catInfo.reconocida) alertas.push(`Categoría no reconocida ("${catInfo.categoria}")`);
+    if (!unitInfo.reconocida) alertas.push(`Unidad no reconocida ("${unitInfo.unidad}")`);
+    if (
+      unitInfo.reconocida &&
+      !unitInfo.permiteDecimal &&
+      ((Number.isFinite(stock) && !Number.isInteger(stock)) ||
+        (Number.isFinite(stockMinimo) && !Number.isInteger(stockMinimo)))
+    ) {
+      alertas.push(`Unidad "${unitInfo.unidad}" requiere cantidades enteras (cambia a m/m² o ajusta a entero)`);
+    }
+
+    let productoExistente = null;
+    let duplicadoEnArchivo = false;
+    if (codigo) {
+      if (codigosEnArchivo.has(codigo)) {
+        duplicadoEnArchivo = true;
+        errores.push(`Código "${codigo}" repetido dentro del archivo`);
+      } else {
+        codigosEnArchivo.add(codigo);
+      }
+      if (porCodigo.has(codigo)) productoExistente = porCodigo.get(codigo);
+    } else if (nombre && catInfo.reconocida) {
+      const nc = `${normalizarClaveTexto(nombre)}|${normalizarClaveTexto(catInfo.categoria)}`;
+      if (porNombreCat.has(nc)) {
+        productoExistente = porNombreCat.get(nc);
+        alertas.push(`Posible duplicado de "${productoExistente.nombre}"`);
+      }
+    }
+
+    let estado = "nuevo";
+    let bloqueante = false;
+    if (errores.length > 0 || duplicadoEnArchivo) {
+      estado = "error";
+      bloqueante = true;
+    } else if (
+      alertas.length > 0 &&
+      (!catInfo.reconocida ||
+        !unitInfo.reconocida ||
+        (!unitInfo.permiteDecimal && (!Number.isInteger(stock) || !Number.isInteger(stockMinimo))))
+    ) {
+      estado = "alerta";
+      bloqueante = true;
+    } else if (productoExistente) {
+      estado = "duplicado";
+    } else if (alertas.length > 0) {
+      estado = "alerta";
+    }
+
+    const incluir = typeof fila.__incluirManual === "boolean" ? fila.__incluirManual && !bloqueante : !bloqueante;
+    const mensaje =
+      errores[0] ||
+      alertas[0] ||
+      (productoExistente ? `Ya existe (${productoExistente.codigo || productoExistente.nombre})` : "Listo para importar");
+
+    return {
+      filaExcel,
+      incluir,
+      nombre,
+      codigo,
+      categoria: catInfo.categoria,
+      modalidad: unitInfo.modalidad,
+      unidad: unitInfo.unidad,
+      permiteDecimal: unitInfo.permiteDecimal,
+      permiteDimensiones: unitInfo.permiteDimensiones,
+      esPersonalizado: unitInfo.esPersonalizado,
+      precioCompra: Number.isFinite(precioCompra) ? precioCompra : 0,
+      precio: Number.isFinite(precio) ? precio : 0,
+      stock: Number.isFinite(stock) ? stock : 0,
+      stockMinimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
+      descripcion,
+      estado,
+      bloqueante,
+      productoExistenteId: productoExistente?.id || null,
+      mensaje
+    };
+  });
+}
+
+export async function importarProductosMasivo(
+  filasPreparadas = [],
+  { modoDuplicados = "omitir" } = {},
+  user = getCurrentUser()
+) {
+  assertPermission("inventario.gestionar", user);
+  const seleccionadas = (Array.isArray(filasPreparadas) ? filasPreparadas : []).filter(
+    (f) => f && f.incluir === true && f.estado !== "error" && !f.bloqueante
+  );
+
+  return runAtomicTransaction(async (tx) => {
+    const existentes = tx.getAll(COLLECTIONS.PRODUCTOS);
+    const porId = new Map(existentes.map((p) => [p.id, p]));
+    const codigosUsados = new Set(
+      existentes.map((p) => String(p.codigo || "").trim().toUpperCase()).filter(Boolean)
+    );
+
+    let maxSeq = 0;
+    for (const c of codigosUsados) {
+      const m = /^PR-(\d+)$/.exec(c);
+      if (m) maxSeq = Math.max(maxSeq, Number(m[1]));
+    }
+    const generarCodigoConsecutivo = () => {
+      let cand = "";
+      do {
+        maxSeq += 1;
+        cand = `PR-${String(maxSeq).padStart(4, "0")}`;
+      } while (codigosUsados.has(cand));
+      codigosUsados.add(cand);
+      return cand;
+    };
+
+    const baseTs = Date.now();
+    let creados = 0;
+    let actualizados = 0;
+    let omitidos = 0;
+    const errores = (Array.isArray(filasPreparadas) ? filasPreparadas : []).filter(
+      (f) => f && (f.estado === "error" || f.bloqueante)
+    ).length;
+    const productosCreadosIds = [];
+
+    for (let i = 0; i < seleccionadas.length; i++) {
+      const fila = seleccionadas[i];
+      const marcaTs = new Date(baseTs + i).toISOString();
+      const existente =
+        (fila.productoExistenteId && porId.get(fila.productoExistenteId)) ||
+        (fila.codigo && existentes.find((p) => String(p.codigo || "").trim().toUpperCase() === fila.codigo));
+
+      if (existente) {
+        if (modoDuplicados === "omitir") {
+          omitidos += 1;
+          continue;
+        }
+        const cambios = {
+          nombre: fila.nombre,
+          descripcion: fila.descripcion,
+          categoria: fila.categoria,
+          modalidad: fila.modalidad,
+          unidad: fila.unidad,
+          permiteDecimal: Boolean(fila.permiteDecimal),
+          permiteDimensiones: Boolean(fila.permiteDimensiones),
+          esPersonalizado: Boolean(fila.esPersonalizado),
+          precioCompra: roundCOP(fila.precioCompra),
+          precio: roundCOP(fila.precio),
+          stockMinimo: roundQty(fila.stockMinimo),
+          actualizadoEn: marcaTs
+        };
+
+        const stockCant = roundQty(fila.stock || 0);
+        if (modoDuplicados === "actualizar_y_sumar_stock" && stockCant > 0) {
+          const stockAnt = roundQty(existente.stock || 0);
+          const stockNuevo = roundQty(stockAnt + stockCant);
+          cambios.stock = stockNuevo;
+          tx.insert(COLLECTIONS.MOV_INVENTARIO, {
+            productoId: existente.id,
+            codigo: existente.codigo,
+            productoNombre: fila.nombre,
+            unidad: fila.unidad,
+            tipo: "Entrada",
+            origen: "Importación Excel",
+            cantidad: stockCant,
+            stockAnterior: stockAnt,
+            stockNuevo,
+            motivo: "Importación masiva desde Excel",
+            usuario: user.name || user.email,
+            fecha: marcaTs
+          });
+        }
+
+        tx.update(COLLECTIONS.PRODUCTOS, existente.id, cambios);
+        actualizados += 1;
+        continue;
+      }
+
+      const codigoFinal = fila.codigo
+        ? codigosUsados.has(fila.codigo)
+          ? generarCodigoConsecutivo()
+          : (codigosUsados.add(fila.codigo), fila.codigo)
+        : generarCodigoConsecutivo();
+
+      const stockInicial = roundQty(fila.stock || 0);
+      const nuevo = tx.insert(COLLECTIONS.PRODUCTOS, {
+        codigo: codigoFinal,
+        nombre: fila.nombre,
+        descripcion: fila.descripcion,
+        categoria: fila.categoria,
+        modalidad: fila.modalidad,
+        unidad: fila.unidad,
+        permiteDecimal: Boolean(fila.permiteDecimal),
+        permiteDimensiones: Boolean(fila.permiteDimensiones),
+        esPersonalizado: Boolean(fila.esPersonalizado),
+        precioCompra: roundCOP(fila.precioCompra),
+        precio: roundCOP(fila.precio),
+        stock: stockInicial,
+        stockMinimo: roundQty(fila.stockMinimo),
+        activo: true,
+        creadoPor: user.name || user.email,
+        creadoEn: marcaTs,
+        actualizadoEn: marcaTs
+      });
+      porId.set(nuevo.id, nuevo);
+      productosCreadosIds.push(nuevo.id);
+      creados += 1;
+
+      if (stockInicial > 0) {
+        tx.insert(COLLECTIONS.MOV_INVENTARIO, {
+          productoId: nuevo.id,
+          codigo: nuevo.codigo,
+          productoNombre: nuevo.nombre,
+          unidad: nuevo.unidad,
+          tipo: "Entrada",
+          origen: "Stock inicial",
+          cantidad: stockInicial,
+          stockAnterior: 0,
+          stockNuevo: stockInicial,
+          motivo: "Importación inicial desde Excel",
+          usuario: user.name || user.email,
+          fecha: marcaTs
+        });
+      }
+    }
+
+    const omitidosDeseleccionados = (Array.isArray(filasPreparadas) ? filasPreparadas : []).filter(
+      (f) => f && !f.incluir && f.estado !== "error" && !f.bloqueante
+    ).length;
+    omitidos += omitidosDeseleccionados;
+
+    tx.insert(COLLECTIONS.AUDITORIA, {
+      accion: "PRODUCTOS_IMPORTACION_EXCEL",
+      creados,
+      actualizados,
+      omitidos,
+      errores,
+      modoDuplicados,
+      usuario: user.name || user.email,
+      fecha: new Date().toISOString()
+    });
+
+    return { creados, actualizados, omitidos, errores, productosCreadosIds };
+  });
+}
+
+export function descargarPlantillaInventarioExcel({ formato = "xlsx" } = {}, user = getCurrentUser()) {
+  assertPermission("inventario.gestionar", user);
+  const encabezados = [
+    "Código",
+    "Nombre",
+    "Categoría",
+    "Modalidad / Unidad",
+    "Precio compra",
+    "Precio venta",
+    "Stock inicial",
+    "Stock mínimo",
+    "Descripción"
+  ];
+  const ejemplos = [
+    ["VT-010", "Vidrio templado 10 mm", "Vidrios", "m²", 68000, 115000, 15.5, 5, "Lámina de seguridad 10 mm incolora"],
+    ['PA-200', 'Perfil marco corredizo 2"', "Perfiles", "m", 14500, 24000, 40, 10, "Aluminio anodizado natural"],
+    ["CH-050", "Chapa pico de loro", "Accesorios", "u", 18000, 32000, 25, 6, "Cerradura para puerta corrediza"]
+  ];
+
+  if (typeof document === "undefined") {
+    return { encabezados, ejemplos };
+  }
+
+  if (formato === "xlsx" && typeof window !== "undefined" && window.XLSX) {
+    const ws = window.XLSX.utils.aoa_to_sheet([encabezados, ...ejemplos]);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+    window.XLSX.writeFile(wb, "plantilla-inventario-elcarmen.xlsx");
+    return { encabezados, ejemplos, formato: "xlsx" };
+  }
+
+  const esc = (v) => {
+    const s = String(v ?? "");
+    return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [encabezados.map(esc).join(";"), ...ejemplos.map((r) => r.map(esc).join(";"))].join("\r\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "plantilla-inventario-elcarmen.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return { encabezados, ejemplos, formato: "csv" };
+}

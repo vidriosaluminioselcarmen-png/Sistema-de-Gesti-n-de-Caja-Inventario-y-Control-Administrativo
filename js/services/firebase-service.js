@@ -100,6 +100,18 @@ export function traducirErrorFirebase(error) {
   if (code.includes("resource-exhausted")) {
     return "Límite de operaciones simultáneas alcanzado en Firestore. Espera un momento e intenta nuevamente.";
   }
+  if (code.includes("auth/configuration-not-found") || code.includes("auth/operation-not-allowed")) {
+    return "El proveedor Correo/Contraseña no está habilitado en Firebase Authentication. Actívalo en Firebase Console > Authentication > Sign-in method.";
+  }
+  if (code.includes("auth/email-already-in-use")) {
+    return "Este correo electrónico ya está registrado en Firebase Authentication.";
+  }
+  if (code.includes("auth/weak-password")) {
+    return "La contraseña debe tener al menos 6 caracteres en Firebase Authentication.";
+  }
+  if (code.includes("auth/invalid-email")) {
+    return "El correo electrónico ingresado no tiene un formato válido.";
+  }
   if (code.includes("auth/invalid-credential") || code.includes("auth/wrong-password") || code.includes("auth/user-not-found")) {
     return "Correo electrónico o contraseña incorrectos en Firebase Authentication.";
   }

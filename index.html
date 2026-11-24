@@ -1191,6 +1191,7 @@
           </div>
           <div class="page-actions">
             <button type="button" class="btn btn-primary" id="btn-nuevo-producto">+ Nuevo Producto</button>
+            <button type="button" class="btn btn-outline" id="btn-abrir-importar-excel">Importar Excel</button>
             <button type="button" class="btn btn-outline" id="btn-abrir-entrada">+ Registrar Entrada (Compra)</button>
             <button type="button" class="btn btn-outline" id="btn-abrir-salida">− Registrar Salida / Baja</button>
             <button type="button" class="btn btn-outline" id="btn-abrir-kardex">Kardex / Movimientos (<span id="inv-kardex-total-badge">0</span>)</button>
@@ -1630,6 +1631,108 @@
                 <button type="submit" class="btn btn-primary" id="btn-guardar-producto">Guardar producto</button>
               </div>
             </form>
+          </div>
+        </div>
+
+        <!-- Modal: Importar productos desde Excel / CSV -->
+        <div class="modal-overlay" id="modal-importar-excel" role="dialog" aria-modal="true" aria-labelledby="titulo-importar-excel" style="z-index: 1140">
+          <div class="modal inv-import-modal">
+            <div class="modal-header">
+              <div>
+                <h3 id="titulo-importar-excel">Importar productos desde Excel</h3>
+                <p class="text-sm text-muted" style="margin:.15rem 0 0">Carga un archivo .xlsx, .xls o .csv, empareja tus columnas y revisa los datos antes de guardar</p>
+              </div>
+              <button type="button" class="modal-close" data-close-importar-excel aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body inv-import-body">
+              <div id="inv-import-error" class="alert alert-danger hidden" role="alert"></div>
+
+              <!-- Paso 1: Archivo o plantilla -->
+              <section class="inv-import-step">
+                <div class="inv-import-step-head">
+                  <div>
+                    <h4 class="inv-import-step-title">1. Cargar archivo o descargar plantilla</h4>
+                    <p class="text-xs text-muted" style="margin:.15rem 0 0">Funciona con archivos .xlsx, .xls o .csv (incluso si tus columnas tienen otros nombres u orden)</p>
+                  </div>
+                  <div class="inv-import-tpl-actions">
+                    <button type="button" class="btn btn-outline btn-sm" id="btn-descargar-plantilla-xlsx">Descargar plantilla Excel (.xlsx)</button>
+                    <button type="button" class="btn btn-outline btn-sm" id="btn-descargar-plantilla-csv">Plantilla CSV</button>
+                  </div>
+                </div>
+                <div class="inv-import-file-row">
+                  <label class="label" for="inv-import-archivo" style="margin:0">Seleccionar archivo:</label>
+                  <input class="input" id="inv-import-archivo" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+                  <span class="text-sm text-muted" id="inv-import-archivo-info">Ningún archivo seleccionado</span>
+                </div>
+              </section>
+
+              <!-- Paso 2: Emparejar columnas -->
+              <section class="inv-import-step hidden" id="inv-import-paso-mapeo">
+                <div class="inv-import-step-head">
+                  <div>
+                    <h4 class="inv-import-step-title">2. Emparejar columnas</h4>
+                    <p class="text-xs text-muted" style="margin:.15rem 0 0">Campo del sistema &larr; Columna de tu Excel (o elige un valor fijo por defecto)</p>
+                  </div>
+                </div>
+                <div class="inv-import-map-grid" id="inv-import-mapeo-grid"></div>
+              </section>
+
+              <!-- Paso 3: Vista previa editable -->
+              <section class="inv-import-step hidden" id="inv-import-paso-preview">
+                <div class="inv-import-step-head">
+                  <div>
+                    <h4 class="inv-import-step-title">3. Vista previa editable antes de guardar</h4>
+                    <p class="text-xs text-muted" style="margin:.15rem 0 0">Puedes editar cualquier celda directamente aquí antes de confirmar</p>
+                  </div>
+                </div>
+
+                <div class="inv-import-stats">
+                  <div class="inv-import-stat"><span class="text-xs text-muted">Total filas</span><b class="num" id="imp-stat-total">0</b></div>
+                  <div class="inv-import-stat is-ok"><span class="text-xs text-muted">Nuevos listos</span><b class="num text-success" id="imp-stat-nuevos">0</b></div>
+                  <div class="inv-import-stat is-warn"><span class="text-xs text-muted">Ya existentes</span><b class="num text-warning" id="imp-stat-duplicados">0</b></div>
+                  <div class="inv-import-stat is-err"><span class="text-xs text-muted">Error / por corregir</span><b class="num text-danger" id="imp-stat-errores">0</b></div>
+                </div>
+
+                <div class="inv-import-options-row">
+                  <div class="field" style="flex:1 1 280px; margin:0">
+                    <label class="label" for="inv-import-modo-duplicados">Si un producto ya existe:</label>
+                    <select class="select" id="inv-import-modo-duplicados">
+                      <option value="omitir">Omitir existentes (recomendado)</option>
+                      <option value="actualizar_datos">Actualizar precios y datos (sin tocar stock)</option>
+                      <option value="actualizar_y_sumar_stock">Actualizar datos y sumar stock al Kardex</option>
+                    </select>
+                  </div>
+                  <label class="check" style="align-self:end">
+                    <input type="checkbox" id="inv-import-check-all" checked> Seleccionar todos los válidos
+                  </label>
+                </div>
+
+                <div class="table-wrap inv-import-table-wrap">
+                  <table class="table inv-import-table" id="tabla-importar-preview">
+                    <thead>
+                      <tr>
+                        <th>Incluir</th>
+                        <th>Fila / Estado</th>
+                        <th>Código</th>
+                        <th>Nombre *</th>
+                        <th>Categoría</th>
+                        <th>Modalidad / Unidad</th>
+                        <th class="num">Compra ($)</th>
+                        <th class="num">Venta ($)</th>
+                        <th class="num">Stock</th>
+                        <th class="num">Mínimo</th>
+                        <th>Detalle / Aviso</th>
+                      </tr>
+                    </thead>
+                    <tbody id="inv-import-preview-body"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline" data-close-importar-excel>Cancelar</button>
+              <button type="button" class="btn btn-primary" id="btn-confirmar-importacion" disabled>Importar 0 productos listos</button>
+            </div>
           </div>
         </div>
       </div>
@@ -2873,8 +2976,8 @@
                   </select>
                 </div>
                 <div class="field full">
-                  <label class="label" for="usr-clave">Clave / PIN de acceso (opcional, mín. 4 caracteres)</label>
-                  <input class="input" id="usr-clave" type="password" minlength="4" autocomplete="new-password" placeholder="Dejar vacío para mantener la actual">
+                  <label class="label" for="usr-clave">Contraseña / PIN de acceso * (mín. 6 caracteres en Firebase)</label>
+                  <input class="input" id="usr-clave" type="password" minlength="4" autocomplete="new-password" placeholder="Mínimo 6 caracteres para crear cuenta en Firebase Auth">
                 </div>
                 <div class="field full">
                   <div id="usr-error" class="alert alert-danger hidden"></div>
@@ -2889,6 +2992,7 @@
         </div>
       </div>
   </template>
+  <script src="js/vendor/xlsx.full.min.js" defer></script>
   <script type="module" src="js/app.js?v=3"></script>
 </body>
 </html>

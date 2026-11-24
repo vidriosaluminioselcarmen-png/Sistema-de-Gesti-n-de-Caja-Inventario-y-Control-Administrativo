@@ -224,3 +224,86 @@ export async function getFirebaseClients() {
   }
   return firebaseClientsPromise;
 }
+
+/**
+ * Crea un usuario en Firebase Authentication mediante una instancia secundaria temporal
+ * para no cerrar la sesión activa del Administrador actual y cierra la app temporal al terminar.
+ */
+export async function crearUsuarioEnAuthSecundaria({
+  email,
+  password,
+  nombre = "",
+  afterAuthCreate = null
+}) {
+  if (simulatedOffline || isNetworkOffline()) {
+    throw new Error("No fue posible conectar con Firebase Authentication: error de red.");
+  }
+  if (!isFirebaseConfigured()) {
+    throw new Error("Firebase Authentication no está configurado.");
+  }
+
+  const [{ initializeApp, getApps, deleteApp }, authMod] = await Promise.all([
+    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js")
+  ]);
+
+  const cfg = getEffectiveFirebaseConfig();
+  if (emulatorConfig.enabled) {
+    assertSafeEmulatorEnvironment(null);
+  }
+
+  const workerName = `SecondaryAuthWorker_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const existing = getApps().find((a) => a.name === workerName);
+  const secondaryApp = existing || initializeApp(cfg, workerName);
+
+  try {
+    const secAuth = authMod.getAuth(secondaryApp);
+    if (emulatorConfig.enabled) {
+      authMod.connectAuthEmulator(secAuth, emulatorConfig.authUrl, { disableWarnings: true });
+    }
+
+    const cred = await authMod.createUserWithEmailAndPassword(secAuth, email, password);
+    if (nombre && typeof authMod.updateProfile === "function" && cred.user) {
+      try {
+        await authMod.updateProfile(cred.user, { displayName: nombre });
+      } catch {
+        // Ignorar si la actualización opcional de displayName no está disponible
+      }
+    }
+
+    let resultado = {
+      uid: cred.user?.uid,
+      email: cred.user?.email || email
+    };
+
+    if (typeof afterAuthCreate === "function") {
+      try {
+        resultado = await afterAuthCreate(resultado);
+      } catch (err) {
+        // Evitar cuentas huérfanas en Firebase Auth si falla la escritura en Firestore
+        if (cred.user && typeof cred.user.delete === "function") {
+          try {
+            await cred.user.delete();
+          } catch {
+            // Ignorar si no fue posible revertir Auth
+          }
+        }
+        throw err;
+      }
+    }
+
+    try {
+      await authMod.signOut(secAuth);
+    } catch {
+      // Ignorar fallo menor al cerrar sesión de la instancia secundaria
+    }
+
+    return resultado;
+  } finally {
+    try {
+      await deleteApp(secondaryApp);
+    } catch {
+      // No ocultar el error principal si deleteApp falla
+    }
+  }
+}

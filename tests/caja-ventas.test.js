@@ -13,7 +13,7 @@ import {
   exportarRespaldoJSON,
   restaurarRespaldoJSON
 } from "../js/services/store.js";
-import { ROLES, hasPermission, assertPermission } from "../js/auth.js";
+import { ROLES, getCurrentUser, hasPermission, assertPermission } from "../js/auth.js";
 import {
   getFirebaseStatus,
   setSimulatedNetworkOffline,
@@ -41,6 +41,10 @@ import {
   inferirModalidadProducto,
   calcularAreaLaminas,
   calcularResumenInventario,
+  parsearCSVTabla,
+  sugerirMapeoColumnasExcel,
+  normalizarYValidarFilasImportacion,
+  importarProductosMasivo,
   roundQty,
   roundCOP
 } from "../js/services/inventario-service.js";
@@ -781,6 +785,21 @@ export async function runAll25Tests() {
     assert(hasPermission("usuarios.gestionar", cajeroRoleUser) === false, "Cajero no puede gestionar usuarios");
     assert(hasPermission("inventario.gestionar", invRoleUser) === true, "Rol Inventario puede gestionar productos");
     assert(hasPermission("caja.abrir", invRoleUser) === false, "Rol Inventario no puede abrir caja");
+
+    // Sin sesión activa no debe existir fallback automático de Administrador
+    assert(getCurrentUser() === null, "Sin sesión iniciada, getCurrentUser() debe devolver null");
+    assert(hasPermission("usuarios.gestionar") === false, "Sin sesión activa hasPermission debe devolver false");
+    await assertThrows(() => assertPermission("ventas.registrar"), "iniciar sesión");
+
+    // Usuario activo sin clave local configurada tampoco debe poder autenticarse localmente
+    await crearUsuario(
+      { nombre: "Operador Sin Clave", email: "sinpin@elcarmen.com", rol: ROLES.CAJERO },
+      adminUser
+    );
+    await assertThrows(
+      () => autenticarUsuario({ email: "sinpin@elcarmen.com", password: "cualquierclave" }),
+      "clave"
+    );
 
     // Crear un usuario y luego desactivarlo
     const usrNuevo = await crearUsuario(
@@ -3390,6 +3409,74 @@ export async function runAll25Tests() {
     unsubCaja();
     assert(snapCajas.length >= 2 && snapCajas[0].id === caja2.id && snapCajas[1].id === caja1.id, "watchCajas debe devolver el turno más reciente primero");
     assert(v1.id !== v2.id);
+  });
+
+  await step(96, "Importación masiva Excel/CSV: mapeo, traductor, validaciones, transacción atómica, Kardex y venta POS", async () => {
+    resetDatabaseEmpty();
+    const existente = await crearProducto(
+      { nombre: "Chapa Existente", codigo: "CH-01", categoria: "Accesorios", unidad: "u", precioCompra: 10000, precio: 20000, stock: 10, stockMinimo: 2 },
+      adminUser
+    );
+
+    await assertThrows(() => sugerirMapeoColumnasExcel(["ARTICULO"], empleadoUser), "permiso");
+
+    // 1. Parser CSV con BOM, punto y coma y comillas
+    const csvSample = "\uFEFFVALOR;ARTICULO;CANT;LINEA;UND;SKU\r\n\"$ 35.000\";\"Perfil Aluminio 2\"\"\";\"12,5\";Aluminio;ml;\r\n\"$ 80.000\";Vidrio Templado 8mm;6.5;Templado;m2;VT-800\r\n\"$ 25.000\";;5;Herraje;u;\r\n\"$ 22.000\";Chapa Renovada;3;Accesorios;u;CH-01\r\n\"$ 10.000\";Repetido;2;Insumos;u;VT-800";
+    const parsed = parsearCSVTabla(csvSample);
+    assert(parsed.encabezados.length === 6 && parsed.filas.length === 5, "Debe parsear CSV con BOM y comillas");
+
+    const mapeo = sugerirMapeoColumnasExcel(parsed.encabezados, adminUser);
+    assert(mapeo.nombre === "ARTICULO" && mapeo.precio === "VALOR" && mapeo.stock === "CANT", `Mapeo automático incorrecto: ${JSON.stringify(mapeo)}`);
+    assert(mapeo.categoria === "LINEA" && mapeo.unidad === "UND" && mapeo.codigo === "SKU", "Debe mapear categoría, unidad y código");
+
+    const preparadas = normalizarYValidarFilasImportacion(parsed.filas, mapeo, { stockMinimo: 4 }, adminUser);
+    assert(preparadas[0].categoria === "Perfiles" && preparadas[0].unidad === "m" && preparadas[0].precio === 35000 && preparadas[0].stock === 12.5 && preparadas[0].estado === "nuevo", "Debe traducir Aluminio->Perfiles, ml->m y $ 35.000->35000");
+    assert(preparadas[1].categoria === "Vidrios" && preparadas[1].unidad === "m²" && preparadas[1].permiteDimensiones === true, "Debe traducir Templado->Vidrios y m2->m² con dimensiones");
+    assert(preparadas[2].estado === "error" && preparadas[2].bloqueante && !preparadas[2].incluir, "Fila sin nombre debe quedar bloqueada como error");
+    assert(preparadas[3].estado === "duplicado" && preparadas[3].productoExistenteId === existente.id, "Debe detectar duplicado por código CH-01");
+    assert(preparadas[4].estado === "error" && preparadas[4].mensaje.includes("repetido"), "Debe detectar código repetido VT-800 dentro del mismo archivo");
+
+    // Coherencia entero vs decimal en unidad "u"
+    const decUnidad = normalizarYValidarFilasImportacion(
+      [{ ARTICULO: "Tornillo", VALOR: "500", CANT: "2.5", LINEA: "Herraje", UND: "u" }],
+      mapeo,
+      {},
+      adminUser
+    );
+    assert(decUnidad[0].bloqueante && decUnidad[0].mensaje.includes("enteras"), "Debe alertar cantidad decimal en unidad 'u'");
+
+    // 2. Importación atómica (modo omitir) -> crea los 2 nuevos, omite CH-01, reporta errores
+    const res1 = await importarProductosMasivo(preparadas, { modoDuplicados: "omitir" }, adminUser);
+    assert(res1.creados === 2 && res1.actualizados === 0 && res1.omitidos === 1 && res1.errores === 2, `Conteos inesperados: ${JSON.stringify(res1)}`);
+
+    const prods = listarProductos();
+    const perfil = prods.find((p) => p.nombre.includes("Perfil Aluminio"));
+    const vidrio = prods.find((p) => p.codigo === "VT-800");
+    assert(perfil && /^PR-\d{4}$/.test(perfil.codigo), `Debe autogenerar código consecutivo PR-XXXX, obtenido ${perfil?.codigo}`);
+    assert(vidrio && vidrio.stock === 6.5 && vidrio.permiteDimensiones, "Vidrio importado debe conservar stock 6.5 m²");
+
+    // Verificar Kardex inicial y auditoría
+    const movsInv = getCollection(COLLECTIONS.MOV_INVENTARIO);
+    assert(movsInv.some((m) => m.productoId === vidrio.id && m.tipo === "Entrada" && m.origen === "Stock inicial" && m.cantidad === 6.5), "Debe crear entrada inicial en Kardex");
+    const aud = getCollection(COLLECTIONS.AUDITORIA);
+    assert(aud.some((a) => a.accion === "PRODUCTOS_IMPORTACION_EXCEL" && a.creados === 2), "Debe registrar auditoría PRODUCTOS_IMPORTACION_EXCEL");
+
+    // 3. Modo actualizar_y_sumar_stock sobre CH-01
+    const res2 = await importarProductosMasivo([preparadas[3]], { modoDuplicados: "actualizar_y_sumar_stock" }, adminUser);
+    assert(res2.actualizados === 1, "Debe actualizar producto existente");
+    const chActualizado = getDocById(COLLECTIONS.PRODUCTOS, existente.id);
+    assert(chActualizado.precio === 22000 && chActualizado.stock === 13, `Debe actualizar precio a 22000 y sumar stock a 13 (obtenido ${chActualizado.stock})`);
+
+    // 4. Vender producto importado (Vidrio m²) desde Caja y confirmar descuento real de existencias
+    await abrirCaja({ montoInicial: 50000 }, adminUser);
+    const cli = await crearCliente({ nombre: "Cliente Excel Test", documento: "777888999" }, adminUser);
+    await registrarVenta({
+      clienteId: cli.id,
+      items: [{ productoId: vidrio.id, cantidad: 2.5 }],
+      pagos: [{ metodo: "Efectivo", importe: 200000 }]
+    }, adminUser);
+    const vidrioPost = getDocById(COLLECTIONS.PRODUCTOS, vidrio.id);
+    assert(vidrioPost.stock === 4, `Stock de vidrio importado debe bajar de 6.5 a 4, obtenido ${vidrioPost.stock}`);
   });
 
   return results.sort((a, b) => a.num - b.num);

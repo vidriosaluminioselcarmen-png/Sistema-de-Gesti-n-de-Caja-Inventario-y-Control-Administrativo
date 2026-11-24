@@ -1587,3 +1587,109 @@
   .modalidad-toggle { grid-template-columns: 1fr; }
   .cart-pay-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- Modal Importar Excel en Inventario (#modal-importar-excel) ---------- */
+.modal.inv-import-modal {
+  max-width: 1360px;
+  width: 96vw;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal.inv-import-modal .modal-header,
+.modal.inv-import-modal .modal-footer { flex-shrink: 0; }
+.inv-import-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+.inv-import-step {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  display: grid;
+  gap: .85rem;
+}
+.inv-import-step-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+.inv-import-step-title { margin: 0; font-size: 1rem; color: var(--text-primary); }
+.inv-import-tpl-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.inv-import-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .65rem 1rem;
+}
+.inv-import-file-row .input { flex: 1 1 260px; max-width: 460px; }
+.inv-import-map-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
+}
+.inv-import-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .65rem;
+}
+.inv-import-stat {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: .65rem .85rem;
+  display: grid;
+  gap: .15rem;
+}
+.inv-import-stat b { font-size: 1.25rem; }
+.inv-import-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: .75rem 1rem;
+}
+.inv-import-table-wrap {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+.inv-import-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: .65rem .55rem;
+  font-size: .76rem;
+}
+.inv-import-table td { padding: .5rem .45rem; vertical-align: middle; }
+.inv-import-table .input,
+.inv-import-table .select {
+  min-height: 36px;
+  padding: .3rem .5rem;
+  font-size: .88rem;
+}
+.inv-import-table tr.is-error { background: var(--row-out-bg); }
+.inv-import-table tr.is-alerta { background: var(--row-low-bg); }
+@media (max-width: 960px) {
+  .inv-import-map-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .inv-import-map-grid,
+  .inv-import-stats { grid-template-columns: 1fr 1fr; }
+  .inv-import-step { padding: .85rem .9rem; }
+  .inv-import-tpl-actions { width: 100%; }
+  .inv-import-tpl-actions .btn { flex: 1 1 auto; }
+}
+@media (max-width: 420px) {
+  .inv-import-map-grid { grid-template-columns: 1fr; }
+}

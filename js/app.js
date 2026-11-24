@@ -40,11 +40,7 @@ const dashboardView = document.getElementById("dashboard-view");
 const loginForm = document.getElementById("login-form");
 
 function hasActiveSession() {
-  try {
-    return Boolean(sessionStorage.getItem("elcarmen_spa_session"));
-  } catch {
-    return false;
-  }
+  return Boolean(getCurrentUser());
 }
 
 export function renderFirebaseConnectionBadge(liveStatus = null) {
@@ -138,8 +134,11 @@ function setupEventDelegation() {
       e.preventDefault();
       ocultarErrorLogin();
       try {
-        const email = loginForm.email?.value || "admin@elcarmen.com";
-        const password = loginForm.password?.value || "123456";
+        const email = String(loginForm.email?.value || "").trim();
+        const password = String(loginForm.password?.value || "");
+        if (!email || !password) {
+          throw new Error("Ingresa tu correo electrónico y contraseña.");
+        }
         const user = await autenticarUsuario({ email, password });
         await showDashboardView(user, DEFAULT_ROUTE);
       } catch (err) {
@@ -209,8 +208,16 @@ function setupEventDelegation() {
   });
 
   window.addEventListener("popstate", (e) => {
+    if (!hasActiveSession()) {
+      showLoginView();
+      return;
+    }
     const routeKey = e.state?.route || getRouteFromLocation();
-    if (routeKey) navigateTo(routeKey, { updateHistory: false });
+    if (routeKey && canAccessRoute(routeKey, getCurrentUser())) {
+      navigateTo(routeKey, { updateHistory: false });
+    } else if (routeKey) {
+      navigateTo(DEFAULT_ROUTE, { replace: true });
+    }
   });
 }
 

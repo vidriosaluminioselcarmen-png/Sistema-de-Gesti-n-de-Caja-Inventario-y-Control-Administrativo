@@ -5,7 +5,7 @@
 // - Sincroniza todas las vistas con las colecciones transaccionales en tiempo real.
 
 import { getCurrentUser, hasPermission, canAccessRoute } from "../auth.js";
-import { getFirebaseStatus } from "../firebase-config.js";
+import { getFirebaseStatus, isFirebaseConfigured } from "../firebase-config.js";
 import {
   watchProductos,
   watchMovimientosInventario,
@@ -20,7 +20,12 @@ import {
   inferirModalidadProducto,
   etiquetaModalidad,
   calcularAreaLaminas,
-  calcularResumenInventario
+  calcularResumenInventario,
+  parsearCSVTabla,
+  sugerirMapeoColumnasExcel,
+  normalizarYValidarFilasImportacion,
+  importarProductosMasivo,
+  descargarPlantillaInventarioExcel
 } from "../services/inventario-service.js";
 import {
   watchMovimientosContables,
@@ -1370,6 +1375,425 @@ export function mountInventarioView(root) {
       );
     } catch (err) {
       showFeedback(err.message, true);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Importación masiva desde Excel / CSV (#modal-importar-excel)
+  // -------------------------------------------------------------------------
+  const btnAbrirImportar = $("#btn-abrir-importar-excel");
+  if (btnAbrirImportar) {
+    btnAbrirImportar.classList.toggle("hidden", !hasPermission("inventario.gestionar", getCurrentUser()));
+  }
+
+  let impEncabezados = [];
+  let impFilasCrudas = [];
+  let impOverrides = [];
+  let impMapeo = {};
+  let impFilasPreparadas = [];
+
+  const CAMPOS_IMPORTACION = [
+    { key: "nombre", label: "Nombre del producto *", fixedOptions: [] },
+    { key: "codigo", label: "Código (opcional)", fixedOptions: [{ val: "", txt: "Autogenerar (PR-0001...)" }] },
+    {
+      key: "categoria",
+      label: "Categoría",
+      fixedOptions: [
+        { val: "__fixed__:Vidrios", txt: "Valor fijo: Vidrios" },
+        { val: "__fixed__:Perfiles", txt: "Valor fijo: Perfiles" },
+        { val: "__fixed__:Accesorios", txt: "Valor fijo: Accesorios" },
+        { val: "__fixed__:Insumos", txt: "Valor fijo: Insumos" }
+      ]
+    },
+    {
+      key: "unidad",
+      label: "Modalidad / Unidad",
+      fixedOptions: [
+        { val: "__fixed__:u", txt: "Valor fijo: Unidades (u)" },
+        { val: "__fixed__:m²", txt: "Valor fijo: Metros cuadrados (m²)" },
+        { val: "__fixed__:m", txt: "Valor fijo: Metros lineales (m)" }
+      ]
+    },
+    { key: "precioCompra", label: "Precio de compra ($)", fixedOptions: [{ val: "__fixed__:0", txt: "Por defecto: $ 0" }] },
+    { key: "precio", label: "Precio de venta ($) *", fixedOptions: [] },
+    { key: "stock", label: "Stock inicial", fixedOptions: [{ val: "__fixed__:0", txt: "Por defecto: 0" }] },
+    {
+      key: "stockMinimo",
+      label: "Stock mínimo",
+      fixedOptions: [
+        { val: "__fixed__:5", txt: "Por defecto: 5" },
+        { val: "__fixed__:0", txt: "Por defecto: 0" }
+      ]
+    },
+    { key: "descripcion", label: "Descripción (opcional)", fixedOptions: [{ val: "", txt: "Sin descripción" }] }
+  ];
+
+  async function asegurarSheetJS() {
+    if (typeof window !== "undefined" && window.XLSX) return window.XLSX;
+    if (typeof document === "undefined") return null;
+    const src = window.location.pathname.includes("/html/")
+      ? "../js/vendor/xlsx.full.min.js"
+      : "js/vendor/xlsx.full.min.js";
+    return new Promise((resolve) => {
+      const existing = document.querySelector(`script[src*="xlsx.full.min.js"]`);
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.XLSX || null), { once: true });
+        existing.addEventListener("error", () => resolve(null), { once: true });
+        setTimeout(() => resolve(window.XLSX || null), 600);
+        return;
+      }
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = () => resolve(window.XLSX || null);
+      s.onerror = () => resolve(null);
+      document.head.appendChild(s);
+    });
+  }
+
+  function showImportError(msg = "") {
+    const el = $("#inv-import-error");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle("hidden", !msg);
+  }
+
+  function resetModalImportacion() {
+    impEncabezados = [];
+    impFilasCrudas = [];
+    impOverrides = [];
+    impMapeo = {};
+    impFilasPreparadas = [];
+    if ($("#inv-import-archivo")) $("#inv-import-archivo").value = "";
+    if ($("#inv-import-archivo-info")) $("#inv-import-archivo-info").textContent = "Ningún archivo seleccionado";
+    $("#inv-import-paso-mapeo")?.classList.add("hidden");
+    $("#inv-import-paso-preview")?.classList.add("hidden");
+    if ($("#inv-import-preview-body")) $("#inv-import-preview-body").innerHTML = "";
+    showImportError("");
+    actualizarResumenImportacionUI();
+  }
+
+  function renderControlesMapeoImportacion() {
+    const grid = $("#inv-import-mapeo-grid");
+    if (!grid) return;
+    grid.innerHTML = CAMPOS_IMPORTACION.map((c) => {
+      const actual = impMapeo[c.key] ?? "";
+      const colOpts = impEncabezados
+        .map(
+          (h) =>
+            `<option value="${escapeHtml(h)}"${actual === h ? " selected" : ""}>Columna: ${escapeHtml(h)}</option>`
+        )
+        .join("");
+      const defOpts = c.fixedOptions.length
+        ? c.fixedOptions
+            .map((o) => `<option value="${escapeHtml(o.val)}"${actual === o.val ? " selected" : ""}>${escapeHtml(o.txt)}</option>`)
+            .join("")
+        : `<option value=""${actual === "" ? " selected" : ""}>— Sin asignar —</option>`;
+      return `
+        <div class="field" style="margin:0">
+          <label class="label" for="imp-map-${c.key}">${escapeHtml(c.label)}</label>
+          <select class="select" id="imp-map-${c.key}" data-map-field="${c.key}">
+            ${defOpts}
+            ${colOpts}
+          </select>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function construirFilasConOverrides() {
+    return impFilasCrudas.map((fila, idx) => {
+      const ov = impOverrides[idx];
+      if (!ov) return fila;
+      const clon = { ...fila };
+      if (typeof ov.__incluirManual === "boolean") clon.__incluirManual = ov.__incluirManual;
+      for (const [k, v] of Object.entries(ov)) {
+        if (k === "__incluirManual") continue;
+        const src = impMapeo[k];
+        if (src && !String(src).startsWith("__fixed__:")) {
+          clon[src] = v;
+        } else {
+          // Si el campo venía fijo/por defecto, usar clave virtual dedicada en mapeo temporal
+          clon[`__ov_${k}`] = v;
+        }
+      }
+      return clon;
+    });
+  }
+
+  function actualizarResumenImportacionUI() {
+    const modoDup = $("#inv-import-modo-duplicados")?.value || "omitir";
+    const total = impFilasPreparadas.length;
+    const nuevos = impFilasPreparadas.filter((f) => f.estado === "nuevo" || (f.estado === "alerta" && !f.bloqueante)).length;
+    const duplicados = impFilasPreparadas.filter((f) => f.estado === "duplicado").length;
+    const errores = impFilasPreparadas.filter((f) => f.estado === "error" || f.bloqueante).length;
+    const listos = impFilasPreparadas.filter(
+      (f) => f.incluir && f.estado !== "error" && !f.bloqueante && (f.estado !== "duplicado" || modoDup !== "omitir")
+    ).length;
+
+    if ($("#imp-stat-total")) $("#imp-stat-total").textContent = String(total);
+    if ($("#imp-stat-nuevos")) $("#imp-stat-nuevos").textContent = String(nuevos);
+    if ($("#imp-stat-duplicados")) $("#imp-stat-duplicados").textContent = String(duplicados);
+    if ($("#imp-stat-errores")) $("#imp-stat-errores").textContent = String(errores);
+
+    const btnConfirm = $("#btn-confirmar-importacion");
+    if (btnConfirm) {
+      btnConfirm.disabled = listos === 0;
+      btnConfirm.textContent =
+        listos === 1 ? "Importar 1 producto listo" : `Importar ${listos} productos listos`;
+    }
+  }
+
+  function recalcularYRenderPreviewImportacion() {
+    if (!impFilasCrudas.length) return;
+    const mapeoEfectivo = { ...impMapeo };
+    for (const ov of impOverrides) {
+      if (!ov) continue;
+      for (const k of Object.keys(ov)) {
+        if (k !== "__incluirManual" && (!mapeoEfectivo[k] || String(mapeoEfectivo[k]).startsWith("__fixed__:"))) {
+          mapeoEfectivo[k] = `__ov_${k}`;
+        }
+      }
+    }
+    const filasInput = construirFilasConOverrides().map((f, idx) => {
+      const ov = impOverrides[idx];
+      if (!ov) return f;
+      const out = { ...f };
+      for (const [k, v] of Object.entries(ov)) {
+        if (k !== "__incluirManual" && mapeoEfectivo[k] === `__ov_${k}`) {
+          out[`__ov_${k}`] = v;
+        }
+      }
+      return out;
+    });
+
+    impFilasPreparadas = normalizarYValidarFilasImportacion(
+      filasInput,
+      mapeoEfectivo,
+      { categoria: "Vidrios", unidad: "u", stockMinimo: 5, productosExistentes: productos },
+      getCurrentUser()
+    );
+
+    const tbody = $("#inv-import-preview-body");
+    if (tbody) {
+      tbody.innerHTML = impFilasPreparadas
+        .map((f, idx) => {
+          const badgeCls =
+            f.estado === "error"
+              ? "badge-danger"
+              : f.estado === "alerta" || f.estado === "duplicado"
+                ? "badge-warning"
+                : "badge-success";
+          const estadoTxt =
+            f.estado === "error"
+              ? "Error"
+              : f.estado === "alerta"
+                ? "Revisar"
+                : f.estado === "duplicado"
+                  ? "Existente"
+                  : "Nuevo";
+          const trCls = f.estado === "error" ? "is-error" : f.estado === "alerta" ? "is-alerta" : "";
+          const catOpts = ["Vidrios", "Perfiles", "Accesorios", "Insumos"]
+            .map((c) => `<option value="${c}"${f.categoria === c ? " selected" : ""}>${c}</option>`)
+            .join("") +
+            (!["Vidrios", "Perfiles", "Accesorios", "Insumos"].includes(f.categoria)
+              ? `<option value="${escapeHtml(f.categoria)}" selected>${escapeHtml(f.categoria)} (?)</option>`
+              : "");
+          const unitOpts = [
+            { v: "u", l: "Unidades (u)" },
+            { v: "m²", l: "m² (Vidrios)" },
+            { v: "m", l: "m (Lineales)" },
+            { v: "lámina", l: "Lámina" },
+            { v: "kg", l: "kg" },
+            { v: "L", l: "L" },
+            { v: "caja", l: "Caja" },
+            { v: "paquete", l: "Paquete" }
+          ]
+            .map((u) => `<option value="${u.v}"${f.unidad === u.v ? " selected" : ""}>${u.l}</option>`)
+            .join("") +
+            (![ "u", "m²", "m", "lámina", "kg", "L", "caja", "paquete" ].includes(f.unidad)
+              ? `<option value="${escapeHtml(f.unidad)}" selected>${escapeHtml(f.unidad)} (?)</option>`
+              : "");
+
+          return `
+            <tr class="${trCls}" data-imp-row="${idx}">
+              <td style="text-align:center">
+                <input type="checkbox" data-imp-check="${idx}" ${f.incluir ? "checked" : ""} ${f.bloqueante ? "disabled" : ""} aria-label="Incluir fila ${f.filaExcel}">
+              </td>
+              <td style="white-space:nowrap">
+                <span class="badge ${badgeCls}">${estadoTxt}</span>
+                <div class="text-xs text-muted">Fila ${f.filaExcel}</div>
+              </td>
+              <td><input class="input" style="min-width:95px" data-imp-idx="${idx}" data-imp-field="codigo" value="${escapeHtml(f.codigo)}" placeholder="Auto"></td>
+              <td><input class="input" style="min-width:170px" data-imp-idx="${idx}" data-imp-field="nombre" value="${escapeHtml(f.nombre)}"></td>
+              <td><select class="select" style="min-width:120px" data-imp-idx="${idx}" data-imp-field="categoria">${catOpts}</select></td>
+              <td><select class="select" style="min-width:130px" data-imp-idx="${idx}" data-imp-field="unidad">${unitOpts}</select></td>
+              <td><input class="input num" style="min-width:92px" type="number" min="0" step="1" data-imp-idx="${idx}" data-imp-field="precioCompra" value="${f.precioCompra}"></td>
+              <td><input class="input num" style="min-width:95px" type="number" min="0" step="1" data-imp-idx="${idx}" data-imp-field="precio" value="${f.precio}"></td>
+              <td><input class="input num" style="min-width:78px" type="number" min="0" step="0.01" data-imp-idx="${idx}" data-imp-field="stock" value="${f.stock}"></td>
+              <td><input class="input num" style="min-width:74px" type="number" min="0" step="0.01" data-imp-idx="${idx}" data-imp-field="stockMinimo" value="${f.stockMinimo}"></td>
+              <td><span class="text-xs ${f.bloqueante ? "text-danger" : "text-muted"}">${escapeHtml(f.mensaje)}</span></td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+    actualizarResumenImportacionUI();
+  }
+
+  async function procesarArchivoImportacion(file) {
+    showImportError("");
+    if (!file) return;
+    const nombreArch = String(file.name || "");
+    const ext = nombreArch.split(".").pop()?.toLowerCase() || "";
+    try {
+      let parsed = null;
+      if (ext === "csv") {
+        const texto = await file.text();
+        parsed = parsearCSVTabla(texto);
+      } else if (ext === "xlsx" || ext === "xls") {
+        const XLSX = await asegurarSheetJS();
+        if (!XLSX) {
+          throw new Error(
+            "No se pudo cargar el lector de Excel (.xlsx/.xls). Puedes guardar tu archivo como .csv (delimitado por punto y coma) e importarlo."
+          );
+        }
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const primeraHoja = wb.SheetNames[0];
+        if (!primeraHoja) throw new Error("El archivo Excel no contiene hojas.");
+        const ws = wb.Sheets[primeraHoja];
+        const matriz = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        const noVacias = matriz.filter((row) => Array.isArray(row) && row.some((c) => String(c ?? "").trim() !== ""));
+        if (noVacias.length < 2) {
+          throw new Error("El archivo debe incluir una fila de encabezados y al menos una fila de productos.");
+        }
+        const encabezados = noVacias[0].map((h, i) => String(h ?? "").trim() || `Columna_${i + 1}`);
+        const filas = noVacias.slice(1).map((cols, idx) => {
+          const obj = { __filaExcel: idx + 2 };
+          encabezados.forEach((h, i) => {
+            obj[h] = cols[i] !== undefined ? cols[i] : "";
+          });
+          return obj;
+        });
+        parsed = { encabezados, filas };
+      } else {
+        throw new Error("Formato no compatible. Selecciona un archivo .xlsx, .xls o .csv.");
+      }
+
+      if (!parsed.encabezados.length || !parsed.filas.length) {
+        throw new Error("No se encontraron filas de productos en el archivo.");
+      }
+
+      impEncabezados = parsed.encabezados;
+      impFilasCrudas = parsed.filas;
+      impOverrides = parsed.filas.map(() => null);
+      impMapeo = sugerirMapeoColumnasExcel(impEncabezados, getCurrentUser());
+
+      // Valores por defecto cómodos cuando el Excel no trae esas columnas
+      if (!impMapeo.categoria) impMapeo.categoria = "__fixed__:Vidrios";
+      if (!impMapeo.unidad) impMapeo.unidad = "__fixed__:u";
+      if (!impMapeo.precioCompra) impMapeo.precioCompra = "__fixed__:0";
+      if (!impMapeo.stock) impMapeo.stock = "__fixed__:0";
+      if (!impMapeo.stockMinimo) impMapeo.stockMinimo = "__fixed__:5";
+
+      if ($("#inv-import-archivo-info")) {
+        $("#inv-import-archivo-info").textContent = `${nombreArch} · ${impFilasCrudas.length} filas detectadas`;
+      }
+      renderControlesMapeoImportacion();
+      $("#inv-import-paso-mapeo")?.classList.remove("hidden");
+      $("#inv-import-paso-preview")?.classList.remove("hidden");
+      recalcularYRenderPreviewImportacion();
+    } catch (err) {
+      showImportError(err.message || "No se pudo leer el archivo seleccionado.");
+    }
+  }
+
+  btnAbrirImportar?.addEventListener("click", () => {
+    resetModalImportacion();
+    asegurarSheetJS();
+    $("#modal-importar-excel")?.classList.add("is-open");
+  });
+  function cerrarModalImportacion() {
+    $("#modal-importar-excel")?.classList.remove("is-open");
+    resetModalImportacion();
+  }
+  root.querySelectorAll("[data-close-importar-excel]").forEach((btn) =>
+    btn.addEventListener("click", cerrarModalImportacion)
+  );
+  $("#btn-descargar-plantilla-xlsx")?.addEventListener("click", async () => {
+    try {
+      await asegurarSheetJS();
+      descargarPlantillaInventarioExcel({ formato: "xlsx" }, getCurrentUser());
+    } catch (err) {
+      showImportError(err.message);
+    }
+  });
+  $("#btn-descargar-plantilla-csv")?.addEventListener("click", () => {
+    try {
+      descargarPlantillaInventarioExcel({ formato: "csv" }, getCurrentUser());
+    } catch (err) {
+      showImportError(err.message);
+    }
+  });
+  $("#inv-import-archivo")?.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (file) procesarArchivoImportacion(file);
+  });
+  $("#inv-import-mapeo-grid")?.addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-map-field]");
+    if (!sel) return;
+    impMapeo[sel.dataset.mapField] = sel.value;
+    impOverrides = impFilasCrudas.map((f, idx) =>
+      impOverrides[idx]?.__incluirManual !== undefined ? { __incluirManual: impOverrides[idx].__incluirManual } : null
+    );
+    recalcularYRenderPreviewImportacion();
+  });
+  $("#inv-import-modo-duplicados")?.addEventListener("change", actualizarResumenImportacionUI);
+  $("#inv-import-check-all")?.addEventListener("change", (e) => {
+    const checked = Boolean(e.target.checked);
+    impOverrides = impFilasCrudas.map((_, idx) => ({
+      ...(impOverrides[idx] || {}),
+      __incluirManual: checked
+    }));
+    recalcularYRenderPreviewImportacion();
+  });
+  $("#inv-import-preview-body")?.addEventListener("change", (e) => {
+    const chk = e.target.closest("[data-imp-check]");
+    if (chk) {
+      const idx = Number(chk.dataset.impCheck);
+      impOverrides[idx] = { ...(impOverrides[idx] || {}), __incluirManual: Boolean(chk.checked) };
+      recalcularYRenderPreviewImportacion();
+      return;
+    }
+    const ctrl = e.target.closest("[data-imp-field]");
+    if (ctrl) {
+      const idx = Number(ctrl.dataset.impIdx);
+      const field = ctrl.dataset.impField;
+      impOverrides[idx] = { ...(impOverrides[idx] || {}), [field]: ctrl.value };
+      recalcularYRenderPreviewImportacion();
+    }
+  });
+  $("#btn-confirmar-importacion")?.addEventListener("click", async () => {
+    const btn = $("#btn-confirmar-importacion");
+    const prevTxt = btn?.textContent || "Importar productos";
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Importando...";
+      }
+      const modoDuplicados = $("#inv-import-modo-duplicados")?.value || "omitir";
+      const res = await importarProductosMasivo(impFilasPreparadas, { modoDuplicados }, getCurrentUser());
+      $("#modal-importar-excel")?.classList.remove("is-open");
+      resetModalImportacion();
+      showFeedback(
+        `Importación Excel completada: ${res.creados} creados, ${res.actualizados} actualizados, ${res.omitidos} omitidos${res.errores ? `, ${res.errores} con error` : ""}.`
+      );
+    } catch (err) {
+      showImportError(err.message || "Error al importar los productos.");
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prevTxt;
+      }
     }
   });
 
@@ -3589,6 +4013,10 @@ export function mountUsuariosView(root) {
     const titulo = $("#titulo-usuario");
     const correoInput = $("#usr-correo");
 
+    const claveInput = $("#usr-clave");
+    const claveLabel = root.querySelector('label[for="usr-clave"]');
+    const usaFirebase = isFirebaseConfigured();
+
     if (usr) {
       if (titulo) titulo.textContent = `Editar usuario · ${usr.nombre}`;
       if ($("#usr-id")) $("#usr-id").value = usr.id;
@@ -3599,7 +4027,20 @@ export function mountUsuariosView(root) {
       }
       if ($("#usr-rol")) $("#usr-rol").value = usr.rol === "Administrador" ? "Administrador" : "Empleado";
       if ($("#usr-estado")) $("#usr-estado").value = usr.activo === false ? "inactivo" : "activo";
-      if ($("#usr-clave")) $("#usr-clave").value = "";
+      if (claveInput) {
+        claveInput.value = "";
+        claveInput.required = false;
+        claveInput.disabled = usaFirebase;
+        claveInput.minLength = usaFirebase ? 6 : 4;
+        claveInput.placeholder = usaFirebase
+          ? "Gestionada en Firebase Auth / restablecimiento de clave"
+          : "Dejar vacío para mantener la actual";
+      }
+      if (claveLabel) {
+        claveLabel.textContent = usaFirebase
+          ? "Contraseña en Firebase Authentication"
+          : "Nueva clave / PIN local (opcional, mín. 4 caracteres)";
+      }
     } else {
       if (titulo) titulo.textContent = "Nuevo usuario autorizado";
       $("#form-usuario")?.reset();
@@ -3607,7 +4048,20 @@ export function mountUsuariosView(root) {
       if ($("#usr-rol")) $("#usr-rol").value = "Empleado";
       if (correoInput) correoInput.disabled = false;
       if ($("#usr-estado")) $("#usr-estado").value = "activo";
-      if ($("#usr-clave")) $("#usr-clave").value = "";
+      if (claveInput) {
+        claveInput.value = "";
+        claveInput.disabled = false;
+        claveInput.required = true;
+        claveInput.minLength = usaFirebase ? 6 : 4;
+        claveInput.placeholder = usaFirebase
+          ? "Mínimo 6 caracteres para Firebase Auth"
+          : "Mínimo 4 caracteres";
+      }
+      if (claveLabel) {
+        claveLabel.textContent = usaFirebase
+          ? "Contraseña de acceso * (mín. 6 caracteres)"
+          : "Clave / PIN de acceso * (mín. 4 caracteres)";
+      }
     }
 
     $("#modal-usuario")?.classList.add("is-open");
