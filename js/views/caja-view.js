@@ -343,10 +343,11 @@ export function mountCajaView(root) {
       return;
     }
 
+    const LIMITE_CATALOGO_POS = 15;
     const hayBusqueda = Boolean(busqueda.trim());
-    const visibles = !hayBusqueda && filtrados.length > 12 ? filtrados.slice(0, 12) : filtrados;
+    const visibles = !hayBusqueda && filtrados.length > LIMITE_CATALOGO_POS ? filtrados.slice(0, LIMITE_CATALOGO_POS) : filtrados;
     if (boxVerMas) {
-      boxVerMas.classList.toggle("hidden", hayBusqueda || filtrados.length <= 12);
+      boxVerMas.classList.toggle("hidden", hayBusqueda || filtrados.length <= LIMITE_CATALOGO_POS);
     }
 
     gridEl.innerHTML = visibles.map(renderTarjetaProductoHTML).join("");

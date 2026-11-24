@@ -2570,6 +2570,18 @@ export function mountContabilidadView(root) {
   $("#contab-table-body-modal")?.addEventListener("click", manejarClickDetalleContable);
   $("#contab-bancos-body")?.addEventListener("click", manejarClickDetalleContable);
 
+  function setModalError(el, msg = "") {
+    if (!el) return;
+    const text = String(msg || "").trim();
+    if (text) {
+      el.textContent = text;
+      el.classList.remove("hidden");
+    } else {
+      el.textContent = "";
+      el.classList.add("hidden");
+    }
+  }
+
   // Cartera: abrir modal de abono y registrar abono
   $("#contab-cartera-body")?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-abono-venta]");
@@ -2577,6 +2589,7 @@ export function mountContabilidadView(root) {
     const venta = ventas.find((v) => v.id === btn.dataset.abonoVenta);
     if (!venta) return;
     const saldo = calcularSaldoPendienteVenta(venta);
+    setModalError($("#abono-cartera-error"), "");
     if ($("#abono-cartera-venta-id")) $("#abono-cartera-venta-id").value = venta.id;
     if ($("#abono-cartera-monto")) $("#abono-cartera-monto").value = formatMontoInput(saldo);
     if ($("#abono-cartera-ref")) $("#abono-cartera-ref").value = "";
@@ -2590,18 +2603,22 @@ export function mountContabilidadView(root) {
     $("#modal-abono-cartera")?.classList.add("is-open");
   });
 
+  $("#form-abono-cartera")?.addEventListener("input", () => setModalError($("#abono-cartera-error"), ""));
+  $("#form-abono-cartera")?.addEventListener("change", () => setModalError($("#abono-cartera-error"), ""));
   $("#form-abono-cartera")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const errEl = $("#abono-cartera-error");
+    setModalError(errEl, "");
     const ventaId = $("#abono-cartera-venta-id")?.value;
     const monto = parseMontoInput($("#abono-cartera-monto")?.value);
     const metodoPago = $("#abono-cartera-metodo")?.value || "Efectivo";
     const referencia = $("#abono-cartera-ref")?.value || "";
     try {
-      await registrarAbonoVenta({ ventaId, monto, metodoPago, referencia }, getCurrentUser());
+      await registrarAbonoVenta({ ventaId, importe: monto, metodoPago, referencia }, getCurrentUser());
       $("#modal-abono-cartera")?.classList.remove("is-open");
       showFeedback(`Abono de ${formatCOP(monto)} registrado correctamente.`);
     } catch (err) {
-      showFeedback(err.message, true);
+      setModalError(errEl, err?.message || "No se pudo registrar el abono.");
     }
   });
 
@@ -2616,6 +2633,7 @@ export function mountContabilidadView(root) {
     const totalAbonado = roundCOP(mov.montoPagado || 0);
     const saldoPend = roundCOP(mov.saldoPendiente ?? Math.max(0, totalDeuda - totalAbonado));
     cxpSaldoActualModal = saldoPend;
+    setModalError($("#cxp-error"), "");
     if ($("#cxp-mov-id")) $("#cxp-mov-id").value = mov.id;
     if ($("#cxp-monto")) $("#cxp-monto").value = formatMontoInput(saldoPend);
     if ($("#cxp-fecha")) $("#cxp-fecha").value = hoyIso;
@@ -2640,13 +2658,18 @@ export function mountContabilidadView(root) {
   });
 
   $("#btn-cxp-pagar-todo")?.addEventListener("click", () => {
+    setModalError($("#cxp-error"), "");
     if ($("#cxp-monto") && cxpSaldoActualModal > 0) {
       $("#cxp-monto").value = formatMontoInput(cxpSaldoActualModal);
     }
   });
 
+  $("#form-pagar-cxp")?.addEventListener("input", () => setModalError($("#cxp-error"), ""));
+  $("#form-pagar-cxp")?.addEventListener("change", () => setModalError($("#cxp-error"), ""));
   $("#form-pagar-cxp")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const errEl = $("#cxp-error");
+    setModalError(errEl, "");
     const movimientoId = $("#cxp-mov-id")?.value;
     const montoPago = parseMontoInput($("#cxp-monto")?.value);
     const metodoPago = $("#cxp-metodo")?.value || "Efectivo";
@@ -2665,7 +2688,7 @@ export function mountContabilidadView(root) {
           : `Abono registrado por ${formatCOP(resPago.montoPagado)}. Saldo pendiente restante: ${formatCOP(resPago.saldoPendiente)}.`
       );
     } catch (err) {
-      showFeedback(err.message, true);
+      setModalError(errEl, err?.message || "No se pudo registrar el pago.");
     }
   });
 

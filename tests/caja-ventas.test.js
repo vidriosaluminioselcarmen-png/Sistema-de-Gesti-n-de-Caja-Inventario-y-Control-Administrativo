@@ -1766,11 +1766,12 @@ export async function runAll25Tests() {
       adminUser
     );
 
-    // Validaciones negativas
+    // Validaciones negativas y compatibilidad defensiva importe / monto
     await assertThrows(() => registrarAbonoVenta({ ventaId: venta.id, importe: 0, metodoPago: "Efectivo" }, adminUser), "mayor que cero");
     await assertThrows(() => registrarAbonoVenta({ ventaId: venta.id, importe: 250000, metodoPago: "Efectivo" }, adminUser), "supera el saldo");
+    await assertThrows(() => registrarAbonoVenta({ ventaId: venta.id, metodoPago: "Efectivo" }, adminUser), "mayor que cero");
 
-    // Abono 1: Efectivo ($ 80.000) con idempotencyKey
+    // Abono 1: Efectivo ($ 80.000) con idempotencyKey (enviando importe)
     const ab1 = await registrarAbonoVenta(
       { ventaId: venta.id, importe: 80000, metodoPago: "Efectivo", cajaId: caja.id, idempotencyKey: "abn-k1" },
       adminUser
@@ -1783,9 +1784,9 @@ export async function runAll25Tests() {
       "duplicada"
     );
 
-    // Abono 2: Transferencia ($ 70.000)
+    // Abono 2: Transferencia ($ 70.000) validando también fallback defensivo con campo `monto`
     const ab2 = await registrarAbonoVenta(
-      { ventaId: venta.id, importe: 70000, metodoPago: "Transferencia", referencia: "DAV-998", cajaId: caja.id },
+      { ventaId: venta.id, monto: 70000, metodoPago: "Transferencia", referencia: "DAV-998", cajaId: caja.id },
       adminUser
     );
     assert(ab2.venta.saldoPendiente === 50000, "Saldo debe bajar a 50.000");

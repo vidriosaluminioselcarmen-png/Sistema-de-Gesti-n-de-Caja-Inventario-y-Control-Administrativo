@@ -1948,6 +1948,7 @@ export async function registrarAbonoVenta(
   {
     ventaId,
     importe,
+    monto: montoParam,
     metodoPago = "Efectivo",
     referencia = "",
     cajaId = null,
@@ -2006,8 +2007,15 @@ export async function registrarAbonoVenta(
         throw new Error(`Método de pago no válido para abono: ${metodoPago}`);
       }
 
-      const monto = roundCOP(importe);
-      if (!Number.isFinite(Number(importe)) || !(monto > 0)) {
+      const importeRecibido = importe ?? montoParam;
+      const monto = roundCOP(importeRecibido);
+      if (
+        importeRecibido === undefined ||
+        importeRecibido === null ||
+        importeRecibido === "" ||
+        !Number.isFinite(Number(importeRecibido)) ||
+        !(monto > 0)
+      ) {
         throw new Error("El importe del abono debe ser mayor que cero.");
       }
       if (monto > saldoActual) {

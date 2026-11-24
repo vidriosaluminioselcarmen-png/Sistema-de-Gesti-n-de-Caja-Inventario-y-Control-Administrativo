@@ -2324,7 +2324,7 @@
                   <label class="label" for="abono-cartera-metodo">Método de pago *</label>
                   <select class="select" id="abono-cartera-metodo">
                     <option value="Efectivo">Efectivo</option>
-                    <option value="Transferencia bancaria">Transferencia bancaria</option>
+                    <option value="Transferencia">Transferencia bancaria</option>
                     <option value="Nequi">Nequi</option>
                     <option value="Daviplata">Daviplata</option>
                   </select>
@@ -2333,6 +2333,7 @@
                   <label class="label" for="abono-cartera-ref">Referencia / Observación (opcional)</label>
                   <input class="input" id="abono-cartera-ref" type="text" placeholder="N° comprobante o nota">
                 </div>
+                <div id="abono-cartera-error" class="alert alert-danger hidden" role="alert"></div>
               </div>
               <div class="modal-footer">
                 <button type="button" class="btn btn-outline" data-close-modal="modal-abono-cartera">Cancelar</button>
@@ -2381,6 +2382,7 @@
                   <label class="label" for="cxp-obs">Observación (opcional)</label>
                   <input class="input" id="cxp-obs" type="text" placeholder="Detalle del abono o pago">
                 </div>
+                <div id="cxp-error" class="alert alert-danger hidden" role="alert"></div>
               </div>
               <div class="modal-footer">
                 <button type="button" class="btn btn-outline" data-close-modal="modal-pagar-cxp">Cancelar</button>
